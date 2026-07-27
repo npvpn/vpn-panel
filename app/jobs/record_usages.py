@@ -147,11 +147,16 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
             else:
                 to_insert.append({"user_id": uid, "node_id": node_id, **vals})
 
+        # Оба DML идут через db.connection() (Core), а не db.execute() (ORM): ORM-овый
+        # executemany-UPDATE с дополнительным WHERE в SQLAlchemy 2.0 всегда падает с
+        # InvalidRequestError "bulk synchronize of persistent objects not supported…".
+        # Коммита внутри нет намеренно — usage и списание bs_extra ниже должны лечь
+        # одной транзакцией (db.commit() в конце функции).
         if to_insert:
             stmt = insert(NodeUserBsUsage)
             if db.bind.name == "mysql":
                 stmt = stmt.prefix_with("IGNORE")
-            db.execute(stmt, to_insert)
+            db.connection().execute(stmt, to_insert)
 
         if to_update:
             stmt = (
@@ -162,7 +167,7 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
                     monthly_period=bindparam("monthly_period"),
                 )
             )
-            db.execute(stmt, to_update)
+            db.connection().execute(stmt, to_update)
 
         for uid in uids:
             new_monthly_agg = crud.get_bs_usage_totals(db, uid, yyyymm)

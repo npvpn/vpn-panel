@@ -336,12 +336,21 @@ _fake_crud = types.SimpleNamespace(
 _stub_module("app.db", {"Session": dict, "crud": _fake_crud})
 _stub_module("app.db.models", {"User": types.SimpleNamespace})
 
+from app.subscription import bs_context_builder  # noqa: E402
 from app.subscription.bs_context_builder import build_bs_context  # noqa: E402
 
 BS_SETTINGS = {"sub_bs_limit_server_text": ["Лимит БС исчерпан"]}
 
 
-def test_build_bs_context_sets_stub_text_for_blocked_domain_host():
+@pytest.fixture
+def fake_crud(monkeypatch):
+    """Заглушка app.db могла не сработать: другой тест (напр. test_record_bs_usage) уже
+    импортировал настоящий app.db, и _stub_module тогда ничего не подменяет. Поэтому
+    фейковый crud ставим прямо в модуль-потребитель — независимо от порядка импортов."""
+    monkeypatch.setattr(bs_context_builder, "crud", _fake_crud)
+
+
+def test_build_bs_context_sets_stub_text_for_blocked_domain_host(fake_crud):
     """Баг: раньше stub_text брался от адресного множества → у доменного БС-хоста
     заглушка получала ПУСТОЕ имя. Теперь текст зависит от блоков по node_ids."""
     bs = build_bs_context(
@@ -359,7 +368,7 @@ def test_build_bs_context_sets_stub_text_for_blocked_domain_host():
     assert bs.is_blocked(_host("bs.example.com", node_ids=[BS_NODE_ID])) is True
 
 
-def test_build_bs_context_without_blocks_has_no_stub_text():
+def test_build_bs_context_without_blocks_has_no_stub_text(fake_crud):
     bs = build_bs_context(
         {"bs": {BS_NODE_ID}, "blocked": set()},
         types.SimpleNamespace(id=1),
