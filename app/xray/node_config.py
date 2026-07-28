@@ -11,7 +11,8 @@ JSON-строки по «сигнатуре» ноды (инбаунды + casca
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+import threading
+from collections.abc import Callable, Iterable
 
 from app.xray.bs_limit import strip_blocked_clients
 from app.xray.cascade_config import cascade_config
@@ -48,3 +49,58 @@ def build_node_config_json(
         blocked_user_ids,
     )
     return cfg.to_json()
+
+
+class _NodeJsonCache:
+    """Кэш готовой JSON-строки конфига по сигнатуре ноды. Живёт на объекте волнового
+    конфига (см. node_config_json), поэтому автоматически сбрасывается со сменой волны.
+
+    Лок сериализует тяжёлую питон-работу (build+to_json): в любой момент её делает
+    максимум один поток — это снимает GIL-давление на горячий /sub. Худший случай гонки —
+    один лишний build, не порча данных.
+    """
+
+    def __init__(self, base_config, build: Callable[..., str] = build_node_config_json):
+        self._base = base_config
+        self._build = build
+        self._cache: dict[tuple, str] = {}
+        self._lock = threading.Lock()
+        self.build_count = 0
+
+    def get(
+        self,
+        node_inbound_tags: Iterable[str] | None,
+        cascade_kwargs: dict,
+        blocked_user_ids: Iterable[int] | None,
+    ) -> str:
+        key = node_signature(node_inbound_tags, cascade_kwargs, blocked_user_ids)
+        with self._lock:
+            cached = self._cache.get(key)
+            if cached is not None:
+                return cached
+            js = self._build(self._base, node_inbound_tags, cascade_kwargs, blocked_user_ids)
+            self._cache[key] = js
+            self.build_count += 1
+            return js
+
+
+def node_config_json(
+    base_config,
+    node_inbound_tags: Iterable[str] | None,
+    cascade_kwargs: dict,
+    blocked_user_ids: Iterable[int] | None,
+) -> str:
+    """JSON конфига под ноду с кэшем на объекте волнового конфига.
+
+    include_db_users() вешает свежий _NodeJsonCache на возвращаемый конфиг, поэтому все
+    ноды одной волны шарят кэш. Для конфигов без атрибута (из файла/тестов) кэш создаётся
+    лениво; если объект не принимает атрибут — работаем без шаринга (корректность цела).
+    """
+    cache = getattr(base_config, "_node_json_cache", None)
+    if cache is None:
+        cache = _NodeJsonCache(base_config)
+        try:
+            base_config._node_json_cache = cache
+        except (AttributeError, TypeError):
+            pass
+    return cache.get(node_inbound_tags, cascade_kwargs, blocked_user_ids)

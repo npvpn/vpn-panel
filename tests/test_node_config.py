@@ -1,7 +1,11 @@
 import json
+import threading
+import time
 
 from app.xray.node_config import (
+    _NodeJsonCache,
     build_node_config_json,
+    node_config_json,
     node_signature,
 )
 
@@ -88,3 +92,78 @@ def test_build_filters_inbounds_by_tags():
     js = build_node_config_json(_base(), ["NOPE"], {"role": "direct"}, [])
     data = json.loads(js)
     assert [i["tag"] for i in data["inbounds"]] == ["API_INBOUND"]
+
+
+def _counting_build_factory():
+    calls = []
+
+    def build(base, tags, cascade_kwargs, blocked):
+        calls.append(node_signature(tags, cascade_kwargs, blocked))
+        # уникальная строка на сигнатуру, чтобы отличать значения
+        return json.dumps({"sig": len(set(calls))})
+
+    return build, calls
+
+
+def test_cache_hit_builds_once_per_signature():
+    build, calls = _counting_build_factory()
+    cache = _NodeJsonCache(_base(), build=build)
+    for _ in range(5):
+        cache.get([], {"role": "direct"}, [])
+    assert cache.build_count == 1
+    assert len(calls) == 1
+
+
+def test_cache_different_signatures_build_separately():
+    build, calls = _counting_build_factory()
+    cache = _NodeJsonCache(_base(), build=build)
+    cache.get([], {"role": "direct"}, [])
+    cache.get(["VLESS_TCP"], {"role": "direct"}, [])
+    cache.get([], {"role": "direct"}, [1])
+    assert cache.build_count == 3
+
+
+def test_cache_returns_identical_string_on_hit():
+    cache = _NodeJsonCache(_base())
+    a = cache.get([], {"role": "direct"}, [])
+    b = cache.get([], {"role": "direct"}, [])
+    assert a == b
+
+
+def test_cache_thread_safe_single_build():
+    # Лок в _NodeJsonCache.get() сериализует "check+build+store" целиком, поэтому билд
+    # под одну сигнатуру физически не может произойти дважды даже под реальной гонкой
+    # потоков. small sleep внутри build() расширяет окно гонки: пока первый поток строит
+    # конфиг, остальные 7 успевают упереться в захват лока и после его освобождения
+    # получить уже готовое значение из кэша, а не запустить билд повторно.
+    def slow_build(base, tags, cascade_kwargs, blocked):
+        time.sleep(0.05)
+        return json.dumps({"ok": True})
+
+    cache = _NodeJsonCache(_base(), build=slow_build)
+    results: list[str] = []
+    results_lock = threading.Lock()
+
+    def worker():
+        r = cache.get([], {"role": "direct"}, [])
+        with results_lock:
+            results.append(r)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert cache.build_count == 1
+    assert len(results) == 8
+    assert len(set(results)) == 1
+
+
+def test_node_config_json_reuses_cache_on_config_object():
+    base = _base()
+    a = node_config_json(base, [], {"role": "direct"}, [])
+    assert hasattr(base, "_node_json_cache")
+    b = node_config_json(base, [], {"role": "direct"}, [])
+    assert a == b
+    assert base._node_json_cache.build_count == 1
