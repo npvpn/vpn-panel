@@ -43,10 +43,13 @@ jobs:
           images: |
             ${{ secrets.DOCKERHUB_USERNAME }}/panel
             ghcr.io/${{ github.repository_owner }}/panel
+          # type=match, а не type=semver: релизные теги идут по CalVer
+          # (vYYYY.MM.DD, хотфикс vYYYY.MM.DD.N), а semver-парсер такой тег
+          # отбрасывает из-за ведущего нуля в месяце. См. docs/releases.md.
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=semver,pattern={{version}}
+            type=match,pattern=v(.*),group=1
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push Docker image
