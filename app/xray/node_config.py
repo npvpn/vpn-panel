@@ -51,6 +51,28 @@ def build_node_config_json(
     return cfg.to_json()
 
 
+def inline_local_certificates(config):
+    """Заменить certificateFile/keyFile инбаундов на inline certificate/key (список строк).
+
+    Раньше это делал XRayNode._prepare_config на каждую ноду перед сериализацией. Вынесено
+    сюда, чтобы вызвать один раз в include_db_users() до сериализации/шаринга. Идемпотентно:
+    если certificateFile уже заменён — второй проход ничего не делает.
+    """
+    for inbound in config.get("inbounds", []):
+        stream_settings = inbound.get("streamSettings") or {}
+        tls_settings = stream_settings.get("tlsSettings") or {}
+        for certificate in tls_settings.get("certificates") or []:
+            if certificate.get("certificateFile"):
+                with open(certificate["certificateFile"]) as file:
+                    certificate["certificate"] = [line.strip() for line in file.readlines()]
+                    del certificate["certificateFile"]
+            if certificate.get("keyFile"):
+                with open(certificate["keyFile"]) as file:
+                    certificate["key"] = [line.strip() for line in file.readlines()]
+                    del certificate["keyFile"]
+    return config
+
+
 class _NodeJsonCache:
     """Кэш готовой JSON-строки конфига по сигнатуре ноды. Живёт на объекте волнового
     конфига (см. node_config_json), поэтому автоматически сбрасывается со сменой волны.

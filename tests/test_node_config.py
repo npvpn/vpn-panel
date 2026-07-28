@@ -241,3 +241,47 @@ def test_node_config_json_falls_back_when_attribute_rejected():
     # повторный вызов тоже не падает и строит корректный конфиг (каждый раз заново)
     js2 = node_config_json(base, [], {"role": "direct"}, [])
     assert js2 == js
+
+
+from app.xray.node_config import inline_local_certificates
+
+
+def _cert_config(tmp_path):
+    cert = tmp_path / "fullchain.pem"
+    key = tmp_path / "privkey.pem"
+    cert.write_text("CERT-LINE-1\nCERT-LINE-2\n")
+    key.write_text("KEY-LINE-1\n")
+    return {
+        "inbounds": [
+            {
+                "tag": "VLESS_TLS",
+                "streamSettings": {
+                    "tlsSettings": {"certificates": [{"certificateFile": str(cert), "keyFile": str(key)}]}
+                },
+            }
+        ]
+    }
+
+
+def test_inline_certificates_replaces_files(tmp_path):
+    cfg = _cert_config(tmp_path)
+    inline_local_certificates(cfg)
+    c = cfg["inbounds"][0]["streamSettings"]["tlsSettings"]["certificates"][0]
+    assert c["certificate"] == ["CERT-LINE-1", "CERT-LINE-2"]
+    assert c["key"] == ["KEY-LINE-1"]
+    assert "certificateFile" not in c
+    assert "keyFile" not in c
+
+
+def test_inline_certificates_idempotent(tmp_path):
+    cfg = _cert_config(tmp_path)
+    inline_local_certificates(cfg)
+    snapshot = json.dumps(cfg, sort_keys=True)
+    inline_local_certificates(cfg)  # второй проход — no-op
+    assert json.dumps(cfg, sort_keys=True) == snapshot
+
+
+def test_inline_certificates_no_tls_inbound_noop():
+    cfg = {"inbounds": [{"tag": "PLAIN", "protocol": "vless"}]}
+    inline_local_certificates(cfg)
+    assert cfg == {"inbounds": [{"tag": "PLAIN", "protocol": "vless"}]}
