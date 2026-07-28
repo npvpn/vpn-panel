@@ -84,6 +84,9 @@ class _NodeJsonCache:
             return js
 
 
+_attach_lock = threading.Lock()
+
+
 def node_config_json(
     base_config,
     node_inbound_tags: Iterable[str] | None,
@@ -95,12 +98,22 @@ def node_config_json(
     include_db_users() вешает свежий _NodeJsonCache на возвращаемый конфиг, поэтому все
     ноды одной волны шарят кэш. Для конфигов без атрибута (из файла/тестов) кэш создаётся
     лениво; если объект не принимает атрибут — работаем без шаринга (корректность цела).
+
+    Ленивое создание кэша защищено отдельным модульным локом с double-checked locking:
+    без него два потока, увидевшие отсутствие атрибута одновременно (старт волны, прод
+    обычно подстрахован Task 5 — предзаполнением кэша до параллельных вызовов, но фасад
+    не должен на это молча полагаться), создали бы каждый свой _NodeJsonCache и билдили
+    бы независимо — та же проблема гонки, которую решает лок внутри _NodeJsonCache.get(),
+    только на шаг раньше.
     """
     cache = getattr(base_config, "_node_json_cache", None)
     if cache is None:
-        cache = _NodeJsonCache(base_config)
-        try:
-            base_config._node_json_cache = cache
-        except (AttributeError, TypeError):
-            pass
+        with _attach_lock:
+            cache = getattr(base_config, "_node_json_cache", None)  # re-check под локом
+            if cache is None:
+                cache = _NodeJsonCache(base_config)
+                try:
+                    base_config._node_json_cache = cache
+                except (AttributeError, TypeError):
+                    pass  # объект не принимает атрибут — работаем без шаринга
     return cache.get(node_inbound_tags, cascade_kwargs, blocked_user_ids)

@@ -57,6 +57,17 @@ def _base():
     )
 
 
+class NoCacheAttrConfig(FakeConfig):
+    """Мимикрия объекта, который не может держать доп. атрибуты: setattr для
+    _node_json_cache бросает AttributeError (остальные атрибуты, включая служебные,
+    выставляемые в __init__ родителя, работают как обычно)."""
+
+    def __setattr__(self, name, value):
+        if name == "_node_json_cache":
+            raise AttributeError("no cache slot")
+        super().__setattr__(name, value)
+
+
 def test_signature_is_order_independent():
     a = node_signature(["B", "A"], {"role": "direct"}, [2, 1])
     b = node_signature(["A", "B"], {"role": "direct"}, [1, 2])
@@ -167,3 +178,66 @@ def test_node_config_json_reuses_cache_on_config_object():
     b = node_config_json(base, [], {"role": "direct"}, [])
     assert a == b
     assert base._node_json_cache.build_count == 1
+
+
+def test_node_config_json_lazy_creation_thread_safe(monkeypatch):
+    # Регрессионный тест на double-checked locking в node_config_json: без _attach_lock
+    # N потоков, увидевших отсутствие base._node_json_cache одновременно, создали бы
+    # каждый свой _NodeJsonCache и билдили бы независимо. Барьер сводит все N вызовов
+    # node_config_json к одному моменту старта, максимизируя шанс реальной гонки на
+    # незалоченной проверке getattr(...) перед входом в _attach_lock.
+    import app.xray.node_config as node_config_module
+
+    created: list[int] = []
+    created_lock = threading.Lock()
+    real_cache_cls = node_config_module._NodeJsonCache
+
+    class CountingCache(real_cache_cls):
+        def __init__(self, *args, **kwargs):
+            with created_lock:
+                created.append(1)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(node_config_module, "_NodeJsonCache", CountingCache)
+
+    base = _base()
+    n = 32
+    barrier = threading.Barrier(n)
+    results: list[str] = []
+    results_lock = threading.Lock()
+
+    def worker():
+        barrier.wait()
+        r = node_config_json(base, [], {"role": "direct"}, [])
+        with results_lock:
+            results.append(r)
+
+    threads = [threading.Thread(target=worker) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(created) == 1  # ровно один _NodeJsonCache сконструирован
+    assert hasattr(base, "_node_json_cache")
+    assert base._node_json_cache.build_count == 1  # ровно один build на сигнатуру
+    assert len(results) == n
+    assert len(set(results)) == 1  # все потоки получили одну и ту же строку
+
+
+def test_node_config_json_falls_back_when_attribute_rejected():
+    # Minor: объект не может держать _node_json_cache (setattr бросает) — фасад не
+    # должен падать, а должен деградировать до билда без шаринга кэша.
+    base = NoCacheAttrConfig(
+        {"inbounds": [dict(i) for i in INBOUNDS], "outbounds": [{"tag": "direct"}]},
+        inbounds_by_tag={"VLESS_TCP": {}},
+    )
+    js = node_config_json(base, [], {"role": "direct"}, [])
+    data = json.loads(js)
+    vless = next(i for i in data["inbounds"] if i["tag"] == "VLESS_TCP")
+    assert {c["email"] for c in vless["settings"]["clients"]} == {"1.alice", "2.bob"}
+    assert not hasattr(base, "_node_json_cache")
+
+    # повторный вызов тоже не падает и строит корректный конфиг (каждый раз заново)
+    js2 = node_config_json(base, [], {"role": "direct"}, [])
+    assert js2 == js
