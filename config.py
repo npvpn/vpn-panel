@@ -218,6 +218,9 @@ XRAY_NODE_CONNECT_RETRIES = config("XRAY_NODE_CONNECT_RETRIES", cast=int, defaul
 XRAY_NODE_CONNECT_RETRY_DELAY = config("XRAY_NODE_CONNECT_RETRY_DELAY", cast=int, default=10)
 XRAY_NODE_ERROR_RECONNECT_INTERVAL = config("XRAY_NODE_ERROR_RECONNECT_INTERVAL", cast=int, default=60)
 XRAY_NODE_MAX_CONCURRENT_CONNECTS = config("XRAY_NODE_MAX_CONCURRENT_CONNECTS", cast=int, default=10)
+# Сколько нод реально подключаются одновременно (тяжёлый build+POST). Развязано с
+# XRAY_NODE_MAX_CONCURRENT_CONNECTS (тот — cap планирования на тик health-check).
+XRAY_NODE_CONNECT_CONCURRENCY = config("XRAY_NODE_CONNECT_CONCURRENCY", cast=int, default=4)
 XRAY_NODE_REST_PING_TIMEOUT = config("XRAY_NODE_REST_PING_TIMEOUT", cast=int, default=5)
 XRAY_NODE_REST_INFO_TIMEOUT = config("XRAY_NODE_REST_INFO_TIMEOUT", cast=int, default=5)
 XRAY_NODE_REST_CONNECT_TIMEOUT = config("XRAY_NODE_REST_CONNECT_TIMEOUT", cast=int, default=10)

@@ -10,15 +10,13 @@ from app.db import GetDB, crud
 from app.models.node import NodeStatus
 from app.models.user import UserResponse
 from app.utils.concurrency import threaded_function
-from app.xray.bs_limit import strip_blocked_clients
-from app.xray.cascade_config import cascade_config
-from app.xray.inbound_filter import apply_inbound_filter
 from app.xray.node import XRayNode
+from app.xray.node_config import node_config_json
 from config import (
+    XRAY_NODE_CONNECT_CONCURRENCY,
     XRAY_NODE_CONNECT_RETRIES,
     XRAY_NODE_CONNECT_RETRY_DELAY,
     XRAY_NODE_CONNECT_STALE_TIMEOUT,
-    XRAY_NODE_MAX_CONCURRENT_CONNECTS,
 )
 from xray_api import XRay as XRayAPI
 from xray_api.types.account import Account, XTLSFlows
@@ -471,16 +469,6 @@ def _cascade_kwargs(db, dbnode) -> dict:
     return {"role": "direct"}
 
 
-def _node_specific_config(base_config, node_inbound_tags):
-    """Вернуть конфиг для конкретной ноды.
-
-    node_inbound_tags пуст/None → base_config без изменений
-    (обратная совместимость: нода получает все инбаунды).
-    Иначе — копия с инфраструктурными + назначенными ноде инбаундами.
-    """
-    return apply_inbound_filter(base_config, node_inbound_tags)
-
-
 def remove_node(node_id: int):
     if node_id in xray.nodes:
         try:
@@ -538,7 +526,7 @@ global _connecting_nodes
 _connecting_nodes = set()
 _connecting_started_at = {}
 _connecting_nodes_lock = threading.Lock()
-_connect_semaphore = threading.Semaphore(max(1, XRAY_NODE_MAX_CONCURRENT_CONNECTS))
+_connect_semaphore = threading.Semaphore(max(1, XRAY_NODE_CONNECT_CONCURRENCY))
 
 
 def is_connect_in_progress(node_id: int) -> bool:
@@ -650,12 +638,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
             try:
                 _cleanup_node_connection(node)
                 logger.info(f'Connecting to "{dbnode.name}" node (attempt {attempt}/{retries})')
-                node.start(
-                    strip_blocked_clients(
-                        cascade_config(_node_specific_config(config, node_inbound_tags), **cascade_kwargs),
-                        blocked_user_ids,
-                    )
-                )
+                node.start(config_json=node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids))
                 version = node.get_version()
                 _change_node_status(node_id, NodeStatus.connected, version=version)
                 logger.info(f'Connected to "{dbnode.name}" node, xray run on v{version}')
@@ -736,12 +719,7 @@ def restart_node(node_id, config=None):
         if config is None:
             config = xray.config.include_db_users()
 
-        node.restart(
-            strip_blocked_clients(
-                cascade_config(_node_specific_config(config, node_inbound_tags), **cascade_kwargs),
-                blocked_user_ids,
-            )
-        )
+        node.restart(config_json=node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids))
         logger.info(f'Xray core of "{dbnode.name}" node restarted')
     except Exception as e:
         try:

@@ -16,6 +16,7 @@ from websocket import WebSocketConnectionClosedException, WebSocketTimeoutExcept
 
 from app.models.node import NodeProtocol
 from app.xray.config import XRayConfig
+from app.xray.node_config import inline_local_certificates
 from config import (
     XRAY_NODE_CERT_FETCH_TIMEOUT,
     XRAY_NODE_GRPC_READY_RETRIES,
@@ -187,22 +188,7 @@ class ReSTXRayNode:
             self._recreate_session()
 
     def _prepare_config(self, config: XRayConfig):
-        for inbound in config.get("inbounds", []):
-            streamSettings = inbound.get("streamSettings") or {}
-            tlsSettings = streamSettings.get("tlsSettings") or {}
-            certificates = tlsSettings.get("certificates") or []
-            for certificate in certificates:
-                if certificate.get("certificateFile"):
-                    with open(certificate["certificateFile"]) as file:
-                        certificate["certificate"] = [line.strip() for line in file.readlines()]
-                        del certificate["certificateFile"]
-
-                if certificate.get("keyFile"):
-                    with open(certificate["keyFile"]) as file:
-                        certificate["key"] = [line.strip() for line in file.readlines()]
-                        del certificate["keyFile"]
-
-        return config
+        return inline_local_certificates(config)
 
     def make_request(self, path: str, timeout: int, **params):
         try:
@@ -301,7 +287,7 @@ class ReSTXRayNode:
         res = self.make_request("/", timeout=XRAY_NODE_REST_INFO_TIMEOUT)
         return res.get("core_version")
 
-    def start(self, config: XRayConfig):
+    def start(self, config: XRayConfig = None, *, config_json: str | None = None):
         if not self._session_id:
             self.connect()
         else:
@@ -319,11 +305,13 @@ class ReSTXRayNode:
         except NodeAPIError:
             pass
 
-        config = self._prepare_config(config)
-        json_config = config.to_json()
+        if config_json is None:
+            assert config is not None, "start() requires either config or config_json"
+            config = self._prepare_config(config)
+            config_json = config.to_json()
 
         try:
-            res = self.make_request("/start", timeout=XRAY_NODE_REST_START_TIMEOUT, config=json_config)
+            res = self.make_request("/start", timeout=XRAY_NODE_REST_START_TIMEOUT, config=config_json)
         except NodeAPIError as exc:
             if exc.detail == "Xray is started already":
                 self._started = True
@@ -345,14 +333,16 @@ class ReSTXRayNode:
         self._close_grpc_api()
         self._started = False
 
-    def restart(self, config: XRayConfig):
+    def restart(self, config: XRayConfig = None, *, config_json: str | None = None):
         if not self.connected:
             self.connect()
 
-        config = self._prepare_config(config)
-        json_config = config.to_json()
+        if config_json is None:
+            assert config is not None, "restart() requires either config or config_json"
+            config = self._prepare_config(config)
+            config_json = config.to_json()
 
-        res = self.make_request("/restart", timeout=XRAY_NODE_REST_RESTART_TIMEOUT, config=json_config)
+        res = self.make_request("/restart", timeout=XRAY_NODE_REST_RESTART_TIMEOUT, config=config_json)
 
         self._started = True
         self._setup_api()
@@ -510,27 +500,14 @@ class RPyCXRayNode:
         return self.remote.fetch_xray_version()
 
     def _prepare_config(self, config: XRayConfig):
-        for inbound in config.get("inbounds", []):
-            streamSettings = inbound.get("streamSettings") or {}
-            tlsSettings = streamSettings.get("tlsSettings") or {}
-            certificates = tlsSettings.get("certificates") or []
-            for certificate in certificates:
-                if certificate.get("certificateFile"):
-                    with open(certificate["certificateFile"]) as file:
-                        certificate["certificate"] = [line.strip() for line in file.readlines()]
-                        del certificate["certificateFile"]
+        return inline_local_certificates(config)
 
-                if certificate.get("keyFile"):
-                    with open(certificate["keyFile"]) as file:
-                        certificate["key"] = [line.strip() for line in file.readlines()]
-                        del certificate["keyFile"]
-
-        return config
-
-    def start(self, config: XRayConfig):
-        config = self._prepare_config(config)
-        json_config = config.to_json()
-        self.remote.start(json_config)
+    def start(self, config: XRayConfig = None, *, config_json: str | None = None):
+        if config_json is None:
+            assert config is not None, "start() requires either config or config_json"
+            config = self._prepare_config(config)
+            config_json = config.to_json()
+        self.remote.start(config_json)
         self.started = True
 
         # connect to API
@@ -562,11 +539,13 @@ class RPyCXRayNode:
         self.started = False
         self._api = None
 
-    def restart(self, config: XRayConfig):
+    def restart(self, config: XRayConfig = None, *, config_json: str | None = None):
         self.started = False
-        config = self._prepare_config(config)
-        json_config = config.to_json()
-        self.remote.restart(json_config)
+        if config_json is None:
+            assert config is not None, "restart() requires either config or config_json"
+            config = self._prepare_config(config)
+            config_json = config.to_json()
+        self.remote.restart(config_json)
         self.started = True
 
     @contextmanager
