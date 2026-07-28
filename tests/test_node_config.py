@@ -1,3 +1,4 @@
+import copy
 import json
 import threading
 import time
@@ -66,6 +67,17 @@ class NoCacheAttrConfig(FakeConfig):
         if name == "_node_json_cache":
             raise AttributeError("no cache slot")
         super().__setattr__(name, value)
+
+
+class DeepCopyConfig(FakeConfig):
+    """В отличие от FakeConfig.copy() (вручную пересобирает dict, теряя произвольные
+    атрибуты), здесь copy() == copy.deepcopy(self) — как в настоящем XRayConfig.copy()
+    (app/xray/config.py). Нужен, чтобы регрессионный тест реально гонял deepcopy по
+    навешанному _node_json_cache и ловил TypeError на threading.Lock, а не проходил
+    мимо бага, как это делает FakeConfig."""
+
+    def copy(self):
+        return copy.deepcopy(self)
 
 
 def test_signature_is_order_independent():
@@ -244,6 +256,33 @@ def test_node_config_json_falls_back_when_attribute_rejected():
 
 
 from app.xray.node_config import inline_local_certificates
+
+
+def test_real_deepcopy_config_with_cache_survives_copy():
+    """Регрессия NPVPN-1727: XRayConfig.copy() == deepcopy(self) (app/xray/config.py).
+    include_db_users() вешает _NodeJsonCache (с threading.Lock внутри) на волновой
+    конфиг; build_node_config_json зовёт base_config.copy() для любой ноды с непустыми
+    тегами, cascade-ролью entry/exit или заблокированными пользователями. Без
+    _NodeJsonCache.__deepcopy__ это падает с `TypeError: cannot pickle
+    '_thread.lock' object`, и такие ноды никогда не подключаются."""
+    base = DeepCopyConfig(
+        {"inbounds": [dict(i) for i in INBOUNDS], "outbounds": [{"tag": "direct"}]},
+        inbounds_by_tag={"VLESS_TCP": {}},
+    )
+    base._node_json_cache = _NodeJsonCache(base)
+
+    # Прямая гарантия фикса: deepcopy конфига с кэшем не должен падать на Lock.
+    cloned = copy.deepcopy(base)
+    assert isinstance(cloned, DeepCopyConfig)
+
+    # Реальный путь сборки: непустые теги (apply_inbound_filter → .copy()) и
+    # заблокированный пользователь (strip_blocked_clients → .copy()) — вместе
+    # заставляют build_node_config_json дважды пройти через base_config.copy().
+    js = build_node_config_json(base, ["VLESS_TCP"], {"role": "direct"}, [1])
+    data = json.loads(js)
+    assert {i["tag"] for i in data["inbounds"]} == {"API_INBOUND", "VLESS_TCP"}
+    vless = next(i for i in data["inbounds"] if i["tag"] == "VLESS_TCP")
+    assert {c["email"] for c in vless["settings"]["clients"]} == {"2.bob"}
 
 
 def _cert_config(tmp_path):

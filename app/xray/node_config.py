@@ -51,7 +51,7 @@ def build_node_config_json(
     return cfg.to_json()
 
 
-def inline_local_certificates(config):
+def inline_local_certificates(config: dict) -> dict:
     """Заменить certificateFile/keyFile инбаундов на inline certificate/key (список строк).
 
     Раньше это делал XRayNode._prepare_config на каждую ноду перед сериализацией. Вынесено
@@ -88,6 +88,13 @@ class _NodeJsonCache:
         self._cache: dict[tuple, str] = {}
         self._lock = threading.Lock()
         self.build_count = 0
+
+    def __deepcopy__(self, memo):
+        # XRayConfig.copy() == deepcopy(self); the per-node config copies made during a
+        # build are transient (serialized once, never re-cached or used as a wave base),
+        # and threading.Lock can't be deep-copied. Share the cache by reference instead
+        # of copying it — the copy's cache is never read.
+        return self
 
     def get(
         self,
