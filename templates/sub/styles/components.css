@@ -157,7 +157,6 @@
 .card-content {
     display: flex;
     flex-direction: column;
-    /* align-items: center; */
     gap: 16px;
 }
 
@@ -786,6 +785,10 @@
 
 
 @media (min-width: 1024px) {
+    .card-content {
+        padding-bottom: 120px;    
+    }
+
     .page-content {
         margin-bottom: 80px;
     }
