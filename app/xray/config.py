@@ -13,6 +13,7 @@ from app.db import models as db_models
 from app.models.proxy import ProxyTypes
 from app.models.user import UserStatus
 from app.utils.crypto import get_cert_SANs
+from app.xray.node_config import _NodeJsonCache, inline_local_certificates
 from config import DEBUG, XRAY_EXCLUDE_INBOUND_TAGS, XRAY_FALLBACKS_INBOUND_TAG
 
 
@@ -406,6 +407,12 @@ class XRayConfig(dict):
                             del client["flow"]
 
                         clients.append(client)
+
+        # Серты инлайним один раз здесь (до шаринга/сериализации), чтобы пер-нодный
+        # билд и node.start не читали файлы и не сериализовали их заново.
+        inline_local_certificates(config)
+        # Кэш пер-нодного JSON на волну: все connect_node этого config шарят его.
+        config._node_json_cache = _NodeJsonCache(config)
 
         if DEBUG:
             with open("generated_config-debug.json", "w") as f:
