@@ -1,0 +1,38 @@
+# .review.yml — конфигурация rag-reviewer для npvpn/panel
+
+# Кластеризация подсистем для summary: app/* уже разложен по пакетам на глубине 2
+# (app/subscription, app/xray, app/routers, app/models, app/jobs, ...), поэтому
+# per-prefix override не нужен.
+summary_cluster_depth: 2
+
+paths:
+  ignore:
+    # 142 сгенерированных protobuf-модуля (_pb2.py / _pb2_grpc.py) — 38% корпуса.
+    - xray_api/proto
+    # ~84 автогенерируемые миграции MySQL. app/db/migrations/env.py остаётся в индексе.
+    - app/db/migrations/versions
+
+context_limits:
+  search_codebase:
+    floor: 4
+    ceiling: 15
+    ratio: 0.50
+    abs_floor: 0.30
+    candidate_pool: 30
+    ann_distance_max: 0.65
+  search_tasks:
+    floor: 3
+    ceiling: 10
+  graph:
+    hops: 1
+    callers_topk: 25
+
+# Доска «Разработка» в Yougile — общая для всех репозиториев NPVPN (граф задач
+# ключуется по коду задачи, без привязки к репозиторию). Секретов в файле нет.
+task_board:
+  type: yougile
+  project: NPVPN
+  key_pattern: 'NPVPN-\d+'
+  create_target: 00176a3f-891a-4c52-9339-0782c7a774df   # Inbox
+  done_target: d2234026-330f-48c1-b591-380712667cd9     # Code review
+  options: {}
