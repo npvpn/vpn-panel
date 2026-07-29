@@ -2,6 +2,7 @@ import {
   BoxProps,
   Button,
   chakra,
+  FormControl,
   Grid,
   GridItem,
   HStack,
@@ -10,9 +11,9 @@ import {
   InputGroup,
   InputLeftElement,
   InputRightElement,
-  Select,
   Spinner,
 } from "@chakra-ui/react";
+import { StylesConfig } from "react-select";
 import {
   ArrowPathIcon,
   MagnifyingGlassIcon,
@@ -21,8 +22,9 @@ import {
 import classNames from "classnames";
 import { useDashboard } from "contexts/DashboardContext";
 import debounce from "lodash.debounce";
-import React, { FC, useEffect, useState } from "react";
+import React, { FC, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import ReactSelect from "react-select";
 import { fetch } from "service/http";
 import { Bot } from "types/Bot";
 
@@ -46,6 +48,76 @@ const setSearchField = debounce((search: string) => {
   });
 }, 300);
 
+interface BotOption {
+  value: number;
+  label: string;
+}
+
+const customStyles: StylesConfig<BotOption, false> = {
+  control: (base) => ({
+    ...base,
+    minHeight: 40,
+    height: 40,
+    fontSize: 16,
+    borderColor: "var(--chakra-colors-light-border)",
+    boxShadow: "none",
+    "&:hover": {
+      borderColor: "var(--chakra-colors-light-border)",
+    },
+  }),
+
+  valueContainer: (base) => ({
+    ...base,
+    height: 40,
+    padding: "0 12px",
+  }),
+
+  input: (base) => ({
+    ...base,
+    margin: 0,
+    padding: 0,
+    fontSize: 16,
+  }),
+
+  singleValue: (base) => ({
+    ...base,
+    fontSize: 16,
+    margin: 0,
+  }),
+
+  placeholder: (base) => ({
+    ...base,
+    fontSize: 16,
+    margin: 0,
+    color: "var(--chakra-colors-gray-500)",
+  }),
+
+  indicatorsContainer: (base) => ({
+    ...base,
+    height: 40,
+  }),
+
+  clearIndicator: (base) => ({
+    ...base,
+    padding: 8,
+  }),
+
+  dropdownIndicator: (base) => ({
+    ...base,
+    padding: 8,
+  }),
+
+  menuPortal: (base) => ({
+    ...base,
+    zIndex: 9999,
+  }),
+
+  menu: (base) => ({
+    ...base,
+    zIndex: 9999,
+  }),
+};
+
 export const Filters: FC<FilterProps> = ({ ...props }) => {
   const {
     loading,
@@ -58,8 +130,36 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
     syncStatus,
   } = useDashboard();
   const { t } = useTranslation();
-  const [search, setSearch] = useState(useDashboard.getState().filters.search || "");
+  const [search, setSearch] = useState(
+    useDashboard.getState().filters.search || ""
+  );
   const [bots, setBots] = useState<Bot[]>([]);
+  const [selectedBotId, setSelectedBotId] = useState<number | null>(null);
+
+  const botOptions = useMemo<BotOption[]>(
+    () =>
+      bots.map((bot) => ({
+        value: bot.id,
+        label: `@${bot.username}`,
+      })),
+    [bots]
+  );
+
+  const selectedOption = useMemo(
+    () => botOptions.find((o) => o.value === selectedBotId) ?? null,
+    [botOptions, selectedBotId]
+  );
+
+  const handleBotChange = (option: BotOption | null) => {
+    const botId = option?.value ?? null;
+    setSelectedBotId(botId);
+    onFilterChange({
+      ...filters,
+      offset: 0,
+      bot_username: option?.label.replace("@", "") || undefined,
+    });
+  };
+
   useEffect(() => {
     fetch<Bot[]>("/bots")
       .then(setBots)
@@ -126,31 +226,28 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       </GridItem>
       <GridItem colSpan={2} order={{ base: 1, md: 2 }}>
         <HStack justifyContent="flex-end" alignItems="center" h="full">
-          <Select
-            size="sm"
-            maxW="220px"
-            value={filters.bot_username || ""}
-            onChange={(event) =>
-              onFilterChange({
-                ...filters,
-                offset: 0,
-                bot_username: event.target.value || undefined,
-              })
-            }
-          >
-            <option value="">{t("filters.allBots")}</option>
-            {bots.map((bot) => (
-              <option key={bot.id} value={bot.username}>
-                @{bot.username}
-              </option>
-            ))}
-          </Select>
+          <FormControl w="220px" flexShrink={0}>
+            <ReactSelect<BotOption>
+              options={botOptions}
+              value={selectedOption}
+              onChange={handleBotChange}
+              placeholder={t("botSettings.selectBot")}
+              noOptionsMessage={() => t("botSettings.noBotsFound")}
+              isSearchable
+              isClearable
+              styles={customStyles}
+              menuPortalTarget={document.body}
+              menuPosition="fixed"
+            />
+          </FormControl>
           <IconButton
             aria-label="refresh users"
             disabled={loading}
             onClick={refetchUsers}
-            size="sm"
             variant="outline"
+            h="40px"
+            w="40px"
+            minW="40px"
           >
             <ReloadIcon
               className={classNames({
@@ -159,8 +256,9 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
             />
           </IconButton>
           <Button
-            size="sm"
             variant="outline"
+            h="40px"
+            px={4}
             isLoading={isSyncingInbounds}
             onClick={() => onConfirmingSyncInbounds(true)}
           >
@@ -190,9 +288,9 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
           )}
           <Button
             colorScheme="primary"
-            size="sm"
-            onClick={() => onCreateUser(true)}
+            h="40px"
             px={5}
+            onClick={() => onCreateUser(true)}
           >
             {t("createUser")}
           </Button>

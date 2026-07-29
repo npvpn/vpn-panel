@@ -270,6 +270,7 @@
   "botSettings.saved": "机器人设置已保存",
   "botSettings.bot": "机器人",
   "botSettings.selectBot": "选择机器人",
+  "botSettings.noBotsFound": "未找到机器人",
   "botSettings.subSupportUrl": "支持链接",
   "botSettings.subProfileTitle": "配置标题",
   "botSettings.botUrl": "机器人链接",
