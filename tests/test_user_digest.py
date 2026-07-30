@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from app.models.user import UserStatus
 from app.services.user_digest import get_users_digest
 
 
@@ -51,7 +52,7 @@ class _FakeDb:
 
 
 def test_returns_three_fields_and_total():
-    db = _FakeDb([("530399467_123", "active", 1767225600)])
+    db = _FakeDb([("530399467_123", UserStatus.active, 1767225600)])
     users, total = get_users_digest(db, admins=None, bot_username=None, offset=None, limit=None)
     assert users == [{"username": "530399467_123", "status": "active", "expire": 1767225600}]
     assert total == 1
@@ -72,6 +73,6 @@ def test_pagination_is_passed_through():
 
 
 def test_null_expire_is_preserved():
-    db = _FakeDb([("530399467_123", "active", None)])
+    db = _FakeDb([("530399467_123", UserStatus.active, None)])
     users, _ = get_users_digest(db, admins=None, bot_username=None, offset=None, limit=None)
     assert users[0]["expire"] is None

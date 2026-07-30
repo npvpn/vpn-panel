@@ -41,6 +41,7 @@ def get_users_digest(
         query = query.limit(limit)
 
     users = [
-        {"username": username, "status": str(status), "expire": expire} for username, status, expire in query.all()
+        {"username": username, "status": getattr(status, "value", status), "expire": expire}
+        for username, status, expire in query.all()
     ]
     return users, total
