@@ -354,6 +354,17 @@ class UsersResponse(BaseModel):
     total: int
 
 
+class UserDigestEntry(BaseModel):
+    username: str
+    status: str
+    expire: int | None = None
+
+
+class UsersDigestResponse(BaseModel):
+    users: list[UserDigestEntry]
+    total: int
+
+
 class UserDeviceBase(BaseModel):
     hwid: str
     device_os: str | None = None
