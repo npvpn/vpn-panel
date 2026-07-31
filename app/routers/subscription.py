@@ -14,6 +14,7 @@ from app.models.user import SubscriptionUserResponse, UserResponse
 from app.subscription.bot_settings import resolve_bot_settings
 from app.subscription.bs_context_builder import build_bs_context
 from app.subscription.headers import build_content_disposition, get_routing_header
+from app.subscription.not_found import render_not_found
 from app.subscription.page import build_subscription_page_context
 from app.subscription.share import generate_subscription
 from app.subscription.subscription_service import (
@@ -216,7 +217,7 @@ def user_subscription(
     # 1) Валидация токена и подготовка user/settings.
     dbuser, is_revoked, _ = resolve_subscription_context(token, db)
     if not dbuser:
-        return handle_not_found(request)
+        return render_not_found(request, db, token)
     crud.ensure_subscription_token(db, dbuser)
     is_expired = bool(dbuser.expire and dbuser.expire > 0 and dbuser.expire < int(datetime.now(UTC).timestamp()))
     user: UserResponse = UserResponse.model_validate(dbuser)
@@ -278,7 +279,7 @@ def revoke_subscription_device(
 ):
     dbuser, is_revoked, _ = resolve_subscription_context(token, db)
     if not dbuser:
-        return handle_not_found(request)
+        return render_not_found(request, db, token)
 
     is_expired = bool(dbuser.expire and dbuser.expire > 0 and dbuser.expire < int(datetime.now(UTC).timestamp()))
     if is_revoked or is_expired:
@@ -331,7 +332,7 @@ def user_subscription_with_client_type(
     # рендера выбирается не по UA, а по параметру пути.
     dbuser, is_revoked, _ = resolve_subscription_context(token, db)
     if not dbuser:
-        return handle_not_found(request)
+        return render_not_found(request, db, token)
     crud.ensure_subscription_token(db, dbuser)
     is_expired = bool(dbuser.expire and dbuser.expire > 0 and dbuser.expire < int(datetime.now(UTC).timestamp()))
     user: UserResponse = UserResponse.model_validate(dbuser)
@@ -362,11 +363,3 @@ def user_subscription_with_client_type(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Unknown client type") from exc
     return render_subscription(ctx, plan)
-
-
-def handle_not_found(request: Request) -> Response:
-    """Returns a custom 404 error for browsers or an empty response for APIs."""
-    accept_header = request.headers.get("Accept", "")
-    if "text/html" in accept_header:
-        return HTMLResponse(render_template("sub/not_found.html"), status_code=404)
-    return Response(status_code=404)

@@ -158,3 +158,32 @@ def test_unparsable_token_skips_user_lookup(not_found, monkeypatch):
     ctx = not_found.build_not_found_page_context(db=object(), token="garbage")
 
     assert ctx["home_url"] == "https://t.me/only"
+
+
+def _request(accept: str):
+    """Минимальная замена fastapi.Request: нужен только заголовок Accept."""
+    return SimpleNamespace(headers={"Accept": accept})
+
+
+def test_api_client_gets_empty_404(not_found, monkeypatch):
+    def _must_not_render(name, context=None):
+        raise AssertionError("шаблон не должен рендериться для не-HTML клиента")
+
+    monkeypatch.setattr(not_found, "render_template", _must_not_render)
+
+    response = not_found.render_not_found(_request("*/*"), db=object(), token="whatever-long-token")
+
+    assert response.status_code == 404
+    assert response.body == b""
+
+
+def test_browser_gets_html_404(not_found, monkeypatch):
+    monkeypatch.setattr(not_found.crud, "get_user", lambda db, username: _user(_bot(web_url="https://cab.example")))
+    monkeypatch.setattr(not_found, "render_template", lambda name, context: f"<html>{context['home_url']}</html>")
+
+    response = not_found.render_not_found(
+        _request("text/html,application/xhtml+xml"), db=object(), token="whatever-long-token"
+    )
+
+    assert response.status_code == 404
+    assert b"https://cab.example" in response.body

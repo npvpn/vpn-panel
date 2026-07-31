@@ -16,13 +16,25 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi import Request, Response
+from fastapi.responses import HTMLResponse
+
 from app import logger
 from app.db import Session, crud
 from app.models.bot import apply_bot_settings_fallback
 from app.subscription.bot_settings import resolve_bot_settings
+from app.templates import render_template
 from app.utils.jwt import get_subscription_payload
 
 NOT_FOUND_TEMPLATE = "sub/not_found.html"
+
+
+def render_not_found(request: Request, db: Session, token: str) -> Response:
+    """404 подписки: браузеру — оформленная страница, VPN-клиентам и API — пустой ответ."""
+    if "text/html" not in request.headers.get("Accept", ""):
+        return Response(status_code=404)
+    context = build_not_found_page_context(db, token)
+    return HTMLResponse(render_template(NOT_FOUND_TEMPLATE, context), status_code=404)
 
 
 def build_not_found_page_context(db: Session, token: str) -> dict[str, Any]:
