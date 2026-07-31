@@ -363,10 +363,10 @@ def user_subscription_with_client_type(
         raise HTTPException(status_code=400, detail="Unknown client type") from exc
     return render_subscription(ctx, plan)
 
+
 def handle_not_found(request: Request) -> Response:
     """Returns a custom 404 error for browsers or an empty response for APIs."""
     accept_header = request.headers.get("Accept", "")
     if "text/html" in accept_header:
         return HTMLResponse(render_template("sub/not_found.html"), status_code=404)
     return Response(status_code=404)
-    
