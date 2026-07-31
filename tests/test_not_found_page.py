@@ -187,3 +187,29 @@ def test_browser_gets_html_404(not_found, monkeypatch):
 
     assert response.status_code == 404
     assert b"https://cab.example" in response.body
+
+
+def _render_real_template(context: dict) -> str:
+    """Рендер боевого templates/sub/not_found.html через тот же jinja-env, что и панель."""
+    import jinja2
+
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader([str(_ROOT / "templates"), str(_ROOT / "app/templates")]))
+    return env.get_template("sub/not_found.html").render(context)
+
+
+def test_template_renders_link_when_home_url_set():
+    html = _render_real_template({"home_url": "https://cab.example", "show_ads": True})
+
+    assert '<a href="https://cab.example"' in html
+    assert "<button" not in html
+
+
+def test_template_hides_button_without_home_url():
+    html = _render_real_template({"home_url": "", "show_ads": True})
+
+    assert "dark-btn" not in html
+
+
+def test_template_footer_respects_show_ads():
+    assert "npvpn" not in _render_real_template({"home_url": "", "show_ads": False})
+    assert "npvpn" in _render_real_template({"home_url": "", "show_ads": True})

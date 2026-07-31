@@ -19,9 +19,11 @@
             <p class="page-subtitle error-subtitle error-description" style="text-align: center; max-width: 28rem;">
                 Возможно, вы перешли по неверной ссылке или страница была удалена
             </p>
-            <!-- <button href="/" class="dark-btn" style="margin-top: 24px; font-size: 16px;">
+            {% if home_url %}
+            <a href="{{ home_url }}" target="_blank" rel="noopener noreferrer" class="dark-btn" style="margin-top: 24px; font-size: 16px;">
                 На главную
-            </button> -->
+            </a>
+            {% endif %}
         </div>
         {% if show_ads %}
             <footer class="footer_404">
@@ -33,14 +35,6 @@
                 </p>
             </footer>
         {% endif %}
-        <footer class="footer_404">
-                <p style="font-family: var(--font-family); font-size: 14px; color: var(--gray-4);">
-                    Сайт работает на платформе
-                    <a href="https://www.npvpn.net/" class="footer-link" target="_blank" rel="noopener noreferrer">
-                        npvpn
-                    </a>
-                </p>
-            </footer>
     </div>
 </body>
 </html>
