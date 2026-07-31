@@ -476,21 +476,16 @@ sudo apt install ./Happ.linux.x64.deb
               </template>
               </div>
             </div>
-              <div class="button-wrapper">
-                <a href="https://yougile.com/team/9a0e05abf438/#NPVPN-1686" target="_blank" rel="noopener noreferrer"
-                    class="w-full flex items-center justify-center font-bold py-4 transition-colors text-lg" style="font-family: var(--third-family)">
-                    Войти в личный кабинет
-                </a>
-              </div>
 
-              <!-- {% if web_url %}
+
+               {% if web_url %}
               <div class="button-wrapper">
                 <a href="{{ web_url }}" target="_blank" rel="noopener noreferrer"
                     class="w-full flex items-center justify-center font-bold py-4 transition-colors text-lg" style="font-family: var(--third-family)">
                     Войти в личный кабинет
                 </a>
               </div>
-            {% endif %} -->
+            {% endif %} 
           </main>
     
           <main x-show="currentPage === 'tariff'" style="max-width: 680px;">
@@ -703,5 +698,15 @@ sudo apt install ./Happ.linux.x64.deb
         </nav>
       </footer>
     </div>
+    {% if show_ads %}
+    <div class="footer-ad-bar">
+      <p class="footer-ad-inner">
+        Сайт работает на платформе
+        <a href="https://www.npvpn.net/" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: var(--blue);">
+          npvpn
+        </a>
+      </p>
+    </div>
+    {% endif %}
   </body>
 </html>
