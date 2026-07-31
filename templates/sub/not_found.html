@@ -6,6 +6,7 @@
     <title>Страница не найдена</title>
     <link rel="stylesheet" href="/statics/sub/styles/index.css" />
     <link rel="stylesheet" href="/statics/sub/styles/components.css" />
+    <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
     <link rel="icon" href="data:," />
 </head>
 <body>
@@ -18,9 +19,9 @@
             <p class="page-subtitle error-subtitle error-description" style="text-align: center; max-width: 28rem;">
                 Возможно, вы перешли по неверной ссылке или страница была удалена
             </p>
-            <button href="/" class="dark-btn" style="margin-top: 24px; font-size: 16px;">
+            <!-- <button href="/" class="dark-btn" style="margin-top: 24px; font-size: 16px;">
                 На главную
-            </button>
+            </button> -->
         </div>
         {% if show_ads %}
             <footer class="footer_404">
@@ -32,6 +33,14 @@
                 </p>
             </footer>
         {% endif %}
+        <footer class="footer_404">
+                <p style="font-family: var(--font-family); font-size: 14px; color: var(--gray-4);">
+                    Сайт работает на платформе
+                    <a href="https://www.npvpn.net/" class="footer-link" target="_blank" rel="noopener noreferrer">
+                        npvpn
+                    </a>
+                </p>
+            </footer>
     </div>
 </body>
 </html>
