@@ -369,3 +369,4 @@ def handle_not_found(request: Request) -> Response:
     if "text/html" in accept_header:
         return HTMLResponse(render_template("sub/not_found.html"), status_code=404)
     return Response(status_code=404)
+    
