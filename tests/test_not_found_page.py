@@ -107,6 +107,12 @@ def test_multi_bot_gives_no_link(not_found, monkeypatch):
         "get_bots",
         lambda db: [_bot(web_url="https://one.example"), _bot(web_url="https://two.example")],
     )
+    # apply_bot_settings_fallback(None) подставил бы env BOT_URL — застабленное
+    # значение узнаваемо не-пустое, чтобы тест реально ловил регресс на этот вызов,
+    # а не полагался на то, что DEFAULT_BOT_SETTINGS["bot_url"] в тестовой среде пуст.
+    monkeypatch.setattr(
+        not_found, "apply_bot_settings_fallback", lambda raw: {"web_url": "", "bot_url": "https://t.me/env-default"}
+    )
 
     ctx = not_found.build_not_found_page_context(db=object(), token="whatever-long-token")
 
@@ -114,16 +120,50 @@ def test_multi_bot_gives_no_link(not_found, monkeypatch):
     assert ctx["home_url"] == ""
 
 
-def test_no_bots_uses_env_defaults(not_found, monkeypatch):
-    monkeypatch.setattr(not_found.crud, "get_user", lambda db, username: None)
-    monkeypatch.setattr(not_found.crud, "get_bots", lambda db: [])
+def test_user_found_without_own_bot_gives_no_link(not_found, monkeypatch):
+    """Мультиботовая панель, у найденного пользователя bot is None (бот удалён) —
+    ступень 1 не должна подставлять чужого/env-бота, а провалиться на ступень 3."""
+    monkeypatch.setattr(not_found.crud, "get_user", lambda db, username: _user(bot=None))
     monkeypatch.setattr(
-        not_found, "apply_bot_settings_fallback", lambda raw: {"web_url": "", "bot_url": "https://t.me/env"}
+        not_found.crud,
+        "get_bots",
+        lambda db: [_bot(web_url="https://one.example"), _bot(web_url="https://two.example")],
+    )
+    monkeypatch.setattr(
+        not_found, "apply_bot_settings_fallback", lambda raw: {"web_url": "", "bot_url": "https://t.me/env-default"}
     )
 
     ctx = not_found.build_not_found_page_context(db=object(), token="whatever-long-token")
 
+    assert ctx["home_url"] == ""
+
+
+def test_no_bots_uses_env_defaults(not_found, monkeypatch):
+    monkeypatch.setattr(not_found.crud, "get_user", lambda db, username: None)
+    monkeypatch.setattr(not_found.crud, "get_bots", lambda db: [])
+    received_raw = []
+
+    def _fallback(raw):
+        received_raw.append(raw)
+        return {"web_url": "", "bot_url": "https://t.me/env"}
+
+    monkeypatch.setattr(not_found, "apply_bot_settings_fallback", _fallback)
+
+    ctx = not_found.build_not_found_page_context(db=object(), token="whatever-long-token")
+
+    # Ноль ботов в панели -> raw должен быть None: это и есть «взяли env-дефолты»,
+    # а не просто проброс произвольного значения через стаб.
+    assert received_raw == [None]
     assert ctx["home_url"] == "https://t.me/env"
+
+
+def test_unsafe_url_scheme_gives_no_link(not_found, monkeypatch):
+    bot = _bot(web_url="", bot_url="javascript:alert(1)")
+    monkeypatch.setattr(not_found.crud, "get_user", lambda db, username: _user(bot))
+
+    ctx = not_found.build_not_found_page_context(db=object(), token="whatever-long-token")
+
+    assert ctx["home_url"] == ""
 
 
 def test_show_ads_taken_from_bot_settings(not_found, monkeypatch):
