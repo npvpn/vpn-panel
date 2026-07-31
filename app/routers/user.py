@@ -33,6 +33,7 @@ from app.models.user import (
     UserDeviceUpdate,
     UserModify,
     UserResponse,
+    UsersDigestResponse,
     UsersResponse,
     UserStatus,
     UsersUsagesResponse,
@@ -496,6 +497,31 @@ def get_users(
     for u in users:
         crud.ensure_subscription_token(db, u)
     return {"users": users, "total": count}
+
+
+@router.get(
+    "/users/digest",
+    response_model=UsersDigestResponse,
+    responses={403: responses._403},
+)
+def get_users_digest_endpoint(
+    offset: int = None,
+    limit: int = None,
+    bot_username: str | None = None,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.get_current),
+):
+    """Лёгкий срез {username, status, expire} для сверки с ботом (NPVPN-1643)."""
+    from app.services.user_digest import get_users_digest
+
+    users, total = get_users_digest(
+        db,
+        admins=None if admin.is_sudo else [admin.username],
+        bot_username=bot_username,
+        offset=offset,
+        limit=limit,
+    )
+    return {"users": users, "total": total}
 
 
 @router.post("/users/reset", responses={403: responses._403, 404: responses._404})
