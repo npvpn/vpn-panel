@@ -5,6 +5,9 @@ SQLAlchemy 2.0 всегда падает InvalidRequestError, из-за чего
 терялся на каждом тике джоба (строки создавались один раз и больше не росли).
 """
 
+import glob
+import importlib.util
+import os
 import sys
 import types
 from contextlib import contextmanager
@@ -33,7 +36,7 @@ _share_stub.generate_v2ray_links = lambda *args, **kwargs: []
 sys.modules.setdefault("app.subscription.share", _share_stub)
 
 from app.db.base import Base  # noqa: E402
-from app.db.models import Node, NodeUserBsUsage, User  # noqa: E402
+from app.db.models import Bot, BotSettings, Node, NodeUserBsUsage, User  # noqa: E402
 from app.jobs import record_usages  # noqa: E402
 from app.jobs.record_usages import record_bs_user_stats  # noqa: E402
 from app.xray.bs_limit import period_keys  # noqa: E402
@@ -43,6 +46,7 @@ if sys.modules.get("app.subscription.share") is _share_stub:
 
 NODE_ID = 13
 USER_ID = 45581
+GB = 1024**3
 
 
 @pytest.fixture
@@ -105,3 +109,62 @@ def test_stale_month_resets_counter(db, patched_getdb):
     row = bs_usage(db)
     assert row.monthly_used == 700
     assert row.monthly_period == period_keys(datetime.utcnow())
+
+
+def _load_bs_period_migration():
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    matches = glob.glob(os.path.join(here, "app/db/migrations/versions/*_npvpn_1768_bs_extra_period.py"))
+    assert len(matches) == 1, f"expected exactly one bs_extra_period migration, got {matches}"
+    spec = importlib.util.spec_from_file_location("bs_extra_period_migration", matches[0])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_backfill_restores_already_consumed_pool(db):
+    """База 3 ГБ, куплено 10 ГБ, израсходовано 8 ГБ: в БД лежит съеденный пул 5 ГБ → чиним до 10 ГБ."""
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": 3 * GB}))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    user.bs_extra = 5 * GB
+    db.add(
+        NodeUserBsUsage(
+            user_id=USER_ID,
+            node_id=NODE_ID,
+            monthly_used=8 * GB,
+            monthly_period=period_keys(datetime.utcnow()),
+        )
+    )
+    db.commit()
+
+    _load_bs_period_migration()._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB
+    assert user.bs_extra_period == period_keys(datetime.utcnow())
+
+
+def test_backfill_leaves_pool_intact_when_base_not_exceeded(db):
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": 3 * GB}))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    user.bs_extra = 10 * GB
+    db.add(
+        NodeUserBsUsage(
+            user_id=USER_ID,
+            node_id=NODE_ID,
+            monthly_used=2 * GB,
+            monthly_period=period_keys(datetime.utcnow()),
+        )
+    )
+    db.commit()
+
+    _load_bs_period_migration()._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    assert db.query(User).filter(User.id == USER_ID).one().bs_extra == 10 * GB

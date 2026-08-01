@@ -152,6 +152,7 @@ class User(Base):
     on_hold_timeout = Column(DateTime, nullable=True, default=None)
     device_limit = Column(Integer, nullable=True, default=None)
     bs_extra = Column(BigInteger, nullable=True, default=None)
+    bs_extra_period = Column(String(7), nullable=True, default=None)
 
     # * Positive values: User will be deleted after the value of this field in days automatically.
     # * Negative values: User won't be deleted automatically at all.
