@@ -32,9 +32,6 @@ from app.models.proxy import (
 )
 from app.models.user import ReminderType, UserDataLimitResetStrategy, UserStatus
 
-_UNSET = object()
-"""Сентинел «кеш ещё не заполнен» — отличим от легитимного None в bs_monthly_limit_total."""
-
 host_bot_association = Table(
     "host_bot_association",
     Base.metadata,
@@ -188,24 +185,14 @@ class User(Base):
     def bs_monthly_limit_total(self) -> int | None:
         """Месячный БС-потолок (лимит бота + купленный пул), None если лимит не задан.
 
-        Значение кешируется на инстансе (`_bs_monthly_limit_total_cache`): `bs_monthly_used`
-        обращается к этому свойству как к guard'у, а Pydantic при `UserResponse.model_validate`
-        читает оба поля по отдельности — без кеша `normalize_bs_extra_period` (round-trip в БД)
-        отрабатывал бы дважды на один ответ.
+        Пул берём с самого инстанса — оба атрибута уже загружены, и внутри месяца
+        свойство не делает ни одного запроса. В БД идём только когда период пула
+        отстал: тогда нужен агрегат ещё не списанного расхода прошлого месяца.
         """
-        cached = self.__dict__.get("_bs_monthly_limit_total_cache", _UNSET)
-        if cached is not _UNSET:
-            return cast("int | None", cached)
-
-        result = self._compute_bs_monthly_limit_total()
-        self.__dict__["_bs_monthly_limit_total_cache"] = result
-        return result
-
-    def _compute_bs_monthly_limit_total(self) -> int | None:
         from sqlalchemy.orm import object_session
 
         from app.models.bot import apply_bot_settings_fallback
-        from app.xray.bs_limit import monthly_effective_limit, period_keys
+        from app.xray.bs_limit import carry_over_pool, monthly_effective_limit, period_keys
 
         if not self.bot or not self.bot.settings:
             return None
@@ -214,15 +201,18 @@ class User(Base):
         if not monthly_limit:
             return None
 
+        pool = int(self.bs_extra or 0)
+        period = cast("str | None", self.bs_extra_period)
+        yyyymm = period_keys(datetime.utcnow())
         db = object_session(self)
-        if db is None:
-            return monthly_effective_limit(monthly_limit, self.bs_extra or 0)
+        # Без сессии (detached-объект) агрегат не достать — отдаём заведомо
+        # ненормализованный пул: если период отстал, потолок будет завышен до
+        # ближайшего тика джобы учёта.
+        if db is not None and period and period < yyyymm:
+            from app.db.crud import get_bs_usage_totals_stale
 
-        from app.db.crud import normalize_bs_extra_period
-
-        pool = normalize_bs_extra_period(
-            db, cast(int, self.id), monthly_limit, period_keys(datetime.utcnow()), persist=False
-        )
+            stale_used = get_bs_usage_totals_stale(db, cast(int, self.id), yyyymm, period)
+            pool = carry_over_pool(pool, stale_used, monthly_limit)
         return monthly_effective_limit(monthly_limit, pool)
 
     @property
