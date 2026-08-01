@@ -249,6 +249,27 @@ def test_normalize_subtracts_previous_month_overflow(db):
     assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=False) == 5 * GB
 
 
+def test_normalize_is_noop_when_period_is_in_the_future(db):
+    """Период больше текущего (гонка на границе суток UTC) нельзя откатывать назад:
+    иначе следующий тик вычтет тот же перерасход второй раз."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2999-12"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2999-12"))
+    db.commit()
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=True) == 10 * GB
+    db.commit()
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB
+    assert user.bs_extra_period == "2999-12"
+
+
 def test_normalize_persists_pool_and_period(db):
     from app.db import crud
 
@@ -266,6 +287,51 @@ def test_normalize_persists_pool_and_period(db):
     user = db.query(User).filter(User.id == USER_ID).one()
     assert user.bs_extra == 5 * GB
     assert user.bs_extra_period == now
+
+
+def test_normalize_persist_reads_pool_from_db_not_identity_map(db):
+    """Регресс ревью: под FOR UPDATE пул надо перечитать, а не взять из identity map.
+
+    Юзер уже загружен в сессию роутером; между загрузкой и вызовом джоба учёта успела
+    нормализовать пул (10 → 5 ГБ) и переставить строку счётчика на текущий месяц.
+    Если читать закешированные атрибуты, перенос за прошлый месяц отменится и пул
+    вырастет обратно до 10 ГБ — юзер получит неоплаченный трафик.
+    """
+    from sqlalchemy import text
+
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    dbuser = db.query(User).filter(User.id == USER_ID).one()
+    assert dbuser.bs_extra == 10 * GB  # атрибуты осели в identity map
+
+    # Конкурентная транзакция мимо ORM: пул перенесён, строка счётчика уже за новый месяц.
+    db.execute(
+        text("UPDATE users SET bs_extra = :pool, bs_extra_period = :period WHERE id = :uid"),
+        {"pool": 5 * GB, "period": now, "uid": USER_ID},
+    )
+    db.execute(
+        text("UPDATE node_user_bs_usage SET monthly_used = 0, monthly_period = :period WHERE user_id = :uid"),
+        {"period": now, "uid": USER_ID},
+    )
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=True) == 5 * GB
+    db.commit()
+    db.expire_all()
+    assert db.query(User).filter(User.id == USER_ID).one().bs_extra == 5 * GB
+
+
+def test_normalize_persist_returns_zero_for_missing_user(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    assert crud.normalize_bs_extra_period(db, USER_ID + 999, 3 * GB, now, persist=True) == 0
 
 
 def test_stale_totals_ignore_rows_older_than_pool_period(db):

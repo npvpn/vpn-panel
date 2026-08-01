@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, cast
 
-from sqlalchemy import and_, delete, func, or_, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session, joinedload
 from sqlalchemy.sql.functions import coalesce
@@ -1920,21 +1920,24 @@ def normalize_bs_extra_period(db: Session, user_id: int, monthly_limit: int, yyy
 
     Период совпадает или пуст → no-op. persist=True пишет новое значение под
     SELECT ... FOR UPDATE в текущей транзакции (коммит — на вызывающем).
+
+    Читаем колоночным select, а не ORM-сущностью: `Query.first()` по User блокировку
+    берёт, но уже загруженный в identity map инстанс не перезаписывает, и под локом
+    мы бы увидели снимок пула на начало HTTP-запроса вместо актуального значения.
     """
     from app.xray.bs_limit import carry_over_pool
 
+    stmt = select(User.bs_extra, User.bs_extra_period).where(User.id == user_id)
     if persist:
-        dbuser = db.query(User).filter(User.id == user_id).with_for_update().first()
-        if dbuser is None:
-            return 0
-        pool, period = int(dbuser.bs_extra or 0), cast("str | None", dbuser.bs_extra_period)
-    else:
-        row = db.query(User.bs_extra, User.bs_extra_period).filter(User.id == user_id).first()
-        if row is None:
-            return 0
-        pool, period = int(row.bs_extra or 0), row.bs_extra_period
+        stmt = stmt.with_for_update()
+    row = db.execute(stmt).first()
+    if row is None:
+        return 0
+    pool, period = int(row.bs_extra or 0), cast("str | None", row.bs_extra_period)
 
-    if not period or period == yyyymm:
+    # period > yyyymm (гонка на границе суток UTC, скачок часов) тоже no-op: иначе
+    # период откатится назад и следующий тик вычтет перерасход второй раз.
+    if not period or period >= yyyymm:
         return pool
 
     new_pool = carry_over_pool(pool, get_bs_usage_totals_stale(db, user_id, yyyymm, period), monthly_limit)
