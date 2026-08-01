@@ -173,3 +173,26 @@ def test_carry_over_without_limit_keeps_pool_intact():
 
 def test_carry_over_none_pool_is_zero():
     assert carry_over_pool(None, 999, 3) == 0
+
+
+def test_stale_sum_for_review_respects_pool_period():
+    """Батч-логика review_bs_nodes: суммируем только периоды >= периода пула."""
+    import sys
+    import types
+
+    # app.jobs.review_bs_nodes тянет app.db.models → app.models.user → app.subscription.share,
+    # а тот в песочнице conftest (app.subscription заглушен пустым пакетом без __init__)
+    # не находит свои же символы через `from . import *`. Тот же приём, что и в
+    # tests/test_record_bs_usage.py — подменяем только лист share на лёгкую заглушку.
+    if "app.subscription.share" not in sys.modules:
+        share_stub = types.ModuleType("app.subscription.share")
+        share_stub.generate_v2ray_links = lambda *args, **kwargs: []
+        sys.modules["app.subscription.share"] = share_stub
+
+    from app.jobs.review_bs_nodes import _stale_used_since
+
+    rows = [("2000-01", 99), ("2000-02", 8), ("2000-03", 2)]
+    assert _stale_used_since(rows, "2000-02") == 10
+    assert _stale_used_since(rows, "2000-01") == 109
+    assert _stale_used_since(rows, "2001-01") == 0
+    assert _stale_used_since([], "2000-01") == 0
