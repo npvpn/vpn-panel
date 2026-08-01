@@ -183,9 +183,11 @@ class User(Base):
 
     @property
     def bs_monthly_limit_total(self) -> int | None:
-        """Месячный БС-потолок (лимит бота + остаток bs_extra), None если лимит не задан."""
+        """Месячный БС-потолок (лимит бота + купленный пул), None если лимит не задан."""
+        from sqlalchemy.orm import object_session
+
         from app.models.bot import apply_bot_settings_fallback
-        from app.xray.bs_limit import monthly_effective_limit
+        from app.xray.bs_limit import monthly_effective_limit, period_keys
 
         if not self.bot or not self.bot.settings:
             return None
@@ -193,7 +195,17 @@ class User(Base):
         monthly_limit = settings.get("bs_monthly_limit") or 0
         if not monthly_limit:
             return None
-        return monthly_effective_limit(monthly_limit, self.bs_extra or 0)
+
+        db = object_session(self)
+        if db is None:
+            return monthly_effective_limit(monthly_limit, self.bs_extra or 0)
+
+        from app.db.crud import normalize_bs_extra_period
+
+        pool = normalize_bs_extra_period(
+            db, cast(int, self.id), monthly_limit, period_keys(datetime.utcnow()), persist=False
+        )
+        return monthly_effective_limit(monthly_limit, pool)
 
     @property
     def bs_monthly_used(self) -> int:

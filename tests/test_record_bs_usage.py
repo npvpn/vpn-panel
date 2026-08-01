@@ -333,3 +333,31 @@ def test_tick_in_new_month_carries_pool_over_once(db, patched_getdb):
     assert user.bs_extra == 5 * GB  # вычли ровно перерасход прошлого месяца, второй тик — no-op
     assert user.bs_extra_period == now
     assert bs_usage(db).monthly_used == 2 * GB
+
+
+def test_user_bs_traffic_summary_keeps_contract_and_stable_ceiling(db):
+    from app.db import crud
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    summary = crud.get_user_bs_traffic(db, db.query(User).filter(User.id == USER_ID).one())
+
+    assert set(summary) == {"monthly_used", "monthly_limit", "monthly_limit_with_extra", "extra_bytes"}
+    assert summary["monthly_used"] == 0  # прошлый месяц в текущий агрегат не входит
+    assert summary["monthly_limit"] == 3 * GB
+    assert summary["extra_bytes"] == 5 * GB  # пул нормализован переносом
+    assert summary["monthly_limit_with_extra"] == 8 * GB
+
+
+def test_bs_monthly_limit_total_uses_normalized_pool(db):
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert db.query(User).filter(User.id == USER_ID).one().bs_monthly_limit_total == 8 * GB

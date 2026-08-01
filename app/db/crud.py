@@ -1962,20 +1962,12 @@ def get_bs_state(db: Session, dbuser: User) -> dict[str, int]:
 
 def get_user_bs_traffic(db: Session, dbuser: User) -> dict[str, int]:
     """Сводка БС-трафика для API пользователя и внешних клиентов."""
-    from app.xray.bs_limit import monthly_effective_limit, period_keys
-
-    user_id = cast(int, dbuser.id)
-    settings = _bot_settings_for_user(db, dbuser)
-    monthly_limit = int(settings.get("bs_monthly_limit") or 0)
-    monthly_used = get_bs_usage_totals(db, user_id, period_keys(datetime.utcnow()))
-    extra_bytes = int(dbuser.bs_extra or 0)
-    monthly_limit_with_extra = monthly_effective_limit(monthly_limit, extra_bytes) if monthly_limit else 0
-
+    state = get_bs_state(db, dbuser)
     return {
-        "monthly_used": monthly_used,
-        "monthly_limit": monthly_limit,
-        "monthly_limit_with_extra": monthly_limit_with_extra,
-        "extra_bytes": extra_bytes,
+        "monthly_used": state["monthly_used"],
+        "monthly_limit": state["monthly_limit"],
+        "monthly_limit_with_extra": state["limit_total"],
+        "extra_bytes": state["pool"],
     }
 
 
