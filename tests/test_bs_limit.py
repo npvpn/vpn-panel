@@ -183,13 +183,20 @@ def test_stale_sum_for_review_respects_pool_period():
     # app.jobs.review_bs_nodes тянет app.db.models → app.models.user → app.subscription.share,
     # а тот в песочнице conftest (app.subscription заглушен пустым пакетом без __init__)
     # не находит свои же символы через `from . import *`. Тот же приём, что и в
-    # tests/test_record_bs_usage.py — подменяем только лист share на лёгкую заглушку.
-    if "app.subscription.share" not in sys.modules:
+    # tests/test_record_bs_usage.py — подменяем только лист share на лёгкую заглушку, но
+    # только на время импорта: если заглушку поставили мы, сразу после импорта убираем её
+    # за собой, чтобы не протекала в sys.modules для других тестовых файлов.
+    had_share_stub = "app.subscription.share" not in sys.modules
+    if had_share_stub:
         share_stub = types.ModuleType("app.subscription.share")
         share_stub.generate_v2ray_links = lambda *args, **kwargs: []
         sys.modules["app.subscription.share"] = share_stub
 
-    from app.jobs.review_bs_nodes import _stale_used_since
+    try:
+        from app.jobs.review_bs_nodes import _stale_used_since
+    finally:
+        if had_share_stub:
+            sys.modules.pop("app.subscription.share", None)
 
     rows = [("2000-01", 99), ("2000-02", 8), ("2000-03", 2)]
     assert _stale_used_since(rows, "2000-02") == 10
