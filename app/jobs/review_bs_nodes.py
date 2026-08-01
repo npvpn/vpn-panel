@@ -49,7 +49,10 @@ def _effective_pool(bs_extra, extra_period, yyyymm, stale_rows, monthly_limit):
     (extra_period), только батчем и read-only — единственный писатель пула остаётся
     джоба учёта.
     """
-    if not extra_period or extra_period == yyyymm:
+    # Сравнение то же, что в crud.normalize_bs_extra_period: период «из будущего» — тоже
+    # no-op, иначе строка счётчика с этим периодом пройдёт фильтр stale_rows и срежет
+    # потолок, а сводка API и бар подписки в тот же момент покажут юзеру остаток.
+    if not extra_period or extra_period >= yyyymm:
         return bs_extra
     return carry_over_pool(bs_extra, _stale_used_since(stale_rows, extra_period), monthly_limit)
 
