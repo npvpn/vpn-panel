@@ -20,9 +20,15 @@ depends_on = None
 
 
 def _bot_limits(bind):
-    """{bot_id: bs_monthly_limit} из JSON-настроек ботов."""
+    """{bot_id: bs_monthly_limit} из JSON-настроек ботов.
+
+    JSON-колонку драйвер отдаёт по-разному: dict (десериализовано), str или bytes —
+    последнее нельзя отдавать в payload.get, иначе миграция падает на проде.
+    """
     limits = {}
     for bot_id, data in bind.execute(sa.text("SELECT bot_id, data FROM bot_settings")).fetchall():
+        if isinstance(data, (bytes, bytearray)):
+            data = data.decode("utf-8")
         payload = json.loads(data) if isinstance(data, str) else (data or {})
         limits[bot_id] = int(payload.get("bs_monthly_limit") or 0)
     return limits
@@ -62,6 +68,9 @@ def _backfill(bind) -> None:
         delta = max(0, int(row.used or 0) - limit) if limit else 0
         params.append({"delta": delta, "period": period, "uid": row.id})
 
+    # Апдейт идёт пачками по 500 только чтобы не собирать один гигантский executemany:
+    # коммитов между пачками нет и быть не может — alembic держит всю миграцию в одной
+    # транзакции, так что длину транзакции чанки не уменьшают.
     for chunk_start in range(0, len(params), 500):
         chunk = params[chunk_start : chunk_start + 500]
         bind.execute(

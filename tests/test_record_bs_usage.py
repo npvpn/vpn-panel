@@ -170,6 +170,48 @@ def test_backfill_leaves_pool_intact_when_base_not_exceeded(db):
     assert db.query(User).filter(User.id == USER_ID).one().bs_extra == 10 * GB
 
 
+def test_bot_limits_reads_json_column_in_any_driver_form():
+    """Драйвер отдаёт JSON-колонку dict/str/bytes — на bytes миграция не должна падать."""
+
+    class FakeBind:
+        def execute(self, *_args, **_kwargs):
+            return types.SimpleNamespace(
+                fetchall=lambda: [
+                    (1, {"bs_monthly_limit": 3 * GB}),
+                    (2, '{"bs_monthly_limit": 5}'),
+                    (3, b'{"bs_monthly_limit": 7}'),
+                    (4, None),
+                ]
+            )
+
+    assert _load_bs_period_migration()._bot_limits(FakeBind()) == {1: 3 * GB, 2: 5, 3: 7, 4: 0}
+
+
+def test_backfill_ignores_usage_on_non_bs_nodes(db):
+    """Расход на обычной ноде в БС-пул не входит — иначе бэкфилл вернёт лишние гигабайты."""
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": 3 * GB}))
+    db.add(Node(id=NODE_ID + 1, name="plain", address="127.0.0.2", port=62050, api_port=62051, is_bs=False))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    user.bs_extra = 5 * GB
+    db.add(
+        NodeUserBsUsage(
+            user_id=USER_ID,
+            node_id=NODE_ID + 1,
+            monthly_used=8 * GB,
+            monthly_period=period_keys(datetime.utcnow()),
+        )
+    )
+    db.commit()
+
+    _load_bs_period_migration()._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    assert db.query(User).filter(User.id == USER_ID).one().bs_extra == 5 * GB
+
+
 def test_backfill_is_idempotent(db):
     """Повторный вызов (ручная проверка, ретрай) не должен задваивать восстановленный пул."""
     db.add(Bot(id=1, username="bot1"))
@@ -342,6 +384,19 @@ def test_stale_totals_ignore_rows_older_than_pool_period(db):
     db.add(Node(id=NODE_ID + 1, name="bs-node-2", address="127.0.0.2", port=62050, api_port=62051, is_bs=True))
     db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-02"))
     db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID + 1, monthly_used=99 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert crud.get_bs_usage_totals_stale(db, USER_ID, now, "2000-02") == 8 * GB
+
+
+def test_stale_totals_ignore_non_bs_nodes(db):
+    """Расход на обычной ноде не должен вычитаться из купленного БС-пула."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    db.add(Node(id=NODE_ID + 1, name="plain", address="127.0.0.2", port=62050, api_port=62051, is_bs=False))
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID + 1, monthly_used=99 * GB, monthly_period="2000-02"))
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-02"))
     db.commit()
 
     assert crud.get_bs_usage_totals_stale(db, USER_ID, now, "2000-02") == 8 * GB
