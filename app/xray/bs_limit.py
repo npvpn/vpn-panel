@@ -46,20 +46,6 @@ def over_limit(monthly_used, monthly_limit):
     return False
 
 
-def monthly_extra_overflow(monthly_used, monthly_limit):
-    """Сколько месячного расхода сверх базового monthly_limit (идёт из купленного пула)."""
-    if not monthly_limit:
-        return 0
-    return max(0, int(monthly_used) - int(monthly_limit))
-
-
-def monthly_extra_consume_delta(old_monthly_used, new_monthly_used, monthly_limit):
-    """Прирост списания из пула bs_extra при обновлении агрегата monthly_used."""
-    return monthly_extra_overflow(new_monthly_used, monthly_limit) - monthly_extra_overflow(
-        old_monthly_used, monthly_limit
-    )
-
-
 def monthly_effective_limit(monthly_limit, bs_extra_remaining):
     """Месячный потолок: база + остаток купленного пула."""
     if not monthly_limit:

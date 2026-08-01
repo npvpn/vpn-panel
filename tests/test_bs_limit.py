@@ -7,8 +7,6 @@ from app.xray.bs_limit import (
     carry_over_pool,
     diff_blocks,
     monthly_effective_limit,
-    monthly_extra_consume_delta,
-    monthly_extra_overflow,
     over_limit,
     over_limit_monthly_pool,
     period_keys,
@@ -112,32 +110,23 @@ def test_pick_bs_bar_monthly():
     assert pick_bs_bar(8, 0) is None
 
 
-def test_monthly_extra_consume_delta_only_overflow():
-    gb = 1024**3
-    monthly_limit = 3 * gb
-    assert monthly_extra_overflow(2 * gb, monthly_limit) == 0
-    assert monthly_extra_overflow(4 * gb, monthly_limit) == 1 * gb
-    assert monthly_extra_consume_delta(0, 2 * gb, monthly_limit) == 0
-    assert monthly_extra_consume_delta(0, 4 * gb, monthly_limit) == 1 * gb
-    assert monthly_extra_consume_delta(2 * gb, 4 * gb, monthly_limit) == 1 * gb
-
-
-def test_monthly_pool_enforcement_scenario():
-    """3 ГБ/месяц + купленные 2 ГБ: потратили 4 ГБ → из пула −1 ГБ; доступно 3+1."""
+def test_monthly_pool_ceiling_is_stable_within_month():
+    """3 ГБ/месяц + купленные 2 ГБ: потолок стоит на 5 ГБ, пока месяц не сменится."""
     gb = 1024**3
     monthly_limit = 3 * gb
     pool = 2 * gb
 
-    assert monthly_extra_consume_delta(0, 2 * gb, monthly_limit) == 0
+    assert monthly_effective_limit(monthly_limit, pool) == 5 * gb
     assert not over_limit_monthly_pool(2 * gb, monthly_limit, pool)
+    assert not over_limit_monthly_pool(4 * gb, monthly_limit, pool)
+    assert over_limit_monthly_pool(5 * gb, monthly_limit, pool)
+    # потолок не зависит от израсходованного — он тот же при любом used
+    assert monthly_effective_limit(monthly_limit, pool) == 5 * gb
 
-    pool -= monthly_extra_consume_delta(2 * gb, 4 * gb, monthly_limit)
+    # смена месяца: расход 4 ГБ съедает 1 ГБ пула, остаток переносится
+    pool = carry_over_pool(pool, 4 * gb, monthly_limit)
     assert pool == 1 * gb
-    assert over_limit_monthly_pool(4 * gb, monthly_limit, pool)
-
     assert monthly_effective_limit(monthly_limit, pool) == 4 * gb
-    assert not over_limit_monthly_pool(3 * gb, monthly_limit, pool)
-    assert over_limit_monthly_pool(4 * gb, monthly_limit, pool)
 
 
 def test_over_limit_monthly_pool_zero_limit():

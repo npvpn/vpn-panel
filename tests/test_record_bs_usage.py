@@ -298,3 +298,38 @@ def test_get_bs_state_reports_stable_ceiling(db):
         "pool": 10 * GB,
         "limit_total": 13 * GB,
     }
+
+
+def test_pool_untouched_by_ticks_within_month(db, patched_getdb):
+    """Главный регресс NPVPN-1768: потолок не должен ехать вниз по мере расхода."""
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.commit()
+
+    record_bs_user_stats([{"uid": USER_ID, "value": 4 * GB}], NODE_ID)
+    record_bs_user_stats([{"uid": USER_ID, "value": 4 * GB}], NODE_ID)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB
+    assert bs_usage(db).monthly_used == 8 * GB
+
+
+def test_tick_in_new_month_carries_pool_over_once(db, patched_getdb):
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    record_bs_user_stats([{"uid": USER_ID, "value": 1 * GB}], NODE_ID)
+    record_bs_user_stats([{"uid": USER_ID, "value": 1 * GB}], NODE_ID)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 5 * GB  # вычли ровно перерасход прошлого месяца, второй тик — no-op
+    assert user.bs_extra_period == now
+    assert bs_usage(db).monthly_used == 2 * GB

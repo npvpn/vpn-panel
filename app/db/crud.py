@@ -2015,29 +2015,6 @@ def modify_user_bs_extra(db: Session, dbuser: User, *, delta_bytes: int | None =
     return dbuser
 
 
-def apply_bs_extra_pool_consumption(
-    db: Session,
-    user_id: int,
-    old_monthly_agg: int,
-    new_monthly_agg: int,
-    monthly_limit: int,
-) -> None:
-    """Списать из bs_extra прирост расхода сверх monthly_limit (в той же транзакции, что usage)."""
-    from app.xray.bs_limit import monthly_extra_consume_delta
-
-    if not monthly_limit:
-        return
-    consume = monthly_extra_consume_delta(old_monthly_agg, new_monthly_agg, monthly_limit)
-    if consume <= 0:
-        return
-    dbuser = db.query(User).filter(User.id == user_id).with_for_update().first()
-    if not dbuser:
-        return
-    remaining = int(dbuser.bs_extra or 0)
-    new_extra = 0 if remaining <= consume else remaining - consume
-    db.execute(update(User).where(User.id == user_id).values(bs_extra=new_extra))
-
-
 def get_blocked_bs_node_ids(db: Session, user_id: int) -> set[int]:
     """ID БС-нод, на которых юзер сейчас заблокирован по лимиту (node_user_blocks).
 
