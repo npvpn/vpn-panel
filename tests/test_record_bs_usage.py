@@ -168,3 +168,34 @@ def test_backfill_leaves_pool_intact_when_base_not_exceeded(db):
     db.expire_all()
 
     assert db.query(User).filter(User.id == USER_ID).one().bs_extra == 10 * GB
+
+
+def test_backfill_is_idempotent(db):
+    """Повторный вызов (ручная проверка, ретрай) не должен задваивать восстановленный пул."""
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": 3 * GB}))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    user.bs_extra = 5 * GB
+    db.add(
+        NodeUserBsUsage(
+            user_id=USER_ID,
+            node_id=NODE_ID,
+            monthly_used=8 * GB,
+            monthly_period=period_keys(datetime.utcnow()),
+        )
+    )
+    db.commit()
+
+    migration = _load_bs_period_migration()
+    migration._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    migration._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB
+    assert user.bs_extra_period == period_keys(datetime.utcnow())

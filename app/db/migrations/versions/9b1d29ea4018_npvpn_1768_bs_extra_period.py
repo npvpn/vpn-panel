@@ -33,18 +33,25 @@ def _backfill(bind) -> None:
 
     Восстанавливать нужно только текущий месяц: списания прошлых месяцев были
     корректным переносом остатка.
+
+    Идемпотентно: guard `bs_extra_period IS NULL OR bs_extra_period <> :period` не даёт
+    повторному вызову (ручная верификация, ретрай после частичного сбоя) забрать уже
+    восстановленных пользователей ещё раз. Инкремент `bs_extra = bs_extra + :delta`
+    выполняется прямо в SQL одним UPDATE, а не через read-modify-write в Python, чтобы
+    не терять параллельные изменения `bs_extra` между SELECT и UPDATE (lost update).
     """
     period = datetime.utcnow().strftime("%Y-%m")
     limits = _bot_limits(bind)
     rows = bind.execute(
         sa.text(
-            "SELECT u.id AS id, u.bot_id AS bot_id, u.bs_extra AS bs_extra, "
+            "SELECT u.id AS id, u.bot_id AS bot_id, "
             "COALESCE(("
             "  SELECT SUM(b.monthly_used) FROM node_user_bs_usage b "
             "  JOIN nodes n ON n.id = b.node_id "
             "  WHERE b.user_id = u.id AND b.monthly_period = :period AND n.is_bs = 1"
             "), 0) AS used "
-            "FROM users u WHERE u.bs_extra IS NOT NULL"
+            "FROM users u WHERE u.bs_extra IS NOT NULL "
+            "AND (u.bs_extra_period IS NULL OR u.bs_extra_period <> :period)"
         ),
         {"period": period},
     ).fetchall()
@@ -52,13 +59,13 @@ def _backfill(bind) -> None:
     params = []
     for row in rows:
         limit = limits.get(row.bot_id, 0)
-        restored = int(row.bs_extra or 0) + (max(0, int(row.used or 0) - limit) if limit else 0)
-        params.append({"extra": restored, "period": period, "uid": row.id})
+        delta = max(0, int(row.used or 0) - limit) if limit else 0
+        params.append({"delta": delta, "period": period, "uid": row.id})
 
     for chunk_start in range(0, len(params), 500):
         chunk = params[chunk_start : chunk_start + 500]
         bind.execute(
-            sa.text("UPDATE users SET bs_extra = :extra, bs_extra_period = :period WHERE id = :uid"),
+            sa.text("UPDATE users SET bs_extra = bs_extra + :delta, bs_extra_period = :period WHERE id = :uid"),
             chunk,
         )
 
