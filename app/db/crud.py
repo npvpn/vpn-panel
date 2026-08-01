@@ -1895,6 +1895,71 @@ def get_bs_usage_totals(db: Session, user_id: int, yyyymm: str) -> int:
     return totals.get(user_id, 0)
 
 
+def get_bs_usage_totals_stale(db: Session, user_id: int, yyyymm: str, since: str) -> int:
+    """Неучтённый БС-расход в полуинтервале [since, yyyymm).
+
+    Нижняя граница обязательна: строка молчащей ноды может лежать со старым периодом
+    годами, и без неё её расход вычитался бы из пула на каждой смене месяца заново.
+    """
+    total = (
+        db.query(func.coalesce(func.sum(NodeUserBsUsage.monthly_used), 0))
+        .join(Node, Node.id == NodeUserBsUsage.node_id)
+        .filter(
+            Node.is_bs.is_(True),
+            NodeUserBsUsage.user_id == user_id,
+            NodeUserBsUsage.monthly_period != yyyymm,
+            NodeUserBsUsage.monthly_period >= since,
+        )
+        .scalar()
+    )
+    return int(total or 0)
+
+
+def normalize_bs_extra_period(db: Session, user_id: int, monthly_limit: int, yyyymm: str, *, persist: bool) -> int:
+    """Приводит купленный БС-пул к текущему месяцу и возвращает его.
+
+    Период совпадает или пуст → no-op. persist=True пишет новое значение под
+    SELECT ... FOR UPDATE в текущей транзакции (коммит — на вызывающем).
+    """
+    from app.xray.bs_limit import carry_over_pool
+
+    if persist:
+        dbuser = db.query(User).filter(User.id == user_id).with_for_update().first()
+        if dbuser is None:
+            return 0
+        pool, period = int(dbuser.bs_extra or 0), cast("str | None", dbuser.bs_extra_period)
+    else:
+        row = db.query(User.bs_extra, User.bs_extra_period).filter(User.id == user_id).first()
+        if row is None:
+            return 0
+        pool, period = int(row.bs_extra or 0), row.bs_extra_period
+
+    if not period or period == yyyymm:
+        return pool
+
+    new_pool = carry_over_pool(pool, get_bs_usage_totals_stale(db, user_id, yyyymm, period), monthly_limit)
+    if persist:
+        db.execute(update(User).where(User.id == user_id).values(bs_extra=new_pool, bs_extra_period=yyyymm))
+    return new_pool
+
+
+def get_bs_state(db: Session, dbuser: User) -> dict[str, int]:
+    """Единая точка правды по БС-трафику пользователя. Не пишет в БД."""
+    from app.xray.bs_limit import monthly_effective_limit, period_keys
+
+    user_id = cast(int, dbuser.id)
+    settings = _bot_settings_for_user(db, dbuser)
+    monthly_limit = int(settings.get("bs_monthly_limit") or 0)
+    yyyymm = period_keys(datetime.utcnow())
+    pool = normalize_bs_extra_period(db, user_id, monthly_limit, yyyymm, persist=False)
+    return {
+        "monthly_used": get_bs_usage_totals(db, user_id, yyyymm),
+        "monthly_limit": monthly_limit,
+        "pool": pool,
+        "limit_total": monthly_effective_limit(monthly_limit, pool) if monthly_limit else 0,
+    }
+
+
 def get_user_bs_traffic(db: Session, dbuser: User) -> dict[str, int]:
     """Сводка БС-трафика для API пользователя и внешних клиентов."""
     from app.xray.bs_limit import monthly_effective_limit, period_keys

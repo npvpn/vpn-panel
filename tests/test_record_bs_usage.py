@@ -199,3 +199,102 @@ def test_backfill_is_idempotent(db):
     user = db.query(User).filter(User.id == USER_ID).one()
     assert user.bs_extra == 10 * GB
     assert user.bs_extra_period == period_keys(datetime.utcnow())
+
+
+def _bot_with_limit(db, limit_bytes):
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": limit_bytes}))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    db.commit()
+    return user
+
+
+def test_normalize_is_noop_within_same_period(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period=now))
+    db.commit()
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=False) == 10 * GB
+
+
+def test_normalize_is_noop_when_period_is_null(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = None
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=False) == 10 * GB
+
+
+def test_normalize_subtracts_previous_month_overflow(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=False) == 5 * GB
+
+
+def test_normalize_persists_pool_and_period(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=True)
+    db.commit()
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 5 * GB
+    assert user.bs_extra_period == now
+
+
+def test_stale_totals_ignore_rows_older_than_pool_period(db):
+    """Строка молчащей ноды из позапрошлого месяца уже была учтена — её не вычитаем снова."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    db.add(Node(id=NODE_ID + 1, name="bs-node-2", address="127.0.0.2", port=62050, api_port=62051, is_bs=True))
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-02"))
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID + 1, monthly_used=99 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert crud.get_bs_usage_totals_stale(db, USER_ID, now, "2000-02") == 8 * GB
+
+
+def test_get_bs_state_reports_stable_ceiling(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period=now))
+    db.commit()
+
+    state = crud.get_bs_state(db, db.query(User).filter(User.id == USER_ID).one())
+    assert state == {
+        "monthly_used": 8 * GB,
+        "monthly_limit": 3 * GB,
+        "pool": 10 * GB,
+        "limit_total": 13 * GB,
+    }
