@@ -131,16 +131,31 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
             for r in existing_rows
         }
 
-        user_bot = dict(db.query(User.id, User.bot_id).filter(User.id.in_(uids)).all())
-        bot_monthly_limits = {}
-        for bot_id, data in db.query(BotSettings.bot_id, BotSettings.data).all():
-            settings = apply_bot_settings_fallback(data)
-            bot_monthly_limits[bot_id] = settings.get("bs_monthly_limit") or 0
+        # Одним запросом отбираем только тех, у кого период пула реально отстал:
+        # normalize_bs_extra_period берёт SELECT ... FOR UPDATE до проверки периода, а
+        # внутри месяца это no-op — иначе каждый тик (раз в 10 с) лочил бы строку users
+        # на каждого активного юзера до конца транзакции. Порядок по id детерминированный,
+        # чтобы не плодить взаимные блокировки с транзакциями API.
+        stale_users = (
+            db.query(User.id, User.bot_id)
+            .filter(
+                User.id.in_(uids),
+                User.bs_extra_period.is_not(None),
+                User.bs_extra_period < yyyymm,
+            )
+            .order_by(User.id)
+            .all()
+        )
+        if stale_users:
+            bot_monthly_limits = {}
+            for bot_id, data in db.query(BotSettings.bot_id, BotSettings.data).all():
+                settings = apply_bot_settings_fallback(data)
+                bot_monthly_limits[bot_id] = settings.get("bs_monthly_limit") or 0
 
-        # Перенос пула на новый месяц — до апдейта счётчиков, пока строки прошлого
-        # периода ещё не перезаписаны. Идемпотентно: в пределах месяца это no-op.
-        for uid in uids:
-            crud.normalize_bs_extra_period(db, uid, bot_monthly_limits.get(user_bot.get(uid), 0), yyyymm, persist=True)
+            # Перенос пула на новый месяц — до апдейта счётчиков, пока строки прошлого
+            # периода ещё не перезаписаны.
+            for uid, bot_id in stale_users:
+                crud.normalize_bs_extra_period(db, uid, bot_monthly_limits.get(bot_id, 0), yyyymm, persist=True)
 
         to_insert, to_update = [], []
         for uid, delta in deltas.items():

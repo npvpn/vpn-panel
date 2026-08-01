@@ -383,6 +383,26 @@ def test_pool_untouched_by_ticks_within_month(db, patched_getdb):
     assert bs_usage(db).monthly_used == 8 * GB
 
 
+def test_tick_within_month_does_not_touch_pool_rows(db, patched_getdb, monkeypatch):
+    """Регресс ревью: внутри месяца нормализация — no-op, и джоба не должна брать
+    FOR UPDATE на каждого юзера тика (раз в 10 секунд это N залоченных строк users)."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.commit()
+
+    calls = []
+    monkeypatch.setattr(crud, "normalize_bs_extra_period", lambda *a, **kw: calls.append(a[1]) or 0)
+
+    record_bs_user_stats([{"uid": USER_ID, "value": 4 * GB}], NODE_ID)
+
+    assert calls == []
+    assert bs_usage(db).monthly_used == 4 * GB
+
+
 def test_tick_in_new_month_carries_pool_over_once(db, patched_getdb):
     now = period_keys(datetime.utcnow())
     user = _bot_with_limit(db, 3 * GB)
