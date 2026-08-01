@@ -1982,7 +1982,11 @@ def _bot_settings_for_user(db: Session, dbuser: User) -> dict[str, Any]:
 
 def reset_user_bs_extra_pool(db: Session, dbuser: User, *, commit: bool = True) -> User:
     """Обнуляет купленный пул bs_extra без проверки настроек (внутренний сброс)."""
-    db.execute(update(User).where(User.id == dbuser.id).values(bs_extra=0))
+    from app.xray.bs_limit import period_keys
+
+    db.execute(
+        update(User).where(User.id == dbuser.id).values(bs_extra=0, bs_extra_period=period_keys(datetime.utcnow()))
+    )
     if commit:
         db.commit()
         db.refresh(dbuser)
@@ -1990,15 +1994,23 @@ def reset_user_bs_extra_pool(db: Session, dbuser: User, *, commit: bool = True) 
 
 
 def modify_user_bs_extra(db: Session, dbuser: User, *, delta_bytes: int | None = None, reset: bool = False) -> User:
-    """Инкремент или сброс остатка купленного БС-пула (bs_extra)."""
+    """Инкремент или сброс купленного БС-пула (bs_extra)."""
+    from app.xray.bs_limit import period_keys
+
     if reset:
         settings = _bot_settings_for_user(db, dbuser)
         if not settings.get("bs_extra_reset_pool_on_prolong", False):
             return dbuser
         return reset_user_bs_extra_pool(db, dbuser)
     elif delta_bytes is not None:
+        settings = _bot_settings_for_user(db, dbuser)
+        monthly_limit = int(settings.get("bs_monthly_limit") or 0)
+        yyyymm = period_keys(datetime.utcnow())
+        # Сначала перенос за прошлый месяц, потом покупка — иначе докупка легла бы
+        # поверх ещё не пересчитанного пула.
+        pool = normalize_bs_extra_period(db, cast(int, dbuser.id), monthly_limit, yyyymm, persist=True)
         db.execute(
-            update(User).where(User.id == dbuser.id).values(bs_extra=int(dbuser.bs_extra or 0) + int(delta_bytes))
+            update(User).where(User.id == dbuser.id).values(bs_extra=pool + int(delta_bytes), bs_extra_period=yyyymm)
         )
     else:
         raise ValueError("either delta_bytes or reset must be provided")

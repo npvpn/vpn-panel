@@ -390,3 +390,38 @@ def test_bs_monthly_limit_total_normalizes_pool_once_per_instance(db, monkeypatc
     assert dbuser.bs_monthly_limit_total == 8 * GB  # повторное чтение — тоже из кеша
 
     assert len(calls) == 1
+
+
+def test_purchase_normalizes_stale_period_before_increment(db):
+    """Покупка в новом месяце не должна лечь поверх непересчитанного пула."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    crud.modify_user_bs_extra(db, db.query(User).filter(User.id == USER_ID).one(), delta_bytes=20 * GB)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 25 * GB  # 10 − 5 перерасхода прошлого месяца + 20 купленных
+    assert user.bs_extra_period == now
+
+
+def test_reset_pool_sets_current_period(db):
+    from app.db import crud
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.commit()
+
+    crud.reset_user_bs_extra_pool(db, db.query(User).filter(User.id == USER_ID).one())
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 0
+    assert user.bs_extra_period == period_keys(datetime.utcnow())
