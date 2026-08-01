@@ -32,6 +32,9 @@ from app.models.proxy import (
 )
 from app.models.user import ReminderType, UserDataLimitResetStrategy, UserStatus
 
+_UNSET = object()
+"""Сентинел «кеш ещё не заполнен» — отличим от легитимного None в bs_monthly_limit_total."""
+
 host_bot_association = Table(
     "host_bot_association",
     Base.metadata,
@@ -183,7 +186,22 @@ class User(Base):
 
     @property
     def bs_monthly_limit_total(self) -> int | None:
-        """Месячный БС-потолок (лимит бота + купленный пул), None если лимит не задан."""
+        """Месячный БС-потолок (лимит бота + купленный пул), None если лимит не задан.
+
+        Значение кешируется на инстансе (`_bs_monthly_limit_total_cache`): `bs_monthly_used`
+        обращается к этому свойству как к guard'у, а Pydantic при `UserResponse.model_validate`
+        читает оба поля по отдельности — без кеша `normalize_bs_extra_period` (round-trip в БД)
+        отрабатывал бы дважды на один ответ.
+        """
+        cached = self.__dict__.get("_bs_monthly_limit_total_cache", _UNSET)
+        if cached is not _UNSET:
+            return cast("int | None", cached)
+
+        result = self._compute_bs_monthly_limit_total()
+        self.__dict__["_bs_monthly_limit_total_cache"] = result
+        return result
+
+    def _compute_bs_monthly_limit_total(self) -> int | None:
         from sqlalchemy.orm import object_session
 
         from app.models.bot import apply_bot_settings_fallback

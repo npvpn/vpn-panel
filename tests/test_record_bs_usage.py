@@ -361,3 +361,32 @@ def test_bs_monthly_limit_total_uses_normalized_pool(db):
     db.commit()
 
     assert db.query(User).filter(User.id == USER_ID).one().bs_monthly_limit_total == 8 * GB
+
+
+def test_bs_monthly_limit_total_normalizes_pool_once_per_instance(db, monkeypatch):
+    """Регресс ревью: bs_monthly_used обращается к bs_monthly_limit_total как к guard'у —
+    без кеша на инстансе normalize_bs_extra_period (round-trip в БД) отрабатывал бы дважды
+    на одно и то же чтение (например, один UserResponse.model_validate)."""
+    from app.db import crud
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    calls = []
+    original = crud.normalize_bs_extra_period
+
+    def counting_normalize(*args, **kwargs):
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(crud, "normalize_bs_extra_period", counting_normalize)
+
+    dbuser = db.query(User).filter(User.id == USER_ID).one()
+    assert dbuser.bs_monthly_limit_total == 8 * GB
+    assert dbuser.bs_monthly_used == 0  # прошлый месяц в текущий агрегат не входит
+    assert dbuser.bs_monthly_limit_total == 8 * GB  # повторное чтение — тоже из кеша
+
+    assert len(calls) == 1
