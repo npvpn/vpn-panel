@@ -175,17 +175,16 @@ def test_carry_over_none_pool_is_zero():
     assert carry_over_pool(None, 999, 3) == 0
 
 
-def test_stale_sum_for_review_respects_pool_period():
-    """Батч-логика review_bs_nodes: суммируем только периоды >= периода пула."""
+def _import_review_bs_nodes():
+    """app.jobs.review_bs_nodes тянет app.db.models → app.models.user → app.subscription.share,
+    а тот в песочнице conftest (app.subscription заглушен пустым пакетом без __init__)
+    не находит свои же символы через `from . import *`. Тот же приём, что и в
+    tests/test_record_bs_usage.py — подменяем только лист share на лёгкую заглушку, но
+    только на время импорта: если заглушку поставили мы, сразу после импорта убираем её
+    за собой, чтобы не протекала в sys.modules для других тестовых файлов."""
     import sys
     import types
 
-    # app.jobs.review_bs_nodes тянет app.db.models → app.models.user → app.subscription.share,
-    # а тот в песочнице conftest (app.subscription заглушен пустым пакетом без __init__)
-    # не находит свои же символы через `from . import *`. Тот же приём, что и в
-    # tests/test_record_bs_usage.py — подменяем только лист share на лёгкую заглушку, но
-    # только на время импорта: если заглушку поставили мы, сразу после импорта убираем её
-    # за собой, чтобы не протекала в sys.modules для других тестовых файлов.
     had_share_stub = "app.subscription.share" not in sys.modules
     if had_share_stub:
         share_stub = types.ModuleType("app.subscription.share")
@@ -193,13 +192,44 @@ def test_stale_sum_for_review_respects_pool_period():
         sys.modules["app.subscription.share"] = share_stub
 
     try:
-        from app.jobs.review_bs_nodes import _stale_used_since
+        from app.jobs import review_bs_nodes
     finally:
         if had_share_stub:
             sys.modules.pop("app.subscription.share", None)
+
+    return review_bs_nodes
+
+
+def test_stale_sum_for_review_respects_pool_period():
+    """Батч-логика review_bs_nodes: суммируем только периоды >= периода пула."""
+    _stale_used_since = _import_review_bs_nodes()._stale_used_since
 
     rows = [("2000-01", 99), ("2000-02", 8), ("2000-03", 2)]
     assert _stale_used_since(rows, "2000-02") == 10
     assert _stale_used_since(rows, "2000-01") == 109
     assert _stale_used_since(rows, "2001-01") == 0
     assert _stale_used_since([], "2000-01") == 0
+
+
+def test_review_effective_pool_matches_carry_over_cases():
+    """Решение «блокировать или нет» считается батчем мимо канонического пути —
+    поэтому те же кейсы, что у carry_over_pool, проверяем и здесь."""
+    gb = 1024**3
+    _effective_pool = _import_review_bs_nodes()._effective_pool
+    now = "2000-03"
+    rows = [("2000-01", 99 * gb), ("2000-02", 8 * gb)]
+
+    # период пула = текущий месяц → пул как есть, несброшенные строки не вычитаем
+    assert _effective_pool(10 * gb, now, now, rows, 3 * gb) == 10 * gb
+    # период пула не заполнен (старые юзера до NPVPN-1768) → пул как есть
+    assert _effective_pool(10 * gb, None, now, rows, 3 * gb) == 10 * gb
+    # период отстал → вычитаем перерасход прошлого месяца сверх базы
+    assert _effective_pool(10 * gb, "2000-02", now, rows, 3 * gb) == 5 * gb
+    # строка старше периода пула уже учтена — второй раз не вычитается
+    assert _effective_pool(10 * gb, "2000-02", now, rows, 3 * gb) == carry_over_pool(10 * gb, 8 * gb, 3 * gb)
+    # расход не превысил базу → пул цел
+    assert _effective_pool(10 * gb, "2000-02", now, [("2000-02", 2 * gb)], 3 * gb) == 10 * gb
+    # потолок выбран полностью → пул обнуляется, но не уходит в минус
+    assert _effective_pool(10 * gb, "2000-02", now, [("2000-02", 100 * gb)], 3 * gb) == 0
+    # лимит бота не задан → пул не трогаем
+    assert _effective_pool(10 * gb, "2000-02", now, [("2000-02", 100 * gb)], 0) == 10 * gb

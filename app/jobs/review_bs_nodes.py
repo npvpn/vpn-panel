@@ -40,6 +40,20 @@ def _stale_used_since(rows, since):
     return sum(used for period, used in rows if period >= since)
 
 
+def _effective_pool(bs_extra, extra_period, yyyymm, stale_rows, monthly_limit):
+    """Купленный пул, приведённый к текущему месяцу, — батчевый аналог нормализации.
+
+    Не через crud.normalize_bs_extra_period: тут разом проверяются все пользователи с
+    БС-расходом, а канонический путь — запрос (и запись) на каждого за тик. Расчёт тем
+    не менее эквивалентен: та же carry_over_pool и та же нижняя граница по периоду пула
+    (extra_period), только батчем и read-only — единственный писатель пула остаётся
+    джоба учёта.
+    """
+    if not extra_period or extra_period == yyyymm:
+        return bs_extra
+    return carry_over_pool(bs_extra, _stale_used_since(stale_rows, extra_period), monthly_limit)
+
+
 def review_bs_nodes():
     t0 = time.monotonic()
     yyyymm = period_keys(datetime.utcnow())
@@ -72,6 +86,8 @@ def review_bs_nodes():
             yyyymm,
         )
 
+        # Несброшенные строки нужны только по тем, кого мы проверяем ниже (totals).
+        user_ids = list(totals.keys())
         stale_rows = (
             db.query(
                 NodeUserBsUsage.user_id,
@@ -80,17 +96,19 @@ def review_bs_nodes():
             )
             .filter(
                 NodeUserBsUsage.node_id.in_(bs_node_ids),
+                NodeUserBsUsage.user_id.in_(user_ids),
                 NodeUserBsUsage.monthly_period != yyyymm,
             )
             .group_by(NodeUserBsUsage.user_id, NodeUserBsUsage.monthly_period)
             .all()
+            if user_ids
+            else []
         )
         stale = {}
         for r in stale_rows:
             stale.setdefault(r.user_id, []).append((r.monthly_period, int(r.used or 0)))
 
         bot_limits = _bot_monthly_limits(db)
-        user_ids = list(totals.keys())
         user_info = (
             {
                 uid: (bot_id, bs_extra or 0, bs_extra_period)
@@ -108,14 +126,7 @@ def review_bs_nodes():
         for uid, monthly_used in totals.items():
             bot_id, bs_extra, extra_period = user_info.get(uid, (None, 0, None))
             monthly_limit = bot_limits.get(bot_id, 0)
-            # Не через crud.normalize_bs_extra_period: тут разом проверяются все
-            # пользователи с БС-расходом, а канонический путь — запрос (и запись) на
-            # каждого за тик. Расчёт тем не менее эквивалентен: та же carry_over_pool
-            # и та же нижняя граница по периоду пула (extra_period), только батчем и
-            # read-only — единственный писатель пула остаётся джоба учёта.
-            pool = bs_extra
-            if extra_period and extra_period != yyyymm:
-                pool = carry_over_pool(bs_extra, _stale_used_since(stale.get(uid, []), extra_period), monthly_limit)
+            pool = _effective_pool(bs_extra, extra_period, yyyymm, stale.get(uid, []), monthly_limit)
             if over_limit_monthly_pool(monthly_used, monthly_limit, pool):
                 over_users.add(uid)
 
