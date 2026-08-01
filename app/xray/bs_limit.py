@@ -67,6 +67,17 @@ def monthly_effective_limit(monthly_limit, bs_extra_remaining):
     return int(monthly_limit) + int(bs_extra_remaining or 0)
 
 
+def carry_over_pool(pool, prev_used, monthly_limit):
+    """Пул, переносимый на новый месяц: из купленного вычитается расход сверх базы.
+
+    Сгорает только потраченное — неизрасходованная часть пула живёт дальше.
+    monthly_limit == 0 (лимит не задан) → пул не трогаем.
+    """
+    if not monthly_limit:
+        return int(pool or 0)
+    return max(0, int(pool or 0) - max(0, int(prev_used) - int(monthly_limit)))
+
+
 def over_limit_monthly_pool(monthly_used, monthly_limit, bs_extra_remaining):
     """Блок: месячный лимит+пул исчерпаны."""
     if not monthly_limit:

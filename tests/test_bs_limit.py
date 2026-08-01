@@ -4,6 +4,7 @@ from app.xray.bs_limit import (
     aggregate_bs_usage,
     bs_counter_step,
     bs_stub_remark,
+    carry_over_pool,
     diff_blocks,
     monthly_effective_limit,
     monthly_extra_consume_delta,
@@ -155,3 +156,31 @@ def test_bs_stub_remark_string_and_blanks():
 def test_bs_stub_remark_empty_inputs():
     assert bs_stub_remark([]) == ""
     assert bs_stub_remark(None) == ""
+
+
+def test_carry_over_keeps_pool_when_base_not_exceeded():
+    gb = 1024**3
+    assert carry_over_pool(10 * gb, 2 * gb, 3 * gb) == 10 * gb
+
+
+def test_carry_over_subtracts_only_overflow_above_base():
+    gb = 1024**3
+    assert carry_over_pool(10 * gb, 8 * gb, 3 * gb) == 5 * gb
+
+
+def test_carry_over_drains_pool_when_ceiling_reached():
+    gb = 1024**3
+    assert carry_over_pool(10 * gb, 13 * gb, 3 * gb) == 0
+
+
+def test_carry_over_never_goes_negative():
+    gb = 1024**3
+    assert carry_over_pool(10 * gb, 100 * gb, 3 * gb) == 0
+
+
+def test_carry_over_without_limit_keeps_pool_intact():
+    assert carry_over_pool(500, 999, 0) == 500
+
+
+def test_carry_over_none_pool_is_zero():
+    assert carry_over_pool(None, 999, 3) == 0
