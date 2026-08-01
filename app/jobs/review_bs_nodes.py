@@ -108,6 +108,11 @@ def review_bs_nodes():
         for uid, monthly_used in totals.items():
             bot_id, bs_extra, extra_period = user_info.get(uid, (None, 0, None))
             monthly_limit = bot_limits.get(bot_id, 0)
+            # Не через crud.normalize_bs_extra_period: тут разом проверяются все
+            # пользователи с БС-расходом, а канонический путь — запрос (и запись) на
+            # каждого за тик. Расчёт тем не менее эквивалентен: та же carry_over_pool
+            # и та же нижняя граница по периоду пула (extra_period), только батчем и
+            # read-only — единственный писатель пула остаётся джоба учёта.
             pool = bs_extra
             if extra_period and extra_period != yyyymm:
                 pool = carry_over_pool(bs_extra, _stale_used_since(stale.get(uid, []), extra_period), monthly_limit)
