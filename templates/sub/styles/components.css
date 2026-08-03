@@ -334,7 +334,7 @@
 .qr-wrapper {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 15px;
     align-items: center;
     justify-content: center;
 
@@ -488,7 +488,7 @@
 /* плавающее меню */
 .floating-nav {
     position: fixed;
-    bottom: 20px;
+    bottom: 35px;
     left: 50%;
     transform: translateX(-50%);
 
@@ -549,7 +549,7 @@
 
 .button-wrapper {
     position: fixed;
-    bottom: 80px; /* поднимаем выше над плавающей навигацией */
+    bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
     width: 100%;
@@ -558,7 +558,7 @@
     flex-direction: column;
     border-radius: 40px;
     background: white;
-    padding: 12px 16px;
+    padding: 12px 16px 25px 20px;
     margin: 0;
     z-index: 99;
 }
@@ -676,7 +676,7 @@
     max-width: 342px;
     margin: 0 auto;
     box-sizing: content-box;
-    padding-bottom: 160px;
+    padding-bottom: 155px;
 }
 
 .page-content_limited {
@@ -783,8 +783,96 @@
     background-color: #1a1a1a;
 }
 
+ .footer-ad-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0; 
+    z-index: 45;
+    display: flex;
+    justify-content: center;
+    padding: 6px 16px 10px; 
+    background: var(--bg);
+    pointer-events: none;
+  }
+  
+  .footer-ad-bar .footer-ad-inner {
+    width: 100%;
+    max-width: 342px;
+    box-sizing: content-box;
+    text-align: center;
+    font-size: 12px; 
+    color: var(--gray-4);
+    pointer-events: auto;
+  }
+
+
+/* Страница 404 */
+.error-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    background: var(--bg);
+}
+
+.error-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    text-align: center;
+}
+
+.error-code {
+    font-size: 120px;
+    line-height: 113%;
+    letter-spacing: -0.04em;
+    font-family: var(--third-family);
+    font-weight: 700;
+}
+
+.footer_404 {
+    padding: 16px;
+    padding-bottom: 24px;
+    text-align: center;
+}
+
+.error-title{
+    font-size: 20px;
+    font-family: var(--third-family);
+    font-weight: 700;
+    line-height: 113%;
+    letter-spacing: -0.04em;
+}
+
+.error-subtitle {
+    font-size: 14px;
+}
 
 @media (min-width: 1024px) {
+     .footer-ad-bar {
+      bottom: 0;
+      padding: 12px 16px 12px;
+    }
+    .footer-ad-bar .footer-ad-inner {
+      font-size: 14px;
+      max-width: 100%;
+    }
+
+     .error-code {
+        font-size: 200px;
+    }
+
+    .error-title {
+        font-size: 24px;
+    }
+
+    .error-description {
+        font-size: 16px;
+    }
+
     .card-content {
         padding-bottom: 120px;    
     }
@@ -795,6 +883,7 @@
 
     .qr-wrapper {
         transform: translateX(-110px); 
+        gap: 24px;
     }
 
     .button-row {
@@ -909,8 +998,9 @@
     }
 
     .button-wrapper {
+        padding: 12px 16px;
         position: fixed;
-        bottom: 24px;
+        bottom: 40px;
         transform: translateX(-50%);
         width: 420px;
         z-index: 200;
