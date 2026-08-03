@@ -96,8 +96,8 @@ def record_user_stats(params: list, node_id: int | None, consumption_factor: int
 def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1):
     """Инкремент node_user_bs_usage для одной БС-ноды (ленивый сброс месяца).
 
-    Списание из User.bs_extra (купленный пул) — в той же транзакции, что и usage,
-    по приросту агрегата monthly_used сверх bs_monthly_limit бота.
+    Купленный пул (User.bs_extra) в течение месяца не трогается — переносится на
+    новый месяц нормализацией периода в начале этой же транзакции.
     """
     if not params:
         return
@@ -131,13 +131,31 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
             for r in existing_rows
         }
 
-        old_monthly_aggs = {uid: crud.get_bs_usage_totals(db, uid, yyyymm) for uid in uids}
+        # Одним запросом отбираем только тех, у кого период пула реально отстал:
+        # normalize_bs_extra_period берёт SELECT ... FOR UPDATE до проверки периода, а
+        # внутри месяца это no-op — иначе каждый тик (раз в 10 с) лочил бы строку users
+        # на каждого активного юзера до конца транзакции. Порядок по id детерминированный,
+        # чтобы не плодить взаимные блокировки с транзакциями API.
+        stale_users = (
+            db.query(User.id, User.bot_id)
+            .filter(
+                User.id.in_(uids),
+                User.bs_extra_period.is_not(None),
+                User.bs_extra_period < yyyymm,
+            )
+            .order_by(User.id)
+            .all()
+        )
+        if stale_users:
+            bot_monthly_limits = {}
+            for bot_id, data in db.query(BotSettings.bot_id, BotSettings.data).all():
+                settings = apply_bot_settings_fallback(data)
+                bot_monthly_limits[bot_id] = settings.get("bs_monthly_limit") or 0
 
-        user_bot = dict(db.query(User.id, User.bot_id).filter(User.id.in_(uids)).all())
-        bot_monthly_limits = {}
-        for bot_id, data in db.query(BotSettings.bot_id, BotSettings.data).all():
-            settings = apply_bot_settings_fallback(data)
-            bot_monthly_limits[bot_id] = settings.get("bs_monthly_limit") or 0
+            # Перенос пула на новый месяц — до апдейта счётчиков, пока строки прошлого
+            # периода ещё не перезаписаны.
+            for uid, bot_id in stale_users:
+                crud.normalize_bs_extra_period(db, uid, bot_monthly_limits.get(bot_id, 0), yyyymm, persist=True)
 
         to_insert, to_update = [], []
         for uid, delta in deltas.items():
@@ -150,7 +168,7 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
         # Оба DML идут через db.connection() (Core), а не db.execute() (ORM): ORM-овый
         # executemany-UPDATE с дополнительным WHERE в SQLAlchemy 2.0 всегда падает с
         # InvalidRequestError "bulk synchronize of persistent objects not supported…".
-        # Коммита внутри нет намеренно — usage и списание bs_extra ниже должны лечь
+        # Коммита внутри нет намеренно — usage и перенос пула выше должны лечь
         # одной транзакцией (db.commit() в конце функции).
         if to_insert:
             stmt = insert(NodeUserBsUsage)
@@ -168,11 +186,6 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
                 )
             )
             db.connection().execute(stmt, to_update)
-
-        for uid in uids:
-            new_monthly_agg = crud.get_bs_usage_totals(db, uid, yyyymm)
-            monthly_limit = bot_monthly_limits.get(user_bot.get(uid), 0)
-            crud.apply_bs_extra_pool_consumption(db, uid, old_monthly_aggs[uid], new_monthly_agg, monthly_limit)
 
         db.commit()
 

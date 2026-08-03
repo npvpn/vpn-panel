@@ -55,11 +55,9 @@ def get_subscription_user_info(user: UserResponse, *, db=None, bot_settings=None
 
     from app.xray.bs_limit import monthly_effective_limit, period_keys, pick_bs_bar
 
-    dbuser = crud.get_user_by_id(db, user_id)
-    bs_extra = (dbuser.bs_extra or 0) if dbuser else 0
-    monthly_limit_eff = monthly_effective_limit(monthly_limit, bs_extra)
-
     yyyymm = period_keys(datetime.utcnow())
+    pool = crud.normalize_bs_extra_period(db, user_id, monthly_limit, yyyymm, persist=False)
+    monthly_limit_eff = monthly_effective_limit(monthly_limit, pool)
     monthly_used = crud.get_bs_usage_totals(db, user_id, yyyymm)
     bar = pick_bs_bar(monthly_used, monthly_limit_eff)
     if bar is not None:

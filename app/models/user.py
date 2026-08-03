@@ -69,7 +69,9 @@ class User(BaseModel):
     on_hold_timeout: datetime | None | None = Field(None, nullable=True)
 
     auto_delete_in_days: int | None = Field(None, nullable=True)
-    bs_extra: int | None = Field(default=None, ge=0, description="Остаток купленного БС-трафика (пул, байты)")
+    bs_extra: int | None = Field(
+        default=None, ge=0, description="Доступный сверх базы БС-трафик в текущем месяце (байты)"
+    )
 
     next_plan: NextPlanModel | None = Field(None, nullable=True)
 

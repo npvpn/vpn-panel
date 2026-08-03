@@ -5,6 +5,9 @@ SQLAlchemy 2.0 всегда падает InvalidRequestError, из-за чего
 терялся на каждом тике джоба (строки создавались один раз и больше не росли).
 """
 
+import glob
+import importlib.util
+import os
 import sys
 import types
 from contextlib import contextmanager
@@ -33,7 +36,7 @@ _share_stub.generate_v2ray_links = lambda *args, **kwargs: []
 sys.modules.setdefault("app.subscription.share", _share_stub)
 
 from app.db.base import Base  # noqa: E402
-from app.db.models import Node, NodeUserBsUsage, User  # noqa: E402
+from app.db.models import Bot, BotSettings, Node, NodeUserBsUsage, User  # noqa: E402
 from app.jobs import record_usages  # noqa: E402
 from app.jobs.record_usages import record_bs_user_stats  # noqa: E402
 from app.xray.bs_limit import period_keys  # noqa: E402
@@ -43,6 +46,7 @@ if sys.modules.get("app.subscription.share") is _share_stub:
 
 NODE_ID = 13
 USER_ID = 45581
+GB = 1024**3
 
 
 @pytest.fixture
@@ -105,3 +109,462 @@ def test_stale_month_resets_counter(db, patched_getdb):
     row = bs_usage(db)
     assert row.monthly_used == 700
     assert row.monthly_period == period_keys(datetime.utcnow())
+
+
+def _load_bs_period_migration():
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    matches = glob.glob(os.path.join(here, "app/db/migrations/versions/*_npvpn_1768_bs_extra_period.py"))
+    assert len(matches) == 1, f"expected exactly one bs_extra_period migration, got {matches}"
+    spec = importlib.util.spec_from_file_location("bs_extra_period_migration", matches[0])
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_backfill_restores_already_consumed_pool(db):
+    """База 3 ГБ, куплено 10 ГБ, израсходовано 8 ГБ: в БД лежит съеденный пул 5 ГБ → чиним до 10 ГБ."""
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": 3 * GB}))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    user.bs_extra = 5 * GB
+    db.add(
+        NodeUserBsUsage(
+            user_id=USER_ID,
+            node_id=NODE_ID,
+            monthly_used=8 * GB,
+            monthly_period=period_keys(datetime.utcnow()),
+        )
+    )
+    db.commit()
+
+    _load_bs_period_migration()._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB
+    assert user.bs_extra_period == period_keys(datetime.utcnow())
+
+
+def test_backfill_leaves_pool_intact_when_base_not_exceeded(db):
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": 3 * GB}))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    user.bs_extra = 10 * GB
+    db.add(
+        NodeUserBsUsage(
+            user_id=USER_ID,
+            node_id=NODE_ID,
+            monthly_used=2 * GB,
+            monthly_period=period_keys(datetime.utcnow()),
+        )
+    )
+    db.commit()
+
+    _load_bs_period_migration()._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    assert db.query(User).filter(User.id == USER_ID).one().bs_extra == 10 * GB
+
+
+def test_bot_limits_reads_json_column_in_any_driver_form():
+    """Драйвер отдаёт JSON-колонку dict/str/bytes — на bytes миграция не должна падать."""
+
+    class FakeBind:
+        def execute(self, *_args, **_kwargs):
+            return types.SimpleNamespace(
+                fetchall=lambda: [
+                    (1, {"bs_monthly_limit": 3 * GB}),
+                    (2, '{"bs_monthly_limit": 5}'),
+                    (3, b'{"bs_monthly_limit": 7}'),
+                    (4, None),
+                ]
+            )
+
+    assert _load_bs_period_migration()._bot_limits(FakeBind()) == {1: 3 * GB, 2: 5, 3: 7, 4: 0}
+
+
+def test_backfill_ignores_usage_on_non_bs_nodes(db):
+    """Расход на обычной ноде в БС-пул не входит — иначе бэкфилл вернёт лишние гигабайты."""
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": 3 * GB}))
+    db.add(Node(id=NODE_ID + 1, name="plain", address="127.0.0.2", port=62050, api_port=62051, is_bs=False))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    user.bs_extra = 5 * GB
+    db.add(
+        NodeUserBsUsage(
+            user_id=USER_ID,
+            node_id=NODE_ID + 1,
+            monthly_used=8 * GB,
+            monthly_period=period_keys(datetime.utcnow()),
+        )
+    )
+    db.commit()
+
+    _load_bs_period_migration()._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    assert db.query(User).filter(User.id == USER_ID).one().bs_extra == 5 * GB
+
+
+def test_backfill_is_idempotent(db):
+    """Повторный вызов (ручная проверка, ретрай) не должен задваивать восстановленный пул."""
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": 3 * GB}))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    user.bs_extra = 5 * GB
+    db.add(
+        NodeUserBsUsage(
+            user_id=USER_ID,
+            node_id=NODE_ID,
+            monthly_used=8 * GB,
+            monthly_period=period_keys(datetime.utcnow()),
+        )
+    )
+    db.commit()
+
+    migration = _load_bs_period_migration()
+    migration._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    migration._backfill(db.connection())
+    db.commit()
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB
+    assert user.bs_extra_period == period_keys(datetime.utcnow())
+
+
+def _bot_with_limit(db, limit_bytes):
+    db.add(Bot(id=1, username="bot1"))
+    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": limit_bytes}))
+    user = db.query(User).filter(User.id == USER_ID).one()
+    user.bot_id = 1
+    db.commit()
+    return user
+
+
+def test_normalize_is_noop_within_same_period(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period=now))
+    db.commit()
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=False) == 10 * GB
+
+
+def test_normalize_is_noop_when_period_is_null(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = None
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=False) == 10 * GB
+
+
+def test_normalize_subtracts_previous_month_overflow(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=False) == 5 * GB
+
+
+def test_normalize_is_noop_when_period_is_in_the_future(db):
+    """Период больше текущего (гонка на границе суток UTC) нельзя откатывать назад:
+    иначе следующий тик вычтет тот же перерасход второй раз."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2999-12"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2999-12"))
+    db.commit()
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=True) == 10 * GB
+    db.commit()
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB
+    assert user.bs_extra_period == "2999-12"
+
+
+def test_normalize_persists_pool_and_period(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=True)
+    db.commit()
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 5 * GB
+    assert user.bs_extra_period == now
+
+
+def test_normalize_persist_reads_pool_from_db_not_identity_map(db):
+    """Регресс ревью: под FOR UPDATE пул надо перечитать, а не взять из identity map.
+
+    Юзер уже загружен в сессию роутером; между загрузкой и вызовом джоба учёта успела
+    нормализовать пул (10 → 5 ГБ) и переставить строку счётчика на текущий месяц.
+    Если читать закешированные атрибуты, перенос за прошлый месяц отменится и пул
+    вырастет обратно до 10 ГБ — юзер получит неоплаченный трафик.
+    """
+    from sqlalchemy import text
+
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    dbuser = db.query(User).filter(User.id == USER_ID).one()
+    assert dbuser.bs_extra == 10 * GB  # атрибуты осели в identity map
+
+    # Конкурентная транзакция мимо ORM: пул перенесён, строка счётчика уже за новый месяц.
+    db.execute(
+        text("UPDATE users SET bs_extra = :pool, bs_extra_period = :period WHERE id = :uid"),
+        {"pool": 5 * GB, "period": now, "uid": USER_ID},
+    )
+    db.execute(
+        text("UPDATE node_user_bs_usage SET monthly_used = 0, monthly_period = :period WHERE user_id = :uid"),
+        {"period": now, "uid": USER_ID},
+    )
+
+    assert crud.normalize_bs_extra_period(db, USER_ID, 3 * GB, now, persist=True) == 5 * GB
+    db.commit()
+    db.expire_all()
+    assert db.query(User).filter(User.id == USER_ID).one().bs_extra == 5 * GB
+
+
+def test_normalize_persist_returns_zero_for_missing_user(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    assert crud.normalize_bs_extra_period(db, USER_ID + 999, 3 * GB, now, persist=True) == 0
+
+
+def test_stale_totals_ignore_rows_older_than_pool_period(db):
+    """Строка молчащей ноды из позапрошлого месяца уже была учтена — её не вычитаем снова."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    db.add(Node(id=NODE_ID + 1, name="bs-node-2", address="127.0.0.2", port=62050, api_port=62051, is_bs=True))
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-02"))
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID + 1, monthly_used=99 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert crud.get_bs_usage_totals_stale(db, USER_ID, now, "2000-02") == 8 * GB
+
+
+def test_stale_totals_ignore_non_bs_nodes(db):
+    """Расход на обычной ноде не должен вычитаться из купленного БС-пула."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    db.add(Node(id=NODE_ID + 1, name="plain", address="127.0.0.2", port=62050, api_port=62051, is_bs=False))
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID + 1, monthly_used=99 * GB, monthly_period="2000-02"))
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-02"))
+    db.commit()
+
+    assert crud.get_bs_usage_totals_stale(db, USER_ID, now, "2000-02") == 8 * GB
+
+
+def test_get_bs_state_reports_stable_ceiling(db):
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period=now))
+    db.commit()
+
+    state = crud.get_bs_state(db, db.query(User).filter(User.id == USER_ID).one())
+    assert state == {
+        "monthly_used": 8 * GB,
+        "monthly_limit": 3 * GB,
+        "pool": 10 * GB,
+        "limit_total": 13 * GB,
+    }
+
+
+def test_pool_untouched_by_ticks_within_month(db, patched_getdb):
+    """Главный регресс NPVPN-1768: потолок не должен ехать вниз по мере расхода."""
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.commit()
+
+    record_bs_user_stats([{"uid": USER_ID, "value": 4 * GB}], NODE_ID)
+    record_bs_user_stats([{"uid": USER_ID, "value": 4 * GB}], NODE_ID)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB
+    assert bs_usage(db).monthly_used == 8 * GB
+
+
+def test_tick_within_month_does_not_touch_pool_rows(db, patched_getdb, monkeypatch):
+    """Регресс ревью: внутри месяца нормализация — no-op, и джоба не должна брать
+    FOR UPDATE на каждого юзера тика (раз в 10 секунд это N залоченных строк users)."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.commit()
+
+    calls = []
+    monkeypatch.setattr(crud, "normalize_bs_extra_period", lambda *a, **kw: calls.append(a[1]) or 0)
+
+    record_bs_user_stats([{"uid": USER_ID, "value": 4 * GB}], NODE_ID)
+
+    assert calls == []
+    assert bs_usage(db).monthly_used == 4 * GB
+
+
+def test_tick_in_new_month_carries_pool_over_once(db, patched_getdb):
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    record_bs_user_stats([{"uid": USER_ID, "value": 1 * GB}], NODE_ID)
+    record_bs_user_stats([{"uid": USER_ID, "value": 1 * GB}], NODE_ID)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 5 * GB  # вычли ровно перерасход прошлого месяца, второй тик — no-op
+    assert user.bs_extra_period == now
+    assert bs_usage(db).monthly_used == 2 * GB
+
+
+def test_user_bs_traffic_summary_keeps_contract_and_stable_ceiling(db):
+    from app.db import crud
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    summary = crud.get_user_bs_traffic(db, db.query(User).filter(User.id == USER_ID).one())
+
+    assert set(summary) == {"monthly_used", "monthly_limit", "monthly_limit_with_extra", "extra_bytes"}
+    assert summary["monthly_used"] == 0  # прошлый месяц в текущий агрегат не входит
+    assert summary["monthly_limit"] == 3 * GB
+    assert summary["extra_bytes"] == 5 * GB  # пул нормализован переносом
+    assert summary["monthly_limit_with_extra"] == 8 * GB
+
+
+def test_bs_monthly_limit_total_uses_normalized_pool(db):
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    assert db.query(User).filter(User.id == USER_ID).one().bs_monthly_limit_total == 8 * GB
+
+
+def test_bs_monthly_limit_total_does_not_query_within_month(db):
+    """Регресс ревью: пул и его период уже загружены на инстансе, внутри месяца свойство
+    не должно делать ни одного запроса — иначе списочные эндпоинты получают +1 запрос
+    на каждого пользователя страницы (bs_monthly_used ещё и читает свойство как guard)."""
+    from sqlalchemy import event
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = now
+    db.commit()
+
+    dbuser = db.query(User).filter(User.id == USER_ID).one()
+    assert dbuser.bot.settings is not None  # прогреваем ленивые связи до подсчёта
+
+    statements = []
+    engine = db.get_bind()
+
+    def on_execute(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", on_execute)
+    try:
+        assert dbuser.bs_monthly_limit_total == 13 * GB
+        assert dbuser.bs_monthly_limit_total == 13 * GB
+    finally:
+        event.remove(engine, "before_cursor_execute", on_execute)
+
+    assert statements == []
+
+
+def test_purchase_normalizes_stale_period_before_increment(db):
+    """Покупка в новом месяце не должна лечь поверх непересчитанного пула."""
+    from app.db import crud
+
+    now = period_keys(datetime.utcnow())
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.add(NodeUserBsUsage(user_id=USER_ID, node_id=NODE_ID, monthly_used=8 * GB, monthly_period="2000-01"))
+    db.commit()
+
+    crud.modify_user_bs_extra(db, db.query(User).filter(User.id == USER_ID).one(), delta_bytes=20 * GB)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 25 * GB  # 10 − 5 перерасхода прошлого месяца + 20 купленных
+    assert user.bs_extra_period == now
+
+
+def test_reset_pool_sets_current_period(db):
+    from app.db import crud
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = "2000-01"
+    db.commit()
+
+    crud.reset_user_bs_extra_pool(db, db.query(User).filter(User.id == USER_ID).one())
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 0
+    assert user.bs_extra_period == period_keys(datetime.utcnow())

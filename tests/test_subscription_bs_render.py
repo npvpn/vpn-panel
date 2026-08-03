@@ -462,3 +462,15 @@ def test_generate_subscription_incy_without_custom_json_uses_incy_stub(sub_user,
     config = base64.b64decode(_generate(sub_user, "incy")).decode()  # incy/v2ray всегда base64
 
     assert _v2ray_stub_endpoint(config) == (INCY_STUB_ADDRESS, INCY_STUB_PORT)
+
+
+def test_bs_bar_total_does_not_shrink_as_usage_grows():
+    """Регресс NPVPN-1768: у Happ total фиксирован, растёт только used."""
+    from app.xray.bs_limit import monthly_effective_limit, pick_bs_bar
+
+    gb = 1024**3
+    ceiling = monthly_effective_limit(3 * gb, 10 * gb)
+
+    assert pick_bs_bar(0, ceiling) == (0, 13 * gb)
+    assert pick_bs_bar(8 * gb, ceiling) == (8 * gb, 13 * gb)
+    assert pick_bs_bar(13 * gb, ceiling) == (13 * gb, 13 * gb)

@@ -152,6 +152,7 @@ class User(Base):
     on_hold_timeout = Column(DateTime, nullable=True, default=None)
     device_limit = Column(Integer, nullable=True, default=None)
     bs_extra = Column(BigInteger, nullable=True, default=None)
+    bs_extra_period = Column(String(7), nullable=True, default=None)
 
     # * Positive values: User will be deleted after the value of this field in days automatically.
     # * Negative values: User won't be deleted automatically at all.
@@ -182,9 +183,16 @@ class User(Base):
 
     @property
     def bs_monthly_limit_total(self) -> int | None:
-        """Месячный БС-потолок (лимит бота + остаток bs_extra), None если лимит не задан."""
+        """Месячный БС-потолок (лимит бота + купленный пул), None если лимит не задан.
+
+        Пул берём с самого инстанса — оба атрибута уже загружены, и внутри месяца
+        свойство не делает ни одного запроса. В БД идём только когда период пула
+        отстал: тогда нужен агрегат ещё не списанного расхода прошлого месяца.
+        """
+        from sqlalchemy.orm import object_session
+
         from app.models.bot import apply_bot_settings_fallback
-        from app.xray.bs_limit import monthly_effective_limit
+        from app.xray.bs_limit import carry_over_pool, monthly_effective_limit, period_keys
 
         if not self.bot or not self.bot.settings:
             return None
@@ -192,7 +200,20 @@ class User(Base):
         monthly_limit = settings.get("bs_monthly_limit") or 0
         if not monthly_limit:
             return None
-        return monthly_effective_limit(monthly_limit, self.bs_extra or 0)
+
+        pool = int(self.bs_extra or 0)
+        period = cast("str | None", self.bs_extra_period)
+        yyyymm = period_keys(datetime.utcnow())
+        db = object_session(self)
+        # Без сессии (detached-объект) агрегат не достать — отдаём заведомо
+        # ненормализованный пул: если период отстал, потолок будет завышен до
+        # ближайшего тика джобы учёта.
+        if db is not None and period and period < yyyymm:
+            from app.db.crud import get_bs_usage_totals_stale
+
+            stale_used = get_bs_usage_totals_stale(db, cast(int, self.id), yyyymm, period)
+            pool = carry_over_pool(pool, stale_used, monthly_limit)
+        return monthly_effective_limit(monthly_limit, pool)
 
     @property
     def bs_monthly_used(self) -> int:
