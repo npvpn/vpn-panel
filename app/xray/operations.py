@@ -11,7 +11,7 @@ from app.models.node import NodeStatus
 from app.models.user import UserResponse
 from app.utils.concurrency import threaded_function
 from app.xray.node import XRayNode
-from app.xray.node_config import node_config_json
+from app.xray.node_config import node_config_json, node_has_inbound
 from config import (
     XRAY_NODE_CONNECT_CONCURRENCY,
     XRAY_NODE_CONNECT_RETRIES,
@@ -31,6 +31,15 @@ def _is_closed_grpc_channel_error(exc: Exception) -> bool:
         return False
     msg = str(exc).lower()
     return "closed channel" in msg or "channel closed" in msg
+
+
+def _node_has_inbound(node, inbound_tag: str) -> bool:
+    """Есть ли inbound_tag среди реально включённых на ноде тегов.
+
+    `node.inbound_tags` заполняется после успешного start/restart набором тегов,
+    с которым нода была поднята (см. node_has_inbound в app/xray/node_config.py).
+    """
+    return node_has_inbound(getattr(node, "inbound_tags", None), inbound_tag)
 
 
 def _get_ready_nodes():
@@ -191,6 +200,8 @@ def add_user(dbuser: "DBUser"):
 
             _add_user_to_inbound(xray.api, inbound_tag, account)  # main core
             for node in ready_nodes:
+                if not _node_has_inbound(node, inbound_tag):
+                    continue
                 try:
                     _add_user_to_inbound(node.api, inbound_tag, account)
                 except Exception as e:
@@ -242,6 +253,8 @@ def remove_user(dbuser: "DBUser"):
     for inbound_tag in target_inbounds:
         _remove_user_from_inbound(xray.api, inbound_tag, email)
         for node in ready_nodes:
+            if not _node_has_inbound(node, inbound_tag):
+                continue
             # Не допускаем падения при недоступной ноде
             try:
                 _remove_user_from_inbound(node.api, inbound_tag, email)
@@ -284,6 +297,8 @@ def update_user(dbuser: "DBUser"):
 
             _alter_inbound_user(xray.api, inbound_tag, account)  # main core
             for node in ready_nodes:
+                if not _node_has_inbound(node, inbound_tag):
+                    continue
                 try:
                     _alter_inbound_user(node.api, inbound_tag, account)
                 except Exception as e:
@@ -298,6 +313,8 @@ def update_user(dbuser: "DBUser"):
         # remove disabled inbounds
         _remove_user_from_inbound(xray.api, inbound_tag, email)
         for node in ready_nodes:
+            if not _node_has_inbound(node, inbound_tag):
+                continue
             try:
                 _remove_user_from_inbound(node.api, inbound_tag, email)
             except Exception as e:
@@ -346,6 +363,8 @@ def remove_user_from_node(dbuser: "DBUser", node_id: int):
     email = f"{dbuser.id}.{dbuser.username}"
     user = UserResponse.model_validate(dbuser)
     for inbound_tag in _user_inbound_tags(user):
+        if not _node_has_inbound(node, inbound_tag):
+            continue
         try:
             _remove_user_from_inbound(node.api, inbound_tag, email)
         except Exception as e:
@@ -368,6 +387,8 @@ def add_user_to_node(dbuser: "DBUser", node_id: int):
     user = UserResponse.model_validate(dbuser)
     for proxy_type, inbound_tags in user.inbounds.items():
         for inbound_tag in inbound_tags:
+            if not _node_has_inbound(node, inbound_tag):
+                continue
             inbound = xray.config.inbounds_by_tag.get(inbound_tag, {})
             try:
                 proxy_settings = user.proxies[proxy_type].dict(no_obj=True)
@@ -486,7 +507,7 @@ def add_node(dbnode: "DBNode"):
     remove_node(dbnode.id)
 
     tls = get_tls()
-    xray.nodes[dbnode.id] = XRayNode(
+    node = XRayNode(
         address=dbnode.address,
         port=dbnode.port,
         api_port=dbnode.api_port,
@@ -495,8 +516,9 @@ def add_node(dbnode: "DBNode"):
         protocol=dbnode.protocol,
         usage_coefficient=dbnode.usage_coefficient,
     )
+    xray.nodes[dbnode.id] = node
 
-    return xray.nodes[dbnode.id]
+    return node
 
 
 def _change_node_status(node_id: int, status: NodeStatus, message: str = None, version: str = None) -> bool:
@@ -639,6 +661,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
                 _cleanup_node_connection(node)
                 logger.info(f'Connecting to "{dbnode.name}" node (attempt {attempt}/{retries})')
                 node.start(config_json=node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids))
+                node.inbound_tags = set(node_inbound_tags)
                 version = node.get_version()
                 _change_node_status(node_id, NodeStatus.connected, version=version)
                 logger.info(f'Connected to "{dbnode.name}" node, xray run on v{version}')
@@ -720,6 +743,7 @@ def restart_node(node_id, config=None):
             config = xray.config.include_db_users()
 
         node.restart(config_json=node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids))
+        node.inbound_tags = set(node_inbound_tags)
         logger.info(f'Xray core of "{dbnode.name}" node restarted')
     except Exception as e:
         try:

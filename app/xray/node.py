@@ -142,6 +142,10 @@ class ReSTXRayNode:
         self._started = False
         self._grpc_lock = threading.Lock()
 
+        # Реальный набор тегов инбаундов ноды; заполняется после успешного
+        # start/restart (NPVPN-1779), None до первого коннекта.
+        self.inbound_tags: set[str] | None = None
+
     def _recreate_session(self):
         try:
             self.session.close()
@@ -438,6 +442,10 @@ class RPyCXRayNode:
         self._service = Service()
         self._api = None
 
+        # Реальный набор тегов инбаундов ноды; заполняется после успешного
+        # start/restart (NPVPN-1779), None до первого коннекта.
+        self.inbound_tags: set[str] | None = None
+
     def disconnect(self):
         try:
             self.connection.close()
@@ -594,6 +602,10 @@ class RPyCXRayNode:
 
 
 class XRayNode:
+    # __new__ возвращает ReSTXRayNode/RPyCXRayNode, но для mypy это остаётся типом
+    # XRayNode — атрибут нужно продублировать здесь (см. те же атрибуты в подклассах).
+    inbound_tags: set[str] | None = None
+
     def __new__(
         self,
         address: str,

@@ -19,6 +19,15 @@ from app.xray.cascade_config import cascade_config
 from app.xray.inbound_filter import apply_inbound_filter
 
 
+def node_has_inbound(node_inbound_tags: Iterable[str] | None, inbound_tag: str) -> bool:
+    """Реально ли inbound_tag включён на ноде (по факту её последнего start/restart).
+
+    `node_inbound_tags=None` значит «ещё не знаем» (до первого коннекта) — тогда не
+    фильтруем, иначе рискуем молча не выполнить операцию с пользователем на ноде.
+    """
+    return node_inbound_tags is None or inbound_tag in node_inbound_tags
+
+
 def node_signature(
     node_inbound_tags: Iterable[str] | None,
     cascade_kwargs: dict,
