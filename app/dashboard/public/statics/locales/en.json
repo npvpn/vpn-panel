@@ -344,6 +344,7 @@
   "botSettings.noBots": "No bots available",
   "botSettings.emptySelection": "— New bot (empty) —",
   "botSettings.selectBot": "Select a bot",
+  "botSettings.noBotsFound": "No bots found",
   "botSettings.subSupportUrlHint": "Full support URL, e.g. https://t.me/my_support.",
   "botSettings.subProfileTitleHint": "Profile title shown in subscription clients.",
   "botSettings.botUrlHint": "Bot URL for announce-url and fallback pages, e.g. https://t.me/my_vpn_bot.",

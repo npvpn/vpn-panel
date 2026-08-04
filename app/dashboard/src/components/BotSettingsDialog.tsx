@@ -408,6 +408,7 @@ export const BotSettingsDialog: FC = () => {
           isClosable: true,
           position: "top",
         });
+        close();
       })
       .catch(() => {
         toast({
@@ -901,17 +902,25 @@ export const BotSettingsDialog: FC = () => {
                     <FormLabel>{t("botSettings.bsMonthlyLimitGb")}</FormLabel>
                     <Input
                       type="number"
-                      value={settings.bs_monthly_limit ? String(settings.bs_monthly_limit / GB_IN_BYTES) : ""}
+                      value={
+                        settings.bs_monthly_limit
+                          ? String(settings.bs_monthly_limit / GB_IN_BYTES)
+                          : ""
+                      }
                       placeholder="0"
                       onChange={(e) => {
                         const gb = parseFloat(e.target.value);
                         updateSettings({
-                          bs_monthly_limit: e.target.value === "" || isNaN(gb)
-                            ? 0 : Math.round(gb * GB_IN_BYTES),
+                          bs_monthly_limit:
+                            e.target.value === "" || isNaN(gb)
+                              ? 0
+                              : Math.round(gb * GB_IN_BYTES),
                         });
                       }}
                     />
-                    <FormHelperText>{t("botSettings.bsMonthlyLimitGbHint")}</FormHelperText>
+                    <FormHelperText>
+                      {t("botSettings.bsMonthlyLimitGbHint")}
+                    </FormHelperText>
                   </FormControl>
                   <Box
                     border="1px solid"

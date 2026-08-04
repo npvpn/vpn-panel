@@ -40,7 +40,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { resetStrategy } from "constants/UserSettings";
 import { FilterUsageType, useDashboard } from "contexts/DashboardContext";
 import dayjs from "dayjs";
-import { FC, useEffect, useState } from "react";
+import { FC, useEffect, useMemo, useState } from "react";
 import ReactApexChart from "react-apexcharts";
 import ReactDatePicker from "react-datepicker";
 import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
@@ -66,6 +66,7 @@ import { ReloadIcon } from "./Filters";
 import classNames from "classnames";
 import { fetch } from "service/http";
 import { DevicesModal } from "./DevicesModal";
+import ReactSelect, { StylesConfig } from "react-select";
 
 const AddUserIcon = chakra(UserPlusIcon, {
   baseStyle: {
@@ -92,6 +93,76 @@ export type UserDialogProps = {};
 
 export type FormType = Pick<UserCreate, keyof UserCreate> & {
   selected_proxies: ProxyKeys;
+};
+
+interface BotOption {
+  value: string;
+  label: string;
+}
+
+const botSelectStyles: StylesConfig<BotOption, false> = {
+  control: (base) => ({
+    ...base,
+    minHeight: 40,
+    height: 40,
+    fontSize: 16,
+    borderColor: "var(--chakra-colors-light-border)",
+    boxShadow: "none",
+    "&:hover": {
+      borderColor: "var(--chakra-colors-light-border)",
+    },
+  }),
+
+  valueContainer: (base) => ({
+    ...base,
+    height: 40,
+    padding: "0 12px",
+  }),
+
+  input: (base) => ({
+    ...base,
+    margin: 0,
+    padding: 0,
+    fontSize: 16,
+  }),
+
+  singleValue: (base) => ({
+    ...base,
+    fontSize: 16,
+    margin: 0,
+  }),
+
+  placeholder: (base) => ({
+    ...base,
+    fontSize: 16,
+    margin: 0,
+    color: "var(--chakra-colors-gray-500)",
+  }),
+
+  indicatorsContainer: (base) => ({
+    ...base,
+    height: 40,
+  }),
+
+  clearIndicator: (base) => ({
+    ...base,
+    padding: 8,
+  }),
+
+  dropdownIndicator: (base) => ({
+    ...base,
+    padding: 8,
+  }),
+
+  menuPortal: (base) => ({
+    ...base,
+    zIndex: 9999,
+  }),
+
+  menu: (base) => ({
+    ...base,
+    zIndex: 9999,
+  }),
 };
 
 const formatUser = (user: User): FormType => {
@@ -253,6 +324,15 @@ export const UserDialog: FC<UserDialogProps> = () => {
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [devices, setDevices] = useState<UserDevice[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
+  const botOptions = useMemo<BotOption[]>(
+    () =>
+      bots.map((bot) => ({
+        value: bot.username,
+        label: `@${bot.username}`,
+      })),
+    [bots]
+  );
+
   const toast = useToast();
   const { t, i18n } = useTranslation();
 
@@ -826,7 +906,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
                           mb={"10px"}
                           isInvalid={!!form.formState.errors.bot_username}
                         >
-                          <FormLabel>{t("userDialog.botUsername")}</FormLabel>
+                          {/* <FormLabel>{t("userDialog.botUsername")}</FormLabel>
                           <Select {...form.register("bot_username")}>
                             <option value="">{t("userDialog.noBot")}</option>
                             {bots.map((bot) => (
@@ -834,7 +914,39 @@ export const UserDialog: FC<UserDialogProps> = () => {
                                 @{bot.username}
                               </option>
                             ))}
-                          </Select>
+                          </Select> */}
+                          <FormControl>
+                            <FormLabel>{t("userDialog.botUsername")}</FormLabel>
+                            <Controller
+                              control={form.control}
+                              name="bot_username"
+                              render={({ field }) => (
+                                <ReactSelect<BotOption>
+                                  options={botOptions}
+                                  value={
+                                    botOptions.find(
+                                      (o) => o.value === field.value
+                                    ) ?? null
+                                  }
+                                  onChange={(option: BotOption | null) =>
+                                    field.onChange(option?.value ?? "")
+                                  }
+                                  placeholder={t("botSettings.selectBot")}
+                                  noOptionsMessage={() =>
+                                    t("botSettings.noBotsFound")
+                                  }
+                                  isSearchable
+                                  isClearable
+                                  styles={botSelectStyles}
+                                  menuPortalTarget={document.body}
+                                  menuPosition="fixed"
+                                />
+                              )}
+                            />
+                            {/* <FormHelperText>
+                              {t("userDialog.noBot")}
+                            </FormHelperText> */}
+                          </FormControl>
                           <FormHelperText>
                             {t("userDialog.botUsernameHint")}
                           </FormHelperText>

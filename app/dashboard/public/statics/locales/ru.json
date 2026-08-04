@@ -344,6 +344,7 @@
   "botSettings.noBots": "Нет доступных ботов",
   "botSettings.emptySelection": "— Новый бот (пусто) —",
   "botSettings.selectBot": "Выберите бота",
+  "botSettings.noBotsFound": "Боты не найдены",
   "botSettings.botHint": "Выберите бота, для которого редактируются настройки ниже.",
   "botSettings.subSupportUrlHint": "Полный URL поддержки, например https://t.me/my_support.",
   "botSettings.subProfileTitleHint": "Заголовок профиля подписки, который увидит клиент.",

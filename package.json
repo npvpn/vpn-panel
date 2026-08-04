@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "react-loading-skeleton": "^3.5.0"
+    "react-loading-skeleton": "^3.5.0",
+    "react-select": "^5.10.2"
   }
 }

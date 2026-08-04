@@ -15,6 +15,7 @@
     "@emotion/styled": "^11.10.5",
     "@heroicons/react": "^2.0.12",
     "@hookform/resolvers": "^2.9.10",
+    "react-select": "^5.8.0",
     "apexcharts": "^3.40.0",
     "classnames": "^2.3.2",
     "dayjs": "^1.11.6",
