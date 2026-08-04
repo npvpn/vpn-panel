@@ -11,5 +11,8 @@ def test_known_inbound_tags_filters_missing_tag():
     assert node_has_inbound(tags, "TROJAN_TCP") is False
 
 
-def test_empty_inbound_tags_rejects_everything():
-    assert node_has_inbound(set(), "VLESS_TCP") is False
+def test_empty_inbound_tags_allows_everything():
+    # Пустой набор == ни одной галочки на ноде в UI. По конвенции
+    # apply_inbound_filter это значит «фильтр не применён» — нода реально
+    # гоняет xray со всеми инбаундами, поэтому фильтровать вызовы нельзя.
+    assert node_has_inbound(set(), "VLESS_TCP") is True
