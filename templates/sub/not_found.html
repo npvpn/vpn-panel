@@ -1,40 +1,48 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Страница не найдена</title>
-    <link rel="stylesheet" href="/statics/sub/styles/index.css" />
-    <link rel="stylesheet" href="/statics/sub/styles/components.css" />
-    <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
-    <link rel="icon" href="data:," />
-</head>
-<body>
-    <div class="error-page">
-        <div class="error-content">
-            <div class="error-code">404</div>
-            <h1 class="error-title" style="margin-top: 0.5rem; margin-bottom: 8px;">
-                Страница не найдена
-            </h1>
-            <p class="page-subtitle error-subtitle error-description" style="text-align: center; max-width: 28rem;">
-                Возможно, вы перешли по неверной ссылке или страница была удалена
-            </p>
-            {% if home_url %}
-            <a href="{{ home_url }}" target="_blank" rel="noopener noreferrer" class="dark-btn" style="margin-top: 24px; font-size: 16px;">
-                На главную
-            </a>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Страница не найдена</title>
+        <link rel="stylesheet" href="/statics/sub/styles/index.css" />
+        <link rel="stylesheet" href="/statics/sub/styles/components.css" />
+        <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
+        <link rel="icon" href="data:," />
+    </head>
+    <body>
+        <div class="error-page">
+            <div class="error-content">
+                <div class="error-code">404</div>
+                <h1 class="error-title" style="margin-top: 0.5rem; margin-bottom: 8px;">
+                    Что-то пошло не так
+                </h1>
+                <p class="page-subtitle error-subtitle" style="text-align: center; max-width: 28rem; margin-bottom: 24px;">
+                    Обновите страницу или зайдите позже
+                </p>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button target="_blank" rel="noopener noreferrer" class="dark-btn" 
+                        style="font-size: 16px;"
+                        onclick="window.location.reload()"
+                    >
+                        Обновить
+                    </button>
+                    {% if home_url %}
+                        <a href={{home_url}} target="_blank" rel="noopener noreferrer" class="light-btn" style="font-size: 16px;">
+                            На главную
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% if show_ads %}
+                <footer class="footer_404">
+                    <p style="font-family: var(--font-family); font-size: 14px; color: var(--gray-4);">
+                        Сайт работает на платформе
+                        <a href="https://www.npvpn.net/" class="footer-link" target="_blank" rel="noopener noreferrer">
+                            npvpn
+                        </a>
+                    </p>
+                </footer>
             {% endif %}
         </div>
-        {% if show_ads %}
-            <footer class="footer_404">
-                <p style="font-family: var(--font-family); font-size: 14px; color: var(--gray-4);">
-                    Сайт работает на платформе
-                    <a href="https://www.npvpn.net/" class="footer-link" target="_blank" rel="noopener noreferrer">
-                        npvpn
-                    </a>
-                </p>
-            </footer>
-        {% endif %}
-    </div>
-</body>
+    </body>
 </html>

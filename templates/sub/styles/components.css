@@ -723,6 +723,20 @@
     background-color: var(--black);
 }
 
+.light-btn {
+    border-radius: 40px;
+    font-family: var(--third-family);
+    color: var(--black);
+    padding: 16px 20px;
+    border: none;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f6f6f6;
+    text-decoration: none;
+}
+
 .device-count {
     color: #7b7b7b;
     font-size: 16px;
@@ -831,6 +845,7 @@
     letter-spacing: -0.04em;
     font-family: var(--third-family);
     font-weight: 700;
+    font-style: italic;
 }
 
 .footer_404 {
@@ -840,7 +855,7 @@
 }
 
 .error-title{
-    font-size: 20px;
+    font-size: 24px;
     font-family: var(--third-family);
     font-weight: 700;
     line-height: 113%;
@@ -852,6 +867,10 @@
 }
 
 @media (min-width: 1024px) {
+    .error-subtitle {
+        font-size: 24px;
+    }
+
      .footer-ad-bar {
       bottom: 0;
       padding: 12px 16px 12px;
@@ -862,15 +881,11 @@
     }
 
      .error-code {
-        font-size: 200px;
+        font-size: 260px;
     }
 
     .error-title {
-        font-size: 24px;
-    }
-
-    .error-description {
-        font-size: 16px;
+        font-size: 40px;
     }
 
     .card-content {
