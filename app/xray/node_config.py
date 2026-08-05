@@ -12,11 +12,22 @@ from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 
 from app.xray.bs_limit import strip_blocked_clients
 from app.xray.cascade_config import cascade_config
 from app.xray.inbound_filter import apply_inbound_filter
+
+
+def node_has_inbound(node_inbound_tags: Collection[str] | None, inbound_tag: str) -> bool:
+    """Реально ли inbound_tag включён на ноде (по факту её последнего start/restart).
+
+    Пусто/None (ещё не знаем ДО первого коннекта, либо на ноде НЕ отмечено ни
+    одного инбаунда) → не фильтруем: см. apply_inbound_filter — та же
+    конвенция «пустой allowed_tags = поднимаются все инбаунды», так что нода
+    без единой галочки реально гоняет xray со всеми тегами.
+    """
+    return not node_inbound_tags or inbound_tag in node_inbound_tags
 
 
 def node_signature(
