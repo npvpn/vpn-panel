@@ -67,6 +67,8 @@
           selectedClient: null,
           savedClient: null,
 
+          copiedTerminal: false,
+
           openRevokeModal(device) {
             this.selectedDevice = device;
             this.showRevokeModal = true;
@@ -80,6 +82,16 @@
           isPcOs(os) {
             const lower = (os || '').toLowerCase();
             return lower.includes('windows') || lower.includes('linux') || lower.includes('pc');
+          },
+
+          copyTerminalCommands() {
+            const text = document.getElementById('linux-commands').innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                this.copiedTerminal = true;
+                setTimeout(() => {
+                    this.copiedTerminal = false;
+                }, 2000);
+            });
           },
 
           async revokeDevice(deviceId) {
@@ -141,6 +153,11 @@
                   if (apps.length > 0 && !this.selectedClient) {
                       this.selectedClient = apps[0].id;
                   }
+              });
+
+              this.$watch('selectedOs', () => {
+                this.copiedKey = false;
+                this.copiedTerminal = false;
               });
           },
           get deviceCount() {
@@ -254,24 +271,6 @@
             } catch (e) {
               console.error('Copy failed', e);
             }
-          },
-
-          formatUserAgent(userAgent) {
-              if (!userAgent) return 'Неизвестно';
-              
-              const parts = userAgent.split('/');
-              if (parts.length >= 3) {
-                  return `${parts[0]}/${parts[1]}`;
-              }
-              
-              return userAgent.length > 20 
-                  ? userAgent.substring(0, 20) + '...' 
-                  : userAgent;
-          },
-
-          copyTerminalCommands() {
-            const text = document.getElementById('linux-commands').innerText;
-            navigator.clipboard.writeText(text);
           },
         }));
       });
@@ -521,25 +520,33 @@
                     </template>
     
                     <template x-if="selectedOs === 'Linux'">
-                      <div class="flex flex-col custom-gap-steps">
-                        <div class="linux-code w-full p-3 ">
-                          <pre
-                            id="linux-commands"
-                            class="m-0 leading-[20px] whitespace-pre-wrap break-all overflow-hidden"
-                            style="font-family: var(--font-family);"
-                          ><code>wget https://github.com/Happ-proxy/happ-desktop/releases/latest/download/Happ.linux.x64.deb
+    <div class="flex flex-col custom-gap-steps">
+        <div class="linux-code w-full p-3 ">
+            <pre
+                id="linux-commands"
+                class="m-0 leading-[20px] whitespace-pre-wrap break-all overflow-hidden"
+                style="font-family: var(--font-family);"
+            ><code>wget https://github.com/Happ-proxy/happ-desktop/releases/latest/download/Happ.linux.x64.deb
 sudo apt install ./Happ.linux.x64.deb
-                        </code>
-                          </pre>
-                          <button @click="copyTerminalCommands()" class="mb-2 block">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M16 3H4V16" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                              <path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    </template>
+            </code></pre>
+            <button @click="copyTerminalCommands()" class="mb-2 block">
+                <!-- Меняем иконку -->
+                <template x-if="!copiedTerminal">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16 3H4V16" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </template>
+                <template x-if="copiedTerminal">
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="8" cy="7.99988" r="6" stroke="#2FC26E" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M10 6.66663L7.33333 9.33329L6 7.99996" stroke="#2FC26E" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </template>
+            </button>
+        </div>
+    </div>
+</template>
                   </div>
                 </template>
     
