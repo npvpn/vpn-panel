@@ -148,7 +148,20 @@
               word = 'дня';
             }
             return `${days} ${word}`;
-          }
+          },
+
+          formatUserAgent(userAgent) {
+              if (!userAgent) return 'Неизвестно';
+              
+              const parts = userAgent.split('/');
+              if (parts.length >= 3) {
+                  return `${parts[0]}/${parts[1]}`;
+              }
+              
+              return userAgent.length > 20 
+                  ? userAgent.substring(0, 20) + '...' 
+                  : userAgent;
+          },
         }));
       });
     </script>
@@ -192,7 +205,7 @@
                     </template>
                   </div>
 
-                  <div class="device-card__info">
+                  <!-- <div class="device-card__info">
                     <div class="device-card__name" x-text="device.device_model"></div>
 
                     <div class="device-card__os">
@@ -201,6 +214,20 @@
                     </div>
 
                     <div class="device-card__user-agent" x-show="device.user_agent" x-text="device.user_agent"></div>
+                  </div> -->
+                  <div class="device-card__info">
+                    <div class="device-card__name" x-text="device.device_model"></div>
+
+                    <div class="device-card__os">
+                        <span x-text="device.device_os"></span>
+                        <!-- <span x-show="device.ver_os" x-text="' • ' + device.ver_os"></span> -->
+                        <template x-if="device.user_agent">
+                            <span x-text="' • ' + formatUserAgent(device.user_agent)"></span>
+                        </template>
+                        <template x-if="!device.user_agent">
+                            <span x-text="' • Неизвестно'"></span>
+                        </template>
+                    </div>
                   </div>
                 </div>
 
