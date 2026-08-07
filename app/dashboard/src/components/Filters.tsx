@@ -27,6 +27,7 @@ import { useTranslation } from "react-i18next";
 import ReactSelect from "react-select";
 import { fetch } from "service/http";
 import { Bot } from "types/Bot";
+import { useBotSelectStyles } from "hooks/useBotSelectStyles";
 
 const iconProps = {
   baseStyle: {
@@ -53,72 +54,9 @@ interface BotOption {
   label: string;
 }
 
-const customStyles: StylesConfig<BotOption, false> = {
-  control: (base) => ({
-    ...base,
-    minHeight: 40,
-    height: 40,
-    fontSize: 16,
-    borderColor: "var(--chakra-colors-light-border)",
-    boxShadow: "none",
-    "&:hover": {
-      borderColor: "var(--chakra-colors-light-border)",
-    },
-  }),
-
-  valueContainer: (base) => ({
-    ...base,
-    height: 40,
-    padding: "0 12px",
-  }),
-
-  input: (base) => ({
-    ...base,
-    margin: 0,
-    padding: 0,
-    fontSize: 16,
-  }),
-
-  singleValue: (base) => ({
-    ...base,
-    fontSize: 16,
-    margin: 0,
-  }),
-
-  placeholder: (base) => ({
-    ...base,
-    fontSize: 16,
-    margin: 0,
-    color: "var(--chakra-colors-gray-500)",
-  }),
-
-  indicatorsContainer: (base) => ({
-    ...base,
-    height: 40,
-  }),
-
-  clearIndicator: (base) => ({
-    ...base,
-    padding: 8,
-  }),
-
-  dropdownIndicator: (base) => ({
-    ...base,
-    padding: 8,
-  }),
-
-  menuPortal: (base) => ({
-    ...base,
-    zIndex: 9999,
-  }),
-
-  menu: (base) => ({
-    ...base,
-    zIndex: 9999,
-  }),
-};
-
 export const Filters: FC<FilterProps> = ({ ...props }) => {
+  const botSelectStyles = useBotSelectStyles({ variant: "filter" });
+
   const {
     loading,
     filters,
@@ -235,7 +173,7 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
               noOptionsMessage={() => t("botSettings.noBotsFound")}
               isSearchable
               isClearable
-              styles={customStyles}
+              styles={botSelectStyles}
               menuPortalTarget={document.body}
               menuPosition="fixed"
             />
