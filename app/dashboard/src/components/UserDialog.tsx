@@ -67,6 +67,7 @@ import classNames from "classnames";
 import { fetch } from "service/http";
 import { DevicesModal } from "./DevicesModal";
 import ReactSelect, { StylesConfig } from "react-select";
+import { useBotSelectStyles } from "hooks/useBotSelectStyles";
 
 const AddUserIcon = chakra(UserPlusIcon, {
   baseStyle: {
@@ -99,71 +100,6 @@ interface BotOption {
   value: string;
   label: string;
 }
-
-const botSelectStyles: StylesConfig<BotOption, false> = {
-  control: (base) => ({
-    ...base,
-    minHeight: 40,
-    height: 40,
-    fontSize: 16,
-    borderColor: "var(--chakra-colors-light-border)",
-    boxShadow: "none",
-    "&:hover": {
-      borderColor: "var(--chakra-colors-light-border)",
-    },
-  }),
-
-  valueContainer: (base) => ({
-    ...base,
-    height: 40,
-    padding: "0 12px",
-  }),
-
-  input: (base) => ({
-    ...base,
-    margin: 0,
-    padding: 0,
-    fontSize: 16,
-  }),
-
-  singleValue: (base) => ({
-    ...base,
-    fontSize: 16,
-    margin: 0,
-  }),
-
-  placeholder: (base) => ({
-    ...base,
-    fontSize: 16,
-    margin: 0,
-    color: "var(--chakra-colors-gray-500)",
-  }),
-
-  indicatorsContainer: (base) => ({
-    ...base,
-    height: 40,
-  }),
-
-  clearIndicator: (base) => ({
-    ...base,
-    padding: 8,
-  }),
-
-  dropdownIndicator: (base) => ({
-    ...base,
-    padding: 8,
-  }),
-
-  menuPortal: (base) => ({
-    ...base,
-    zIndex: 9999,
-  }),
-
-  menu: (base) => ({
-    ...base,
-    zIndex: 9999,
-  }),
-};
 
 const formatUser = (user: User): FormType => {
   return {
@@ -304,6 +240,8 @@ const schema = z.discriminatedUnion("status", [
 ]);
 
 export const UserDialog: FC<UserDialogProps> = () => {
+  const botSelectStyles = useBotSelectStyles();
+
   const {
     editingUser,
     isCreatingNewUser,
