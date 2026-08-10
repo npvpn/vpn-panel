@@ -206,6 +206,7 @@
 
 .limited-btn {
     display: flex;
+    font-size: 16px;
     justify-content: center;
     align-items: center;
     background-color: #f6f6f6;
@@ -714,6 +715,7 @@
 
 .dark-btn {
     border-radius: 40px;
+    font-size: 16px;
     font-family: var(--third-family);
     text-decoration: none;
     color: var(--white);
@@ -1023,10 +1025,6 @@
         width: 420px;
         z-index: 200;
         margin: 0;
-    }
-
-    .limited-btn {
-        font-size: 16px;
     }
     
     .config-btn {
