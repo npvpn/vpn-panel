@@ -209,7 +209,9 @@
     justify-content: center;
     align-items: center;
     background-color: #f6f6f6;
-    padding: 16px;
+    color: var(--black);
+    text-decoration: none;
+    padding: 16px 0;
     border: none;
     border-radius: 100px;
     font-family: var(--third-family);
@@ -713,6 +715,7 @@
 .dark-btn {
     border-radius: 40px;
     font-family: var(--third-family);
+    text-decoration: none;
     color: var(--white);
     padding: 16px 20px;
     border: none;
