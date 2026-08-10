@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,6 +15,8 @@ if TYPE_CHECKING:
     # тянуться при импорте модуля (см. crud-функции ниже — там app.db
     # импортируется лениво, внутри функций, которым реально нужна db).
     from app.db import Session
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -111,14 +114,44 @@ def apply_managed_bot_push(
 
     section = MANAGED_BOT_SECTIONS[key]
     normalized = section.validate(data)
+    logger.info(
+        "managed bot push: key=%s source_bot_id=%s username=%s version=%s source=%s",
+        key,
+        source_bot_id,
+        normalized.get("username"),
+        version,
+        source,
+    )
 
     bot = db.query(Bot).filter(Bot.source_bot_id == source_bot_id).first()
     username_match = db.query(Bot).filter(Bot.username == normalized["username"]).first()
     if bot is None:
         bot = username_match
+        if bot is not None:
+            logger.info(
+                "managed bot push: bound existing bot by username=%s panel_bot_id=%s "
+                "current_source_bot_id=%s admin_sync_enabled=%s",
+                bot.username,
+                bot.id,
+                bot.source_bot_id,
+                bot.admin_sync_enabled,
+            )
         if bot is not None and bot.source_bot_id not in (None, source_bot_id):
+            logger.warning(
+                "managed bot push conflict: username=%s already bound to source_bot_id=%s",
+                bot.username,
+                bot.source_bot_id,
+            )
             raise ManagedBotConflictError("source_bot_id_conflict")
     elif username_match is not None and username_match.id != bot.id:
+        logger.warning(
+            "managed bot push conflict: source_bot_id=%s maps to panel_bot_id=%s "
+            "but username=%s belongs to panel_bot_id=%s",
+            source_bot_id,
+            bot.id,
+            normalized["username"],
+            username_match.id,
+        )
         raise ManagedBotConflictError("bot_username_conflict")
 
     if bot is None:
@@ -130,7 +163,19 @@ def apply_managed_bot_push(
         )
         db.add(bot)
         db.flush()
+        logger.info(
+            "managed bot push: created panel bot id=%s username=%s source_bot_id=%s",
+            bot.id,
+            bot.username,
+            source_bot_id,
+        )
     elif not bot.admin_sync_enabled:
+        logger.warning(
+            "managed bot push rejected: admin_sync_disabled panel_bot_id=%s username=%s source_bot_id=%s",
+            bot.id,
+            bot.username,
+            source_bot_id,
+        )
         raise AdminSyncDisabledError
 
     bot_row = cast(Any, bot)
@@ -161,6 +206,13 @@ def apply_managed_bot_push(
 
     db.commit()
     db.refresh(state)
+    logger.info(
+        "managed bot push applied: panel_bot_id=%s source_bot_id=%s state_key=%s version=%s",
+        bot.id,
+        source_bot_id,
+        state.key,
+        state.version,
+    )
     return _as_state(
         {
             "key": state.key,
@@ -191,10 +243,29 @@ def read_bot_managed_state(db: Session, bot: Any) -> dict[str, Any] | None:
 def set_bot_admin_sync(db: Session, bot: Any, enabled: bool) -> None:
     from app.db.models import ManagedSetting
 
+    previous = bool(bot.admin_sync_enabled)
     bot.admin_sync_enabled = enabled
     if not enabled and bot.source_bot_id is not None:
-        db.query(ManagedSetting).filter(ManagedSetting.key == bot_managed_state_key(int(bot.source_bot_id))).delete(
-            synchronize_session=False
+        deleted = (
+            db.query(ManagedSetting)
+            .filter(ManagedSetting.key == bot_managed_state_key(int(bot.source_bot_id)))
+            .delete(synchronize_session=False)
+        )
+        logger.info(
+            "admin sync disabled for panel bot id=%s username=%s source_bot_id=%s unlinked=%s",
+            bot.id,
+            bot.username,
+            bot.source_bot_id,
+            deleted,
+        )
+    else:
+        logger.info(
+            "admin sync toggled for panel bot id=%s username=%s source_bot_id=%s %s -> %s",
+            bot.id,
+            bot.username,
+            bot.source_bot_id,
+            previous,
+            enabled,
         )
     db.commit()
     db.refresh(bot)

@@ -18,3 +18,6 @@ def test_migration_has_upgrade_and_downgrade():
     assert hasattr(module, "upgrade")
     assert hasattr(module, "downgrade")
     assert module.down_revision == "9b1d29ea4018"
+    source = open(module.__file__, encoding="utf-8").read()
+    assert "server_default=sa.true()" in source
+    assert "server_default=sa.false()" not in source

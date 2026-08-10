@@ -16,22 +16,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Existing bots must opt in. After the columns are installed, the database
-    # default is switched to true so bots created by newer code start enabled.
+    # Sync from admin is on by default for every bot, including existing ones.
     with op.batch_alter_table("bots") as batch_op:
         batch_op.add_column(sa.Column("source_bot_id", sa.BigInteger(), nullable=True))
         batch_op.add_column(
-            sa.Column("admin_sync_enabled", sa.Boolean(), nullable=False, server_default=sa.false())
+            sa.Column("admin_sync_enabled", sa.Boolean(), nullable=False, server_default=sa.true())
         )
         batch_op.create_index("ix_bots_source_bot_id", ["source_bot_id"], unique=True)
-
-    with op.batch_alter_table("bots") as batch_op:
-        batch_op.alter_column(
-            "admin_sync_enabled",
-            existing_type=sa.Boolean(),
-            nullable=False,
-            server_default=sa.true(),
-        )
 
 
 def downgrade() -> None:
