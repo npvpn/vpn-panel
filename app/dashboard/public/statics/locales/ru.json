@@ -372,5 +372,13 @@
   "botSettings.draftRestore": "Восстановить",
   "botSettings.draftDiscard": "Отклонить",
   "botSettings.botSearchPlaceholder": "Поиск бота",
-  "botSettings.botSearchEmpty": "Боты не найдены"
+  "botSettings.botSearchEmpty": "Боты не найдены",
+  "botSettings.adminSync": "Синхронизация из админки",
+  "botSettings.adminSyncHint": "Разрешить админке отправлять данные бота, ссылки и домен подписки.",
+  "botSettings.adminSyncNewBotHint": "Для новых ботов включено по умолчанию. Поля доступны для редактирования до первой управляемой синхронизации.",
+  "botSettings.adminSyncEnabled": "Синхронизация с админкой включена",
+  "botSettings.adminSyncDisabled": "Синхронизация с админкой выключена",
+  "botSettings.adminSyncFailed": "Не удалось изменить синхронизацию с админкой",
+  "botSettings.managedBanner": "Часть полей управляется источником {{source}} (версия {{version}}). Остальные настройки бота доступны для редактирования.",
+  "botSettings.managedFieldHint": "Поле управляется админкой. Отключите синхронизацию, чтобы редактировать его и остановить дальнейшие обновления."
 }

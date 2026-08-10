@@ -371,5 +371,13 @@
   "botSettings.draftRestore": "Restore",
   "botSettings.draftDiscard": "Discard",
   "botSettings.botSearchPlaceholder": "Search bot",
-  "botSettings.botSearchEmpty": "No bots found"
+  "botSettings.botSearchEmpty": "No bots found",
+  "botSettings.adminSync": "Sync from admin panel",
+  "botSettings.adminSyncHint": "Allow the admin panel to push this bot's identity, URLs, and subscription domain.",
+  "botSettings.adminSyncNewBotHint": "Enabled by default for new bots. Fields stay editable until the first managed update is received.",
+  "botSettings.adminSyncEnabled": "Admin sync enabled",
+  "botSettings.adminSyncDisabled": "Admin sync disabled",
+  "botSettings.adminSyncFailed": "Failed to update admin sync",
+  "botSettings.managedBanner": "Some fields are managed by {{source}} (version {{version}}). Other bot settings remain editable.",
+  "botSettings.managedFieldHint": "Managed by the admin panel. Disable admin sync to edit this field and stop future managed updates."
 }

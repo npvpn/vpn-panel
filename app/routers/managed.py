@@ -10,6 +10,53 @@ from app.utils import responses
 router = APIRouter(tags=["Managed"], prefix="/api", responses={401: responses._401})
 
 
+@router.put("/managed/{key}/bots/{source_bot_id}", response_model=ManagedStateResponse)
+def push_managed_bot(
+    key: str,
+    source_bot_id: int,
+    payload: ManagedPushRequest,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.get_current),
+):
+    del admin
+    if key not in svc.MANAGED_BOT_SECTIONS:
+        raise HTTPException(status_code=404, detail="unknown managed key")
+    try:
+        return svc.apply_managed_bot_push(
+            db,
+            key,
+            source_bot_id,
+            data=payload.data,
+            version=payload.version,
+            source=payload.source,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors())
+    except svc.AdminSyncDisabledError:
+        raise HTTPException(status_code=409, detail="admin_sync_disabled")
+    except svc.ManagedBotConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.get("/managed/{key}/bots/{source_bot_id}", response_model=ManagedStateResponse)
+def get_managed_bot(
+    key: str,
+    source_bot_id: int,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.get_current),
+):
+    del admin
+    if key not in svc.MANAGED_BOT_SECTIONS:
+        raise HTTPException(status_code=404, detail="unknown managed key")
+    try:
+        state = svc.read_managed_bot_state(db, key, source_bot_id)
+    except svc.AdminSyncDisabledError:
+        raise HTTPException(status_code=409, detail="admin_sync_disabled")
+    if state is None:
+        raise HTTPException(status_code=404, detail="not managed")
+    return state
+
+
 @router.put("/managed/{key}", response_model=ManagedStateResponse)
 def push_managed(
     key: str,

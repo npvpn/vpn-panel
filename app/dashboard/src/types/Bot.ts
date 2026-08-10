@@ -1,7 +1,17 @@
+export type ManagedState = {
+  key: string;
+  version: string;
+  source: string;
+  applied_at: string | null;
+};
+
 export type Bot = {
   id: number;
   username: string;
   title?: string | null;
+  source_bot_id?: number | null;
+  admin_sync_enabled: boolean;
+  managed?: ManagedState | null;
 };
 
 export type BotSettings = {
@@ -34,4 +44,9 @@ export type BotSettings = {
   bs_extra_reset_pool_on_prolong: boolean;
   show_ads: boolean;
   updated_at?: string;
+  managed?: ManagedState | null;
+};
+
+export type AdminSyncUpdate = {
+  enabled: boolean;
 };
