@@ -279,20 +279,22 @@
     color: var(--text-primary);
     font-weight: 600;
     font-family: var(--font-family);
-    font-size: 14px;
-    line-height: 1.4;
+    font-size: 16px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 150%;
+    letter-spacing: -0.04em;
 }
 
 .device-card__os,
 .device-card__user-agent {
     color: var(--gray-4);
-    font-size: 13px;
+    font-size: 14px;
     font-family: var(--font-family);
-    font-weight: 600;
-    line-height: 1.4;
+    font-weight: 400;
+    line-height: 143%;
+    letter-spacing: -0.04em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
