@@ -53,7 +53,8 @@
           user: userData,
           selectedOs: 'QR',
           currentPage: 'settings',
-          clientApps: {{ client_apps | tojson }},
+          // clientApps: {{ client_apps | tojson }},
+          clientApps: JSON.parse('{{ client_apps | tojson | safe }}'),
 
           devices: initialDevices,
           deviceLimit: Number("{{ user.device_limit or 0 }}"),
@@ -61,6 +62,12 @@
           showRevokeModal: false,
           selectedDevice: null,
           copiedKey: false,
+
+          hasApp: true,
+          selectedClient: null,
+          savedClient: null,
+
+          copiedTerminal: false,
 
           openRevokeModal(device) {
             this.selectedDevice = device;
@@ -75,6 +82,16 @@
           isPcOs(os) {
             const lower = (os || '').toLowerCase();
             return lower.includes('windows') || lower.includes('linux') || lower.includes('pc');
+          },
+
+          copyTerminalCommands() {
+            const text = document.getElementById('linux-commands').innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                this.copiedTerminal = true;
+                setTimeout(() => {
+                    this.copiedTerminal = false;
+                }, 2000);
+            });
           },
 
           async revokeDevice(deviceId) {
@@ -112,6 +129,35 @@
                     height: 200
                   });
                 }
+              });
+
+              this.$watch('currentPlatform', () => {
+                  this.selectedClient = null;
+                  this.$nextTick(() => {
+                      const apps = this.availableApps;
+                      if (apps.length > 0) {
+                          this.selectedClient = apps[0].id;
+                      }
+                  });
+              });
+
+              this.$watch('clientApps', () => {
+                  const apps = this.availableApps;
+                  if (apps.length > 0 && !this.selectedClient) {
+                      this.selectedClient = apps[0].id;
+                  }
+              });
+
+              this.$nextTick(() => {
+                  const apps = this.availableApps;
+                  if (apps.length > 0 && !this.selectedClient) {
+                      this.selectedClient = apps[0].id;
+                  }
+              });
+
+              this.$watch('selectedOs', () => {
+                this.copiedKey = false;
+                this.copiedTerminal = false;
               });
           },
           get deviceCount() {
@@ -193,6 +239,28 @@
             };
             return intervals[this.user.reset_strategy] || '';
           },
+
+          get availableApps() {
+            const apps = [];
+            if (this.primaryApp) {
+                apps.push(this.primaryApp);
+            }
+            if (this.alternativeApps && this.alternativeApps.length) {
+                apps.push(...this.alternativeApps);
+            }
+            return apps.filter(app => app.scheme);
+          },
+
+          getClientName(clientId) {
+            const app = this.availableApps.find(a => a.id === clientId);
+            return app ? app.name : '';
+          },
+
+          getClientScheme(clientId) {
+              const app = this.availableApps.find(a => a.id === clientId);
+              return app ? app.scheme : null;
+          },
+
           async copyToClipboard(text) {
             try {
               await navigator.clipboard.writeText(text);
@@ -203,11 +271,6 @@
             } catch (e) {
               console.error('Copy failed', e);
             }
-          },
-
-          copyTerminalCommands() {
-            const text = document.getElementById('linux-commands').innerText;
-            navigator.clipboard.writeText(text);
           },
         }));
       });
@@ -270,7 +333,7 @@
             </p>
           </div>
     
-          <main x-show="currentPage === 'settings'" class="space-y-4">
+          <main x-show="currentPage === 'settings'" class="space-y-4" x-data="{hasAppSelected: false}">
             <div class="platforms-list">
               <template x-for="os in osOptions" :key="os.id">
                   <button
@@ -294,9 +357,45 @@
             </div>
     
             <div x-show="selectedOs !== 'QR'" class="grid grid-cols-1 custom-gap">
-                <p class="steps-title">
-                  Шаг 1
-                </p>
+                <div>
+                  <p class="steps-title">У вас уже есть приложение?</p>
+                  <div class="flex gap-2">
+                      <button
+                          @click="hasApp = true; if (savedClient) { selectedClient = savedClient; }"
+                          class="hasApp-btn"
+                          :class="{ 'hasApp-btn--active': hasApp === true }"
+                      >
+                          Да
+                      </button>
+                      <button
+                          @click="hasApp = false; if (selectedClient) { savedClient = selectedClient; }"
+                          class="hasApp-btn"
+                          :class="{ 'hasApp-btn--active': hasApp === false }"
+                      >
+                          Нет
+                      </button>
+                  </div>
+                </div>
+
+                
+                <template x-if="hasApp === true">
+                  <div>
+                    <p class="steps-title">
+                      Шаг 1
+                    </p>
+                    <p class="steps-text">Выберите имеющееся у вас приложение</p>
+                    <div class="flex flex-wrap gap-2 app-select-wrapper">
+                        <template x-for="app in availableApps" :key="app.id">
+                            <button
+                              @click="selectedClient = app.id; savedClient = app.id"
+                              class="app-select-btn"
+                              :class="{ 'app-select-btn--active': selectedClient === app.id }"
+                              x-text="app.name"
+                            ></button>
+                        </template>
+                    </div>
+                  </div>
+                </template>
     
                 <template x-if="selectedOs === 'QR'">
                   <div class="flex flex-col items-center">
@@ -311,121 +410,146 @@
                     ></div>
                   </div>
                 </template>
-    
-                <template x-if="selectedOs === 'Windows'">
-                  <div class="flex flex-col">
-                    <p class="steps-text">Можно открыть эту страницу из Telegram-бота на вашем ПК или ноутбуке. После загрузки откройте и запустите скачанное приложение.</p>
-                  </div>
-                </template>
-    
-                <template x-if="selectedOs === 'TV'">
-                  <div class="flex flex-col custom-gap">
-                    <p class="steps-text">
-                      Сначала установите приложение «Happ Proxy» на телефон iPhone или Android.
-                      Настройте и убедитесь что VPN корректно работает на телефоне.
-                      После этого скачайте то же приложение на телевизор AndroidTV через Google Play,
-                      найдя его в поиске.
-                    </p>
 
-                    <template x-if="primaryApp">
-                      <div class="flex gap-2">
-                        <a
-                          :href="primaryApp.install[0]?.url"
-                          target="_blank"
-                          class="config-btn clients-btn"
-                          x-text="`Скачать ${primaryApp.name}`"
-                        ></a>
+                <template x-if="hasApp === false">
+                  <div>
+                    <p class="steps-title">
+                      Шаг 1
+                    </p>
+                    <template x-if="selectedOs === 'Windows'">
+                      <div class="flex flex-col steps-title">
+                        <p class="steps-text">Можно открыть эту страницу из Telegram-бота на вашем ПК или ноутбуке. После загрузки откройте и запустите скачанное приложение.</p>
                       </div>
                     </template>
+
+                    <template x-if="selectedOs === 'Android'">
+                      <div class="flex flex-col steps-title">
+                        <p class="steps-text">Скачайте приложение</p>
+                      </div>
+                    </template>
+
+                    <template x-if="selectedOs === 'Linux'">
+                      <div class="flex flex-col steps-title">
+                        <p class="steps-text">Скачайте приложение или установите через терминал</p>
+                      </div>
+                    </template>
+        
+                    <template x-if="selectedOs === 'TV'">
+                      <div class="flex flex-col custom-gap-steps">
+                        <p class="steps-text">
+                          Сначала установите приложение «Happ Proxy» на телефон iPhone или Android.
+                          Настройте и убедитесь что VPN корректно работает на телефоне.
+                          После этого скачайте то же приложение на телевизор AndroidTV через Google Play,
+                          найдя его в поиске.
+                        </p>
+    
+                        <template x-if="primaryApp">
+                          <div class="flex gap-2">
+                            <a
+                              :href="primaryApp.install[0]?.url"
+                              target="_blank"
+                              class="config-btn clients-btn"
+                              x-text="`Скачать ${primaryApp.name}`"
+                            ></a>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+        
+                    <template x-if="primaryApp && currentPlatform !== 'androidtv'">
+                      <div class="flex flex-col custom-gap-steps">
+                        <template x-if="primaryApp.install.length > 1">
+                          <p class="steps-text">
+                            Выберите регион, соответствующий Apple ID
+                          </p>
+                        </template>
+                        <div class="flex gap-2 primary-apps">
+                          <template x-for="item in primaryApp.install" :key="item.region">
+                            <a
+                              :href="item.url"
+                              target="_blank"
+                              :class="item.region === 'default'
+                                ? 'config-btn clients-btn'
+                                : 'config-btn box-content flex items-center justify-center gap-2 bg-[#f6f6f6] font-semibold transition-colors text-[14px] clients-btn'"
+                            >
+                              <span x-show="item.region === 'ru'">
+                                <img
+                                  src="/statics/sub/assets/russia.svg"
+                                  alt="Россия"
+                                  class="w-5 h-5"
+                                >
+                              </span>
+                              <span x-show="item.region === 'global'">
+                                <img
+                                  src="/statics/sub/assets/globe.svg"
+                                  alt="Global"
+                                  class="w-5 h-5"
+                                >
+                              </span>
+                              <span
+                                :class="item.region === 'default' ? '' : 'clients-btn'"
+                                x-text="item.region === 'default'
+                                  ? `Скачать ${primaryApp.name}`
+                                  : regionLabel(item.region)"
+                              ></span>
+                            </a>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+    
+                    <template x-if="alternativeApps.length && currentPlatform !== 'androidtv'">
+                      <div class="flex flex-col custom-gap-steps">
+                        <p class="steps-text mt-3">
+                          Альтернативные приложения для подключения
+                        </p>
+                        <div class="flex gap-2">
+                          <template x-for="app in alternativeApps" :key="app.id">
+                            <a
+                              :href="app.install[0].url"
+                              target="_blank"
+                              :class="['ios','macos'].includes(currentPlatform)
+                                ? 'config-btn clients-btn'
+                                : 'config-btn box-content flex items-center justify-center gap-2 bg-[#f6f6f6] font-semibold transition-colors clients-btn'"
+                              :style="['ios','macos'].includes(currentPlatform) ? 'border-radius: 100px;' : ''"
+                              x-text="app.name"
+                            ></a>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+    
+                    <template x-if="selectedOs === 'Linux'">
+    <div class="flex flex-col custom-gap-steps">
+        <div class="linux-code w-full p-3 ">
+            <pre
+                id="linux-commands"
+                class="m-0 leading-[20px] whitespace-pre-wrap break-all overflow-hidden"
+                style="font-family: var(--font-family);"
+            ><code>wget https://github.com/Happ-proxy/happ-desktop/releases/latest/download/Happ.linux.x64.deb
+sudo apt install ./Happ.linux.x64.deb
+            </code></pre>
+            <button @click="copyTerminalCommands()" class="mb-2 block">
+                <!-- Меняем иконку -->
+                <template x-if="!copiedTerminal">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16 3H4V16" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </template>
+                <template x-if="copiedTerminal">
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="8" cy="7.99988" r="6" stroke="#2FC26E" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M10 6.66663L7.33333 9.33329L6 7.99996" stroke="#2FC26E" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </template>
+            </button>
+        </div>
+    </div>
+</template>
                   </div>
                 </template>
     
-                <template x-if="primaryApp && currentPlatform !== 'androidtv'">
-                  <div class="flex flex-col custom-gap">
-                    <template x-if="primaryApp.install.length > 1">
-                      <p class="steps-text">
-                        Выберите регион, соответствующий Apple ID
-                      </p>
-                    </template>
-                    <div class="flex gap-2">
-                     <template x-for="item in primaryApp.install" :key="item.region">
-                        <a
-                          :href="item.url"
-                          target="_blank"
-                          :class="item.region === 'default'
-                            ? 'config-btn clients-btn'
-                            : 'config-btn box-content w-[154px] flex items-center justify-center gap-2 bg-[#f6f6f6] font-semibold transition-colors text-[14px] clients-btn'"
-                        >
-                          <span x-show="item.region === 'ru'">
-                            <img
-                              src="/statics/sub/assets/russia.svg"
-                              alt="Россия"
-                              class="w-5 h-5"
-                            >
-                          </span>
-                          <span x-show="item.region === 'global'">
-                            <img
-                              src="/statics/sub/assets/globe.svg"
-                              alt="Global"
-                              class="w-5 h-5"
-                            >
-                          </span>
-                          <span
-                            :class="item.region === 'default' ? '' : 'clients-btn'"
-                            x-text="item.region === 'default'
-                              ? `Скачать ${primaryApp.name}`
-                              : regionLabel(item.region)"
-                          ></span>
-                        </a>
-                      </template>
-                    </div>
-                  </div>
-                </template>
-
-                <template x-if="alternativeApps.length && currentPlatform !== 'androidtv'">
-                  <div class="flex flex-col custom-gap">
-                    <p class="steps-text">
-                      Альтернативные приложения для подключения
-                    </p>
-                    <div class="flex gap-2">
-                      <template x-for="app in alternativeApps" :key="app.id">
-                        <a
-                          :href="app.install[0].url"
-                          target="_blank"
-                          :class="['ios','macos'].includes(currentPlatform)
-                            ? 'config-btn clients-btn'
-                            : 'config-btn box-content w-[154px] flex items-center justify-center gap-2 bg-[#f6f6f6] font-semibold transition-colors text-[14px] clients-btn'"
-                          :style="['ios','macos'].includes(currentPlatform) ? 'border-radius: 100px; width: 120px;' : ''"
-                          x-text="app.name"
-                        ></a>
-                      </template>
-                    </div>
-                  </div>
-                </template>
-
-                <template x-if="selectedOs === 'Linux'">
-                  <div class="flex flex-col custom-gap">
-                    <p class="steps-text">
-                      Или установка через терминал:
-                    </p>
-                    <div class="linux-code w-full p-3 ">
-                      <pre
-                        id="linux-commands"
-                        class="m-0 text-[14px] leading-[20px] whitespace-pre-wrap break-all overflow-hidden"
-                        style="font-family: var(--font-family);"
-                      ><code>wget https://github.com/Happ-proxy/happ-desktop/releases/latest/download/Happ.linux.x64.deb
-sudo apt install ./Happ.linux.x64.deb
-                    </code>
-                      </pre>
-                      <button @click="copyTerminalCommands()" class="mb-2 block">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M16 3H4V16" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                          <path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                </template>
               <div>
                 <p class="steps-title">
                   Шаг 2
@@ -449,38 +573,46 @@ sudo apt install ./Happ.linux.x64.deb
     
                 <template x-if="!['QR','TV'].includes(selectedOs)">
                   <div class="button-row">
-                      <button
-                          @click="copyToClipboard(user.subscription_url)"
-                          class="copy-button"
-                          style="font-family: var(--third-family)"
-                      >
-                          <span x-text="copiedKey ? 'Ключ скопирован!' : 'Копировать ключ'"></span>
-                          <template x-if="!copiedKey">
-                              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                  <path d="M13.3335 2.5H3.3335V13.3333" stroke="#141413" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round" />
-                                  <path d="M6.6665 5.83331H16.6665V15.8333C16.6665 16.7538 15.9203 17.5 14.9998 17.5H8.33317C7.4127 17.5 6.6665 16.7538 6.6665 15.8333V5.83331Z" stroke="#141413" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round" />
-                              </svg>
-                          </template>
-                      </button>
+                    <button
+                        @click="copyToClipboard(user.subscription_url)"
+                        class="copy-button"
+                        style="font-family: var(--third-family)"
+                    >
+                        <span x-text="copiedKey ? 'Ключ скопирован!' : 'Копировать ключ'"></span>
+                        <template x-if="!copiedKey">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M13.3335 2.5H3.3335V13.3333" stroke="#141413" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round" />
+                                <path d="M6.6665 5.83331H16.6665V15.8333C16.6665 16.7538 15.9203 17.5 14.9998 17.5H8.33317C7.4127 17.5 6.6665 16.7538 6.6665 15.8333V5.83331Z" stroke="#141413" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </template>
+                    </button>
 
-                      <template x-if="primaryApp && String(selectedOs).toLowerCase() !== 'linux'">
-                          <a
-                              :href="deeplink(primaryApp)"
-                              class="add-key-button"
-                              style="font-family: var(--third-family)"
-                          >
-                              Добавить ключ в&nbsp;<span x-text="primaryApp.name"></span>
-                          </a>
-                      </template>
+                    <template x-if="!['QR','TV'].includes(selectedOs)">
+                      <div class="button-row">
+                          <!-- Кнопка "Добавить ключ в" — одна универсальная -->
+                          <template x-if="(hasApp === true && selectedClient && getClientScheme(selectedClient)) || (hasApp === false && primaryApp && primaryApp.scheme)">
+                              <a
+                                  :href="hasApp === true 
+                                      ? `${getClientScheme(selectedClient)}://add/${user.subscription_url}`
+                                      : `${primaryApp.scheme}://add/${user.subscription_url}`"
+                                  class="add-key-button"
+                                  style="font-family: var(--third-family)"
+                                  x-text="hasApp === true 
+                                      ? `Добавить ключ в ${getClientName(selectedClient)}`
+                                      : `Добавить ключ в ${primaryApp.name}`"
+                              ></a>
+                          </template>
+                      </div>
+                    </template>
                   </div>
               </template>
               </div>
             </div>
 
 
-               {% if web_url %}
+            {% if web_url %}
               <div class="button-wrapper">
-                <a href="{{ web_url }}" target="_blank" rel="noopener noreferrer"
+                <a href="{{ web_url }}"
                     class="w-full flex items-center justify-center font-bold py-4 transition-colors text-lg" style="font-family: var(--third-family)">
                     Войти в личный кабинет
                 </a>
@@ -542,7 +674,7 @@ sudo apt install ./Happ.linux.x64.deb
                       </template>
                     </div>
     
-                    <div class="device-card__info">
+                    <!-- <div class="device-card__info">
                       <div class="device-card__name" x-text="device.device_model"></div>
     
                       <div class="device-card__os">
@@ -551,6 +683,21 @@ sudo apt install ./Happ.linux.x64.deb
                       </div>
     
                       <div class="device-card__user-agent" x-show="device.user_agent" x-text="device.user_agent"></div>
+                    </div> -->
+
+                    <div class="device-card__info">
+                      <div class="device-card__name" x-text="device.device_model"></div>
+
+                      <div class="device-card__os">
+                          <span x-text="device.device_os"></span>
+                          <!-- <span x-show="device.ver_os" x-text="' • ' + device.ver_os"></span> -->
+                          <template x-if="device.user_agent">
+                              <span x-text="' • ' + formatUserAgent(device.user_agent)"></span>
+                          </template>
+                          <template x-if="!device.user_agent">
+                              <span x-text="' • Неизвестно'"></span>
+                          </template>
+                      </div>
                     </div>
                   </div>
     
