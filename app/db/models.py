@@ -79,6 +79,8 @@ class Bot(Base):
     id = Column(Integer, primary_key=True)
     username = Column(String(64), unique=True, index=True, nullable=False)
     title = Column(String(128), nullable=True, default=None)
+    source_bot_id = Column(BigInteger, unique=True, index=True, nullable=True)
+    admin_sync_enabled = Column(Boolean, nullable=False, default=True, server_default=text("1"))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

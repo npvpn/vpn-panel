@@ -315,5 +315,13 @@
   "botSettings.draftRestore": "恢复",
   "botSettings.draftDiscard": "丢弃",
   "botSettings.botSearchPlaceholder": "按用户名或名称搜索机器人",
-  "botSettings.botSearchEmpty": "未找到机器人"
+  "botSettings.botSearchEmpty": "未找到机器人",
+  "botSettings.adminSync": "从管理面板同步",
+  "botSettings.adminSyncHint": "允许管理面板推送此机器人的身份信息、链接和订阅域名。",
+  "botSettings.adminSyncNewBotHint": "新机器人默认启用。在收到首次托管更新之前，字段仍可编辑。",
+  "botSettings.adminSyncEnabled": "已启用管理面板同步",
+  "botSettings.adminSyncDisabled": "已禁用管理面板同步",
+  "botSettings.adminSyncFailed": "更新管理面板同步失败",
+  "botSettings.managedBanner": "部分字段由 {{source}} 管理（版本 {{version}}）。其他机器人设置仍可编辑。",
+  "botSettings.managedFieldHint": "此字段由管理面板管理。禁用管理同步后即可编辑，并会停止后续托管更新。"
 }

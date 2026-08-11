@@ -319,5 +319,13 @@
   "botSettings.draftRestore": "بازیابی",
   "botSettings.draftDiscard": "رد کردن",
   "botSettings.botSearchPlaceholder": "جستجوی ربات با نام کاربری یا عنوان",
-  "botSettings.botSearchEmpty": "رباتی یافت نشد"
+  "botSettings.botSearchEmpty": "رباتی یافت نشد",
+  "botSettings.adminSync": "همگام‌سازی از پنل مدیریت",
+  "botSettings.adminSyncHint": "به پنل مدیریت اجازه دهید مشخصات، لینک‌ها و دامنه اشتراک این ربات را ارسال کند.",
+  "botSettings.adminSyncNewBotHint": "برای ربات‌های جدید به‌صورت پیش‌فرض فعال است. فیلدها تا دریافت اولین به‌روزرسانی مدیریت‌شده قابل ویرایش می‌مانند.",
+  "botSettings.adminSyncEnabled": "همگام‌سازی پنل مدیریت فعال شد",
+  "botSettings.adminSyncDisabled": "همگام‌سازی پنل مدیریت غیرفعال شد",
+  "botSettings.adminSyncFailed": "به‌روزرسانی همگام‌سازی پنل مدیریت ناموفق بود",
+  "botSettings.managedBanner": "برخی فیلدها توسط {{source}} مدیریت می‌شوند (نسخه {{version}}). سایر تنظیمات ربات همچنان قابل ویرایش هستند.",
+  "botSettings.managedFieldHint": "این فیلد توسط پنل مدیریت کنترل می‌شود. برای ویرایش و توقف به‌روزرسانی‌های بعدی، همگام‌سازی مدیریت را غیرفعال کنید."
 }

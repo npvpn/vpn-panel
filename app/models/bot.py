@@ -2,6 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.managed import ManagedStateResponse
 from config import (
     BOT_URL,
     SUB_BS_LIMIT_ANNOUNCE_TEXT,
@@ -93,6 +94,9 @@ class BotUpdate(BaseModel):
 
 class BotResponse(BotBase):
     id: int
+    source_bot_id: int | None = None
+    admin_sync_enabled: bool
+    managed: ManagedStateResponse | None = None
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -158,6 +162,14 @@ class BotSettingsPayload(BaseModel):
         # '' / None → допустимо (поле не задано); иначе обязан быть JSON-объект.
         parse_json_object(value)
         return value if value is not None else ""
+
+
+class BotSettingsResponse(BotSettingsPayload):
+    managed: ManagedStateResponse | None = None
+
+
+class BotAdminSyncUpdate(BaseModel):
+    enabled: bool
 
 
 def apply_bot_settings_fallback(raw_settings: dict[str, Any] | None) -> dict[str, Any]:

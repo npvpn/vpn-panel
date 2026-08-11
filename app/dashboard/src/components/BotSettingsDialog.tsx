@@ -1,4 +1,7 @@
 import {
+  Alert,
+  AlertDescription,
+  AlertIcon,
   Box,
   Button,
   FormControl,
@@ -114,11 +117,14 @@ export const BotSettingsDialog: FC = () => {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [syncingAdmin, setSyncingAdmin] = useState(false);
   const [defaultSettings, setDefaultSettings] =
     useState<BotSettings>(emptySettings);
   const [botUsername, setBotUsername] = useState("");
   const [botTitle, setBotTitle] = useState("");
   const [settings, setSettings] = useState<BotSettings>(emptySettings);
+  const [serverSettings, setServerSettings] =
+    useState<BotSettings>(emptySettings);
   const [hasDraft, setHasDraft] = useState(false);
   const [botSearch, setBotSearch] = useState("");
   const [isBotListOpen, setIsBotListOpen] = useState(false);
@@ -216,6 +222,7 @@ export const BotSettingsDialog: FC = () => {
       setBotUsername("");
       setBotTitle("");
       replaceSettings(emptySettings);
+      setServerSettings(emptySettings);
       const newDraft = localStorage.getItem(NEW_BOT_DRAFT_KEY);
       setHasDraft(!!newDraft);
       return;
@@ -231,6 +238,7 @@ export const BotSettingsDialog: FC = () => {
       .then((serverSettings) => {
         if (cancelled) return;
         replaceSettings(serverSettings);
+        setServerSettings(serverSettings);
 
         const draftKey = getDraftKey(selectedBot);
         const draft = localStorage.getItem(draftKey);
@@ -255,9 +263,21 @@ export const BotSettingsDialog: FC = () => {
     const draft = localStorage.getItem(key);
     if (!draft) return;
     const parsed = JSON.parse(draft);
-    replaceSettings(parsed.settings);
-    setBotUsername(parsed.botUsername);
-    setBotTitle(parsed.botTitle);
+    const managed = !!(serverSettings.managed || selectedBotModel?.managed);
+    replaceSettings(
+      managed
+        ? {
+            ...parsed.settings,
+            bot_url: serverSettings.bot_url,
+            web_url: serverSettings.web_url,
+            sub_support_url: serverSettings.sub_support_url,
+            sub_subscription_domain: serverSettings.sub_subscription_domain,
+            managed: serverSettings.managed,
+          }
+        : parsed.settings
+    );
+    setBotUsername(managed ? selectedBotModel?.username || "" : parsed.botUsername);
+    setBotTitle(managed ? selectedBotModel?.title || "" : parsed.botTitle);
     localStorage.removeItem(key);
     setHasDraft(false);
   };
@@ -273,6 +293,63 @@ export const BotSettingsDialog: FC = () => {
     () => bots.find((bot) => bot.username === selectedBot),
     [bots, selectedBot]
   );
+
+  const managedState = settings.managed || selectedBotModel?.managed || null;
+  const isManaged = !!managedState;
+  const adminSyncEnabled = selectedBotModel?.admin_sync_enabled ?? true;
+
+  const setAdminSync = (enabled: boolean) => {
+    if (!selectedBot) return;
+    setSyncingAdmin(true);
+    fetch<Bot | { admin_sync_enabled: boolean }>(
+      `/bots/${selectedBot}/admin-sync`,
+      {
+        method: "PATCH",
+        body: { enabled },
+      }
+    )
+      .then((updated) => {
+        if (
+          !updated.admin_sync_enabled ||
+          ("managed" in updated && !updated.managed)
+        ) {
+          setSettings((current) => ({ ...current, managed: null }));
+          setServerSettings((current) => ({ ...current, managed: null }));
+        }
+        setBots((current) =>
+          current.map((bot) =>
+            bot.username === selectedBot
+              ? {
+                  ...bot,
+                  ...("id" in updated ? updated : {}),
+                  admin_sync_enabled: updated.admin_sync_enabled,
+                }
+              : bot
+          )
+        );
+        toast({
+          title: t(
+            updated.admin_sync_enabled
+              ? "botSettings.adminSyncEnabled"
+              : "botSettings.adminSyncDisabled"
+          ),
+          status: "success",
+          duration: 2500,
+          isClosable: true,
+          position: "top",
+        });
+      })
+      .catch(() => {
+        toast({
+          title: t("botSettings.adminSyncFailed"),
+          status: "error",
+          duration: 2500,
+          isClosable: true,
+          position: "top",
+        });
+      })
+      .finally(() => setSyncingAdmin(false));
+  };
 
   const defaultListFieldTexts = useMemo(
     () => toListFieldTexts(defaultSettings),
@@ -354,10 +431,21 @@ export const BotSettingsDialog: FC = () => {
     if (!normalizedUsername) return;
     const normalizedTitle = botTitle.trim();
     const isIdentityChanged =
-      normalizedUsername !== selectedBot ||
-      normalizedTitle !== (selectedBotModel?.title || "");
+      !isManaged &&
+      (normalizedUsername !== selectedBot ||
+        normalizedTitle !== (selectedBotModel?.title || ""));
+    const { managed: _managed, updated_at: _updatedAt, ...editableSettings } =
+      settings;
     const settingsPayload = {
-      ...settings,
+      ...editableSettings,
+      ...(isManaged
+        ? {
+            bot_url: serverSettings.bot_url,
+            web_url: serverSettings.web_url,
+            sub_support_url: serverSettings.sub_support_url,
+            sub_subscription_domain: serverSettings.sub_subscription_domain,
+          }
+        : {}),
       sub_revoked_server_text: toList(listFieldTexts.sub_revoked_server_text),
       sub_expired_server_text: toList(listFieldTexts.sub_expired_server_text),
       sub_device_limit_server_text: toList(
@@ -684,12 +772,56 @@ export const BotSettingsDialog: FC = () => {
                 </HStack>
               </HStack>
             )}
+            <VStack mt={3} spacing={3} align="stretch">
+              <FormControl
+                display="flex"
+                alignItems="center"
+                justifyContent="space-between"
+                borderWidth="1px"
+                borderRadius="md"
+                px={4}
+                py={3}
+              >
+                <Box pr={4}>
+                  <FormLabel mb={0}>
+                    {t("botSettings.adminSync")}
+                  </FormLabel>
+                  <FormHelperText mt={1}>
+                    {selectedBot
+                      ? t("botSettings.adminSyncHint")
+                      : t("botSettings.adminSyncNewBotHint")}
+                  </FormHelperText>
+                </Box>
+                <Switch
+                  colorScheme="primary"
+                  isChecked={selectedBot ? adminSyncEnabled : true}
+                  isDisabled={!selectedBot || syncingAdmin}
+                  onChange={(event) => setAdminSync(event.target.checked)}
+                />
+              </FormControl>
+              {isManaged && (
+                <Alert
+                  status="info"
+                  variant="left-accent"
+                  borderRadius="md"
+                  alignItems="flex-start"
+                >
+                  <AlertIcon mt={0.5} />
+                  <AlertDescription fontSize="sm">
+                    {t("botSettings.managedBanner", {
+                      source: managedState?.source,
+                      version: managedState?.version,
+                    })}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </VStack>
             <TabPanels minH="400px" pt={2}>
               {/* Вкладка 1: Bot Info */}
               <TabPanel px={0}>
                 <VStack spacing={4} align="stretch">
                   <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>{t("botSettings.newBotUsername")}</FormLabel>
                       <Input
                         value={botUsername}
@@ -700,10 +832,12 @@ export const BotSettingsDialog: FC = () => {
                         placeholder="@my_vpn_bot"
                       />
                       <FormHelperText>
-                        {t("botSettings.newBotUsernameHint")}
+                        {isManaged
+                          ? t("botSettings.managedFieldHint")
+                          : t("botSettings.newBotUsernameHint")}
                       </FormHelperText>
                     </FormControl>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>{t("botSettings.newBotTitle")}</FormLabel>
                       <Input
                         value={botTitle}
@@ -714,13 +848,15 @@ export const BotSettingsDialog: FC = () => {
                         placeholder="My VPN Bot"
                       />
                       <FormHelperText>
-                        {t("botSettings.newBotTitleHint")}
+                        {isManaged
+                          ? t("botSettings.managedFieldHint")
+                          : t("botSettings.newBotTitleHint")}
                       </FormHelperText>
                     </FormControl>
                   </SimpleGrid>
 
                   <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>{t("botSettings.botUrl")}</FormLabel>
                       <Input
                         value={settings.bot_url}
@@ -730,10 +866,12 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {t("botSettings.botUrlHint")}
+                        {isManaged
+                          ? t("botSettings.managedFieldHint")
+                          : t("botSettings.botUrlHint")}
                       </FormHelperText>
                     </FormControl>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>{t("botSettings.webUrl")}</FormLabel>
                       <Input
                         value={settings.web_url}
@@ -743,7 +881,9 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {t("botSettings.webUrlHint")}
+                        {isManaged
+                          ? t("botSettings.managedFieldHint")
+                          : t("botSettings.webUrlHint")}
                       </FormHelperText>
                     </FormControl>
                   </SimpleGrid>
@@ -768,7 +908,7 @@ export const BotSettingsDialog: FC = () => {
               <TabPanel px={0}>
                 <VStack spacing={4} align="stretch">
                   <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>{t("botSettings.subSupportUrl")}</FormLabel>
                       <Input
                         value={settings.sub_support_url}
@@ -778,7 +918,9 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {t("botSettings.subSupportUrlHint")}
+                        {isManaged
+                          ? t("botSettings.managedFieldHint")
+                          : t("botSettings.subSupportUrlHint")}
                       </FormHelperText>
                     </FormControl>
                     <FormControl>
@@ -810,7 +952,7 @@ export const BotSettingsDialog: FC = () => {
                         {t("botSettings.subProfileUrlHint")}
                       </FormHelperText>
                     </FormControl>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>
                         {t("botSettings.subSubscriptionDomain")}
                       </FormLabel>
@@ -824,7 +966,9 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {t("botSettings.subSubscriptionDomainHint")}
+                        {isManaged
+                          ? t("botSettings.managedFieldHint")
+                          : t("botSettings.subSubscriptionDomainHint")}
                       </FormHelperText>
                     </FormControl>
                   </SimpleGrid>

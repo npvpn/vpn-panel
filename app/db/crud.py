@@ -291,6 +291,10 @@ def get_bot(db: Session, bot_username: str) -> Bot | None:
     return db.query(Bot).filter(Bot.username == normalized).first()
 
 
+def get_bot_by_source_id(db: Session, source_bot_id: int) -> Bot | None:
+    return db.query(Bot).filter(Bot.source_bot_id == source_bot_id).first()
+
+
 def get_bots(db: Session) -> list[Bot]:
     return db.query(Bot).order_by(Bot.username.asc()).all()
 
@@ -313,14 +317,27 @@ def _set_bot_web_url(db: Session, bot: Bot, web_url: str | None) -> None:
     db.commit()
 
 
-def create_bot(db: Session, username: str, title: str | None = None, web_url: str | None = None) -> Bot:
+def create_bot(
+    db: Session,
+    username: str,
+    title: str | None = None,
+    web_url: str | None = None,
+    *,
+    source_bot_id: int | None = None,
+    admin_sync_enabled: bool = True,
+) -> Bot:
     normalized = _normalize_bot_username(username)
     if not normalized:
         raise ValueError("Bot username is required")
     if get_bot(db, normalized):
         raise ValueError(f'Bot "{normalized}" already exists')
 
-    bot = Bot(username=normalized, title=title or None)
+    bot = Bot(
+        username=normalized,
+        title=title or None,
+        source_bot_id=source_bot_id,
+        admin_sync_enabled=admin_sync_enabled,
+    )
     db.add(bot)
     db.commit()
     db.refresh(bot)
@@ -378,6 +395,13 @@ def update_bot_settings(db: Session, bot: Bot, settings_data: dict[str, Any]) ->
     db.commit()
     db.refresh(settings)
     return dict(settings.data or {})
+
+
+def set_bot_admin_sync_enabled(db: Session, bot: Bot, enabled: bool) -> Bot:
+    cast(Any, bot).admin_sync_enabled = enabled
+    db.commit()
+    db.refresh(bot)
+    return bot
 
 
 UsersSortingOptions = Enum(
