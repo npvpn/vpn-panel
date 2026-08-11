@@ -117,6 +117,8 @@
     text-align: left;
 }
 
+
+
 /* Подзаголовок */
 .page-subtitle {
     font-family: var(--font-family);
@@ -379,7 +381,55 @@
     transition: all 0.2s ease;
 }
 
-.platform-btn--active {
+.hasApp-btn {
+    border: none;
+    cursor: pointer;
+    border-radius: 100px;
+    padding: 8px 12px;
+    background: var(--light-gray);
+    font-family: var(--font-family);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+
+}
+
+.platform-btn--active,
+.hasApp-btn--active 
+{
+    background: var(--black);
+    color: var(--white);
+}
+
+.hasApp-btn {
+    font-family: var(--third-family);
+    font-weight: 700;
+    font-size: 16px;
+    line-height: 150%;
+    letter-spacing: -0.02em;
+    text-align: center;
+}
+
+.app-select-wrapper {
+    margin-top: 8px;
+}
+
+.app-select-btn {
+    border: none;
+    cursor: pointer;
+    border-radius: 100px;
+    padding: 8px 12px;
+    background: var(--surface-2);
+    font-family: var(--third-family);
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.app-select-btn--active {
     background: var(--black);
     color: var(--white);
 }
@@ -661,7 +711,7 @@
     background-color: #f6f6f6;
     border-radius: 8px;
     box-sizing: content-box;
-    width: 154px;
+    /* width: 154px; */
     padding: 8px 12px;
 }
 
@@ -693,6 +743,10 @@
 }
 
 .custom-gap {
+    gap: 16px;
+}
+
+.custom-gap-steps {
     gap: 8px;
 }
 
@@ -873,9 +927,21 @@
     font-size: 14px;
 }
 
+.primary-apps {
+    margin-bottom: 12px;
+}
+
 @media (min-width: 1024px) {
-    .error-subtitle {
-        font-size: 24px;
+    .primary-apps {
+        margin-bottom: 16px;
+    }
+
+    .app-select-wrapper {
+        margin-top: 16px;
+    }
+
+    .app-select-btn {
+        padding: 16px 20px;
     }
 
      .footer-ad-bar {
@@ -917,7 +983,7 @@
     .add-key-button {
         width: auto;
         flex-shrink: 0;
-        padding: 16px 24px;
+        padding: 16px 20px;
     }
 
     .empty-devices {
@@ -925,6 +991,10 @@
     }
 
     .custom-gap {
+        gap: 32px;
+    }
+
+    .custom-gap-steps {
         gap: 16px;
     }
 
@@ -976,6 +1046,7 @@
 
     .steps-title {
         font-size: 24px;
+        margin-bottom: 16px;
     }
 
     .clients-btn {
@@ -1004,6 +1075,10 @@
 
     .platform-btn {
         font-size: 20px;
+        padding: 16px 20px;
+    }
+
+    .hasApp-btn {
         padding: 16px 20px;
     }
     
