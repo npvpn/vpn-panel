@@ -1,5 +1,9 @@
-import { Button, HStack, Select, VStack, Text } from "@chakra-ui/react";
-import { FC, useCallback, useEffect, useMemo, useState } from "react";
+import { Button, Collapse, VStack, Text } from "@chakra-ui/react";
+import {
+  ChevronDownIcon,
+  PlusIcon as HeroIconPlusIcon,
+} from "@heroicons/react/24/outline";
+import { FC, useCallback, useMemo, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -11,32 +15,9 @@ import {
   proxyHostSecurity,
 } from "constants/Proxies";
 import { NodeType } from "contexts/NodesContext";
-import { hostsFormSchema } from "./schema";
+import { AddHostForm, EMPTY_HOST } from "./AddHostForm";
+import { hostsFormSchema, hostItemSchema } from "./schema";
 import { HostRow } from "./HostRow";
-
-const EMPTY_HOST = {
-  host: "",
-  sni: "",
-  port: null,
-  path: null,
-  address: "",
-  remark: "",
-  mux_enable: false,
-  allowinsecure: false,
-  is_disabled: false,
-  fragment_setting: "",
-  noise_setting: "",
-  random_user_agent: false,
-  security: "inbound_default",
-  alpn: "",
-  fingerprint: "",
-  use_sni_as_host: false,
-  xhttp_extra: "",
-  bot_usernames: [],
-  node_ids: [],
-  order: 0,
-  inbound_tag: "",
-};
 
 type Props = {
   inboundTags: string[];
@@ -59,6 +40,7 @@ export const HostsList: FC<Props> = ({
   const form = useFormContext<z.infer<typeof hostsFormSchema>>();
   const { errors } = form.formState;
   const accordionErrors = errors.hosts;
+  const [isAddingHost, setIsAddingHost] = useState(false);
 
   const { fields, replace } = useFieldArray({
     control: form.control,
@@ -66,17 +48,6 @@ export const HostsList: FC<Props> = ({
   });
 
   const watchedHosts = useWatch({ control: form.control, name: "hosts" });
-  const [addInboundTag, setAddInboundTag] = useState(
-    inboundFilter || inboundTags[0] || ""
-  );
-
-  useEffect(() => {
-    if (inboundFilter) {
-      setAddInboundTag(inboundFilter);
-    } else if (!addInboundTag || !inboundTags.includes(addInboundTag)) {
-      setAddInboundTag(inboundTags[0] || "");
-    }
-  }, [inboundFilter, inboundTags, addInboundTag]);
 
   const visibleIndexes = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -106,19 +77,21 @@ export const HostsList: FC<Props> = ({
     [renumberOrders, replace]
   );
 
-  const handleAddHost = useCallback(() => {
-    const tag = addInboundTag || inboundTags[0];
-    if (!tag) return;
-    const current = form.getValues("hosts") || [];
-    setHosts([
-      ...current,
-      {
-        ...EMPTY_HOST,
-        inbound_tag: tag,
-        order: current.length,
-      },
-    ]);
-  }, [addInboundTag, form, inboundTags, setHosts]);
+  const handleHostAdded = useCallback(
+    (host: z.infer<typeof hostItemSchema>) => {
+      const current = form.getValues("hosts") || [];
+      setHosts([
+        ...current,
+        {
+          ...EMPTY_HOST,
+          ...host,
+          order: current.length,
+        },
+      ]);
+      setIsAddingHost(false);
+    },
+    [form, setHosts]
+  );
 
   const duplicateHost = useCallback(
     (index: number) => {
@@ -167,6 +140,35 @@ export const HostsList: FC<Props> = ({
 
   return (
     <VStack w="full" align="stretch" spacing={3}>
+      <Button
+        w="full"
+        variant="outline"
+        leftIcon={<HeroIconPlusIcon width="20px" strokeWidth={2} />}
+        rightIcon={
+          <ChevronDownIcon
+            width="16px"
+            style={{
+              transform: isAddingHost ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+            }}
+          />
+        }
+        onClick={() => setIsAddingHost((prev) => !prev)}
+      >
+        {t("hostsDialog.addNewHost")}
+      </Button>
+
+      <Collapse in={isAddingHost} animateOpacity>
+        <AddHostForm
+          inboundTags={inboundTags}
+          defaultInboundTag={inboundFilter || inboundTags[0] || ""}
+          bots={bots}
+          nodes={nodes}
+          inboundMap={inboundMap}
+          onAdded={handleHostAdded}
+        />
+      </Collapse>
+
       {visibleIndexes.length === 0 ? (
         <Text opacity={0.7} fontSize="sm" py={4} textAlign="center">
           {t("hostsDialog.notFound")}
@@ -200,34 +202,6 @@ export const HostsList: FC<Props> = ({
           );
         })
       )}
-
-      <HStack w="full" spacing={2}>
-        {!inboundFilter && (
-          <Select
-            size="sm"
-            value={addInboundTag}
-            onChange={(e) => setAddInboundTag(e.target.value)}
-            maxW="60%"
-          >
-            {inboundTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </Select>
-        )}
-        <Button
-          variant="outline"
-          type="button"
-          flex="1"
-          size="sm"
-          fontWeight="normal"
-          onClick={handleAddHost}
-          isDisabled={!addInboundTag}
-        >
-          {t("hostsDialog.addHost")}
-        </Button>
-      </HStack>
     </VStack>
   );
 };

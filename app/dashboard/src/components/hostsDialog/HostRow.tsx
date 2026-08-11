@@ -45,6 +45,8 @@ type HostRowProps = {
   proxyALPN: any[];
   proxyFingerprint: any[];
   isFirst?: boolean;
+  /** create — форма добавления: без duplicate/move/delete и без badge (inbound выбирается снаружи) */
+  mode?: "list" | "create";
 };
 
 const HOST_KEY = "hosts";
@@ -69,11 +71,13 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
     proxyALPN,
     proxyFingerprint,
     isFirst,
+    mode = "list",
   } = props;
+  const isCreate = mode === "create";
 
   return (
     <>
-      {!isFirst && <Divider my={1.5} />}
+      {!isFirst && !isCreate && <Divider my={1.5} />}
       <motion.div
         key={hostId}
         layout
@@ -102,11 +106,18 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
           }}
         >
           <VStack p={3} w="full" spacing={3}>
-            <HStack w="100%" justify="space-between" alignItems="center">
-              <Badge colorScheme="gray" fontSize="0.7rem" maxW="100%" isTruncated>
-                {inboundTag}
-              </Badge>
-            </HStack>
+            {!isCreate && (
+              <HStack w="100%" justify="space-between" alignItems="center">
+                <Badge
+                  colorScheme="gray"
+                  fontSize="0.7rem"
+                  maxW="100%"
+                  isTruncated
+                >
+                  {inboundTag}
+                </Badge>
+              </HStack>
+            )}
 
             <HStack w="100%" alignItems="flex-start">
               <RHFInput
@@ -177,55 +188,61 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                               );
                             }}
                           />
-                          <Tooltip label="Delete" placement="top">
-                            <IconButton
-                              aria-label="Delete"
-                              size="sm"
-                              colorScheme="red"
-                              variant="ghost"
-                              onClick={removeHost.bind(null, index)}
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
+                          {!isCreate && (
+                            <Tooltip label="Delete" placement="top">
+                              <IconButton
+                                aria-label="Delete"
+                                size="sm"
+                                colorScheme="red"
+                                variant="ghost"
+                                onClick={removeHost.bind(null, index)}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                         </Container>
                       </AccordionButton>
-                      <Tooltip label="Duplicate" placement="top">
-                        <IconButton
-                          aria-label="Duplicate"
-                          size="sm"
-                          colorScheme="white"
-                          variant="ghost"
-                          onClick={() => duplicateHost(index)}
-                        >
-                          <DuplicateIcon />
-                        </IconButton>
-                      </Tooltip>
-                      {canMoveDown && (
-                        <Tooltip label="Move Down" placement="top">
-                          <IconButton
-                            aria-label="DownIcon"
-                            size="sm"
-                            colorScheme="white"
-                            variant="ghost"
-                            onClick={() => moveHostPosition(index, "down")}
-                          >
-                            <DownIcon />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      {canMoveUp && (
-                        <Tooltip label="Move Up" placement="top">
-                          <IconButton
-                            aria-label="UpIcon"
-                            size="sm"
-                            colorScheme="white"
-                            variant="ghost"
-                            onClick={() => moveHostPosition(index, "up")}
-                          >
-                            <UpIcon />
-                          </IconButton>
-                        </Tooltip>
+                      {!isCreate && (
+                        <>
+                          <Tooltip label="Duplicate" placement="top">
+                            <IconButton
+                              aria-label="Duplicate"
+                              size="sm"
+                              colorScheme="white"
+                              variant="ghost"
+                              onClick={() => duplicateHost(index)}
+                            >
+                              <DuplicateIcon />
+                            </IconButton>
+                          </Tooltip>
+                          {canMoveDown && (
+                            <Tooltip label="Move Down" placement="top">
+                              <IconButton
+                                aria-label="DownIcon"
+                                size="sm"
+                                colorScheme="white"
+                                variant="ghost"
+                                onClick={() => moveHostPosition(index, "down")}
+                              >
+                                <DownIcon />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          {canMoveUp && (
+                            <Tooltip label="Move Up" placement="top">
+                              <IconButton
+                                aria-label="UpIcon"
+                                size="sm"
+                                colorScheme="white"
+                                variant="ghost"
+                                onClick={() => moveHostPosition(index, "up")}
+                              >
+                                <UpIcon />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                        </>
                       )}
                     </div>
 

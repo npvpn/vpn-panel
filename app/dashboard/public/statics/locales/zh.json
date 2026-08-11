@@ -76,6 +76,8 @@
   "hostsDialog.allInbounds": "全部入站",
   "hostsDialog.notFound": "未找到主机",
   "hostsDialog.filterInbound": "按入站筛选",
+  "hostsDialog.addNewHost": "添加新主机",
+  "hostsDialog.selectInbound": "入站",
   "hostsDialog.muxEnable": "使能够 MUX",
   "hostsDialog.path": "路径",
   "hostsDialog.path.info": "为主机用户设置路径，通常在反向代理中使用。",

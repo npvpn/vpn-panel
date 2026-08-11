@@ -78,6 +78,8 @@
   "hostsDialog.allInbounds": "Все инбаунды",
   "hostsDialog.notFound": "Хосты не найдены",
   "hostsDialog.filterInbound": "Фильтр по инбаунду",
+  "hostsDialog.addNewHost": "Добавить новый хост",
+  "hostsDialog.selectInbound": "Инбаунд",
   "hostsDialog.muxEnable": "Давать возможность MUX",
   "hostsDialog.path": "Path",
   "hostsDialog.path.info": "Set a path for host users, useful behind a reverse proxy.",
