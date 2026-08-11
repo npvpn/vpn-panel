@@ -367,11 +367,11 @@
       </div>
 
       <footer class="footer_limited">
-        {% if web_url %}
-          <button class="limited-btn" onclick="window.open('{{ web_url }}', '_blank')" rel="noopener noreferrer">
-            Перейти в личный кабинет
-          </button>
-        {% endif %}
+          {% if web_url %}
+            <a href="{{ web_url }}" class="limited-btn">
+              Перейти в личный кабинет
+            </a>
+          {% endif %}
           {% if show_ads %}
           <p>
             Сайт работает на платформе
