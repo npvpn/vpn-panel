@@ -108,7 +108,30 @@ def get_hosts(db: Session, inbound_tag: str) -> list[ProxyHost]:
         List[ProxyHost]: List of hosts for the inbound.
     """
     inbound = get_or_create_inbound(db, inbound_tag)
-    return inbound.hosts
+    return sorted(inbound.hosts, key=lambda host: (host.order, host.id))
+
+
+def _max_host_order(db: Session, exclude_inbound_tag: str | None = None) -> int:
+    """Max hosts.order across the table (optionally excluding one inbound)."""
+    query = db.query(func.max(ProxyHost.order))
+    if exclude_inbound_tag is not None:
+        query = query.filter(ProxyHost.inbound_tag != exclude_inbound_tag)
+    value = query.scalar()
+    return int(value) if value is not None else -1
+
+
+def _resolve_host_orders(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostModify]) -> list[int]:
+    """Fill missing order values by appending after the current global max."""
+    next_order = _max_host_order(db, exclude_inbound_tag=inbound_tag)
+    resolved: list[int] = []
+    for host in modified_hosts:
+        if host.order is None:
+            next_order += 1
+            resolved.append(next_order)
+        else:
+            resolved.append(int(host.order))
+            next_order = max(next_order, int(host.order))
+    return resolved
 
 
 def _get_bots_by_usernames(db: Session, bot_usernames: list[str]) -> list[Bot]:
@@ -163,6 +186,7 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
     inbound = get_or_create_inbound(db, inbound_tag)
     bots = _get_bots_by_usernames(db, host.bot_usernames)
     nodes = _get_nodes_by_ids(db, host.node_ids)
+    order = host.order if host.order is not None else _max_host_order(db) + 1
     inbound.hosts.append(
         ProxyHost(
             remark=host.remark,
@@ -176,13 +200,14 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
             alpn=host.alpn,
             fingerprint=host.fingerprint,
             xhttp_extra=host.xhttp_extra,
+            order=order,
             bots=bots,
             nodes=nodes,
         )
     )
     db.commit()
     db.refresh(inbound)
-    return inbound.hosts
+    return get_hosts(db, inbound_tag)
 
 
 def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostModify]) -> list[ProxyHost]:
@@ -198,6 +223,7 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
         List[ProxyHost]: Updated list of hosts for the inbound.
     """
     inbound = get_or_create_inbound(db, inbound_tag)
+    orders = _resolve_host_orders(db, inbound_tag, modified_hosts)
     inbound.hosts = [
         ProxyHost(
             remark=host.remark,
@@ -218,14 +244,15 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
             random_user_agent=host.random_user_agent,
             use_sni_as_host=host.use_sni_as_host,
             xhttp_extra=host.xhttp_extra,
+            order=order,
             bots=_get_bots_by_usernames(db, host.bot_usernames),
             nodes=_get_nodes_by_ids(db, host.node_ids),
         )
-        for host in modified_hosts
+        for host, order in zip(modified_hosts, orders)
     ]
     db.commit()
     db.refresh(inbound)
-    return inbound.hosts
+    return get_hosts(db, inbound_tag)
 
 
 def get_user_queryset(db: Session) -> Query:

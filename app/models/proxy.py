@@ -158,6 +158,7 @@ class ProxyHost(BaseModel):
     random_user_agent: bool | None = None
     use_sni_as_host: bool | None = None
     xhttp_extra: dict | None = None
+    order: int | None = None  # None on write = append to the end
     model_config = ConfigDict(from_attributes=True)
 
     @field_validator("remark", mode="after")

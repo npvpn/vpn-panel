@@ -12,6 +12,7 @@ import {
   IconButton,
   Divider,
   Box,
+  Badge,
 } from "@chakra-ui/react";
 import { NodeType } from "contexts/NodesContext";
 import { motion } from "framer-motion";
@@ -23,22 +24,22 @@ import { DeleteIcon } from "components/DeleteUserModal";
 import { RHFInput } from "./RHFInput";
 import { HostInfoPopover } from "./HostInfoPopover";
 import { HostAdvancedOptions } from "./HostAdvancedOptions";
-import { hostsSchema } from "./schema";
+import { hostsFormSchema } from "./schema";
 import { z } from "zod";
 
 type HostRowProps = {
-  hostKey: string;
   index: number;
   hostId: string;
+  inboundTag: string;
   bots: Bot[];
   nodes: NodeType[];
-  inboundPort?: number;
   accordionErrors?: any;
   t: (key: string, opts?: any) => string;
   duplicateHost: (index: number) => void;
   moveHostPosition: (index: number, direction: "up" | "down") => void;
   removeHost: (index: number) => void;
-  hostsLength: number;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   inbound: any;
   proxyHostSecurity: any[];
   proxyALPN: any[];
@@ -46,12 +47,14 @@ type HostRowProps = {
   isFirst?: boolean;
 };
 
+const HOST_KEY = "hosts";
+
 export const HostRow = memo(function HostRow(props: HostRowProps) {
-  const { register, control } = useFormContext<z.infer<typeof hostsSchema>>();
+  const { register, control } = useFormContext<z.infer<typeof hostsFormSchema>>();
   const {
-    hostKey,
     index,
     hostId,
+    inboundTag,
     bots,
     nodes,
     inbound,
@@ -60,7 +63,8 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
     duplicateHost,
     moveHostPosition,
     removeHost,
-    hostsLength,
+    canMoveUp,
+    canMoveDown,
     proxyHostSecurity,
     proxyALPN,
     proxyFingerprint,
@@ -98,10 +102,16 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
           }}
         >
           <VStack p={3} w="full" spacing={3}>
+            <HStack w="100%" justify="space-between" alignItems="center">
+              <Badge colorScheme="gray" fontSize="0.7rem" maxW="100%" isTruncated>
+                {inboundTag}
+              </Badge>
+            </HStack>
+
             <HStack w="100%" alignItems="flex-start">
               <RHFInput
                 label="Remark"
-                registerProps={register(`${hostKey}.${index}.remark`)}
+                registerProps={register(`${HOST_KEY}.${index}.remark`)}
                 error={accordionErrors?.[index]?.remark}
                 rightElement={<HostInfoPopover t={t} />}
                 formControlProps={{
@@ -117,7 +127,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
 
             <RHFInput
               label="Address"
-              registerProps={register(`${hostKey}.${index}.address`)}
+              registerProps={register(`${HOST_KEY}.${index}.address`)}
               error={accordionErrors?.[index]?.address}
               placeholder="example.com"
               rightElement={<HostInfoPopover t={t} />}
@@ -153,7 +163,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                         <Container flex="1" px="0" display={"contents"}>
                           <Controller
                             control={control}
-                            name={`${hostKey}.${index}.is_disabled`}
+                            name={`${HOST_KEY}.${index}.is_disabled`}
                             render={({ field }) => {
                               return (
                                 <Switch
@@ -191,7 +201,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                           <DuplicateIcon />
                         </IconButton>
                       </Tooltip>
-                      {index < hostsLength - 1 && (
+                      {canMoveDown && (
                         <Tooltip label="Move Down" placement="top">
                           <IconButton
                             aria-label="DownIcon"
@@ -204,7 +214,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                           </IconButton>
                         </Tooltip>
                       )}
-                      {index > 0 && (
+                      {canMoveUp && (
                         <Tooltip label="Move Up" placement="top">
                           <IconButton
                             aria-label="UpIcon"
@@ -221,7 +231,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
 
                     {isExpanded && (
                       <HostAdvancedOptions
-                        hostKey={hostKey}
+                        hostKey={HOST_KEY}
                         index={index}
                         inbound={inbound}
                         register={register}
@@ -241,149 +251,6 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
             </Accordion>
           </VStack>
         </Box>
-        {/* <VStack p={2} w="full" borderRadius="4px">
-          <HStack w="100%" alignItems="flex-start">
-            <RHFInput
-              label="Remark"
-              registerProps={register(`${hostKey}.${index}.remark`)}
-              error={accordionErrors?.[index]?.remark}
-              rightElement={<HostInfoPopover t={t} />}
-              formControlProps={{
-                position: "relative",
-                zIndex: 10,
-              }}
-              inputProps={{
-                size: "sm",
-                borderRadius: "4px",
-              }}
-            />
-          </HStack>
-
-          <RHFInput
-            label="Address"
-            registerProps={register(`${hostKey}.${index}.address`)}
-            error={accordionErrors?.[index]?.address}
-            placeholder="example.com"
-            rightElement={<HostInfoPopover t={t} />}
-            formControlProps={{
-              isInvalid: !!accordionErrors?.[index]?.address,
-            }}
-          />
-
-          <Accordion w="full" allowToggle>
-            <AccordionItem border="0">
-              {({ isExpanded }) => (
-                <>
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    <AccordionButton
-                      display="flex"
-                      px={0}
-                      py={1}
-                      borderRadius={3}
-                      _hover={{ bg: "transparent" }}
-                    >
-                      <Text
-                        flex="3"
-                        align="start"
-                        fontSize="xs"
-                        color="gray.600"
-                        _dark={{ color: "gray.500" }}
-                        pl={1}
-                      >
-                        {t("hostsDialog.advancedOptions")}
-                        <AccordionIcon fontSize="sm" ml={1} />
-                      </Text>
-
-                      <Container flex="1" px="0" display={"contents"}>
-                        <Controller
-                          control={control}
-                          name={`${hostKey}.${index}.is_disabled`}
-                          render={({ field }) => {
-                            return (
-                              <Switch
-                                mx="1.5"
-                                colorScheme="primary"
-                                isChecked={!field.value}
-                                onChange={(e) =>
-                                  field.onChange(!e.target.checked)
-                                }
-                              />
-                            );
-                          }}
-                        />
-                        <Tooltip label="Delete" placement="top">
-                          <IconButton
-                            aria-label="Delete"
-                            size="sm"
-                            colorScheme="red"
-                            variant="ghost"
-                            onClick={removeHost.bind(null, index)}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Container>
-                    </AccordionButton>
-                    <Tooltip label="Duplicate" placement="top">
-                      <IconButton
-                        aria-label="Duplicate"
-                        size="sm"
-                        colorScheme="white"
-                        variant="ghost"
-                        onClick={() => duplicateHost(index)}
-                      >
-                        <DuplicateIcon />
-                      </IconButton>
-                    </Tooltip>
-                    {index < hostsLength - 1 && (
-                      <Tooltip label="Move Down" placement="top">
-                        <IconButton
-                          aria-label="DownIcon"
-                          size="sm"
-                          colorScheme="white"
-                          variant="ghost"
-                          onClick={() => moveHostPosition(index, "down")}
-                        >
-                          <DownIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    {index > 0 && (
-                      <Tooltip label="Move Up" placement="top">
-                        <IconButton
-                          aria-label="UpIcon"
-                          size="sm"
-                          colorScheme="white"
-                          variant="ghost"
-                          onClick={() => moveHostPosition(index, "up")}
-                        >
-                          <UpIcon />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </div>
-
-                  {isExpanded && (
-                    <HostAdvancedOptions
-                      hostKey={hostKey}
-                      index={index}
-                      inbound={inbound}
-                      register={register}
-                      control={control}
-                      accordionErrors={accordionErrors}
-                      t={t}
-                      bots={bots}
-                      nodes={nodes}
-                      proxyHostSecurity={proxyHostSecurity}
-                      proxyALPN={proxyALPN}
-                      proxyFingerprint={proxyFingerprint}
-                    />
-                  )}
-                </>
-              )}
-            </AccordionItem>
-          </Accordion>
-        </VStack> */}
       </motion.div>
     </>
   );

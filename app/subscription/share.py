@@ -426,6 +426,8 @@ def process_inbounds_and_tags(
     inbounds = sorted(_inbounds, key=lambda x: index_dict.get(x[1][0], float("inf")))
     user_bot_username = format_variables.get("BOT_USERNAME")
 
+    candidates: list[dict] = []
+
     for protocol, tags in inbounds:
         settings = proxies.get(protocol)
         if not settings:
@@ -438,11 +440,12 @@ def process_inbounds_and_tags(
                 continue
 
             format_variables.update({"TRANSPORT": inbound["network"]})
-            host_inbound = inbound.copy()
             for host in xray.hosts.get(tag, []):
                 allowed_bot_usernames = host.get("bot_usernames") or []
                 if allowed_bot_usernames and user_bot_username and user_bot_username not in allowed_bot_usernames:
                     continue
+
+                host_inbound = inbound.copy()
 
                 sni = ""
                 sni_list = host["sni"] or inbound["sni"]
@@ -451,7 +454,7 @@ def process_inbounds_and_tags(
                     sni = random.choice(sni_list).replace("*", salt)
 
                 if sids := inbound.get("sids"):
-                    inbound["sid"] = random.choice(sids)
+                    host_inbound["sid"] = random.choice(sids)
 
                 req_host = ""
                 req_host_list = host["host"] or inbound["host"]
@@ -497,11 +500,13 @@ def process_inbounds_and_tags(
                 # заглушку с именем-текстом лимита. Хосты обычных нод не трогаем.
                 if bs.is_blocked(host):
                     host_inbound["port"] = stub.port
-                    conf.add(
-                        remark=bs.stub_text,
-                        address=stub.address,
-                        inbound=host_inbound,
-                        settings=settings.model_dump(),
+                    candidates.append(
+                        {
+                            "order": host.get("order", 0),
+                            "blocked": True,
+                            "host_inbound": host_inbound,
+                            "settings": settings.model_dump(),
+                        }
                     )
                     continue
 
@@ -510,24 +515,55 @@ def process_inbounds_and_tags(
                 add_kwargs = {}
                 if isinstance(conf, V2rayJsonConfig) and bs.is_bs(host):
                     add_kwargs["is_bs"] = True
-                if balanced and isinstance(conf, V2rayJsonConfig):
-                    addresses = [
+
+                candidate = {
+                    "order": host.get("order", 0),
+                    "blocked": False,
+                    "host_inbound": host_inbound,
+                    "settings": settings.model_dump(),
+                    "add_kwargs": add_kwargs,
+                    "remark": host["remark"].format_map(format_variables),
+                    "balanced": balanced and isinstance(conf, V2rayJsonConfig),
+                }
+                if candidate["balanced"]:
+                    candidate["addresses"] = [
                         addr.replace("*", secrets.token_hex(8)).format_map(format_variables) for addr in address_list
                     ]
-                    conf.add_balanced(
-                        remark=host["remark"].format_map(format_variables),
-                        addresses=addresses,
-                        inbound=host_inbound,
-                        settings=settings.model_dump(),
-                        **add_kwargs,
-                    )
                 else:
-                    conf.add(
-                        remark=host["remark"].format_map(format_variables),
-                        address=address.format_map(format_variables),
-                        inbound=host_inbound,
-                        settings=settings.model_dump(),
-                        **add_kwargs,
-                    )
+                    candidate["address"] = address.format_map(format_variables)
+                candidates.append(candidate)
+
+    def _candidate_order(item: dict) -> int:
+        order = item.get("order")
+        return int(order) if order is not None else 0
+
+    candidates.sort(key=_candidate_order)
+
+    for item in candidates:
+        if item["blocked"]:
+            conf.add(
+                remark=bs.stub_text,
+                address=stub.address,
+                inbound=item["host_inbound"],
+                settings=item["settings"],
+            )
+            continue
+
+        if item["balanced"] and isinstance(conf, V2rayJsonConfig):
+            conf.add_balanced(
+                remark=item["remark"],
+                addresses=item["addresses"],
+                inbound=item["host_inbound"],
+                settings=item["settings"],
+                **item["add_kwargs"],
+            )
+        else:
+            conf.add(
+                remark=item["remark"],
+                address=item["address"],
+                inbound=item["host_inbound"],
+                settings=item["settings"],
+                **item["add_kwargs"],
+            )
 
     return conf.render(reverse=reverse)
