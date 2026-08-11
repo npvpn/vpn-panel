@@ -206,10 +206,13 @@
 
 .limited-btn {
     display: flex;
+    font-size: 16px;
     justify-content: center;
     align-items: center;
     background-color: #f6f6f6;
-    padding: 16px;
+    color: var(--black);
+    text-decoration: none;
+    padding: 16px 0;
     border: none;
     border-radius: 100px;
     font-family: var(--third-family);
@@ -714,7 +717,9 @@
 
 .dark-btn {
     border-radius: 40px;
+    font-size: 16px;
     font-family: var(--third-family);
+    text-decoration: none;
     color: var(--white);
     padding: 16px 20px;
     border: none;
@@ -1022,10 +1027,6 @@
         width: 420px;
         z-index: 200;
         margin: 0;
-    }
-
-    .limited-btn {
-        font-size: 16px;
     }
     
     .config-btn {
