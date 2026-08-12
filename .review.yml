@@ -1,4 +1,4 @@
-# .review.yml — конфигурация rag-reviewer для npvpn/panel
+# .review.yml — конфигурация rag-reviewer для npvpn/vpn-panel
 
 # Кластеризация подсистем для summary: app/* уже разложен по пакетам на глубине 2
 # (app/subscription, app/xray, app/routers, app/models, app/jobs, ...), поэтому
