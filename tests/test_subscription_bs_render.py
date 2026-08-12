@@ -147,10 +147,15 @@ def _inbound() -> dict:
     }
 
 
-def _host(*addresses: str, node_ids: list[int] | None = None) -> dict:
+def _host(
+    *addresses: str,
+    node_ids: list[int] | None = None,
+    remark: str = "BS server",
+    order: int = 0,
+) -> dict:
     """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids."""
     return {
-        "remark": "BS server",
+        "remark": remark,
         "address": list(addresses),
         "node_ids": list(node_ids or []),
         "port": 8443,
@@ -168,6 +173,7 @@ def _host(*addresses: str, node_ids: list[int] | None = None) -> dict:
         "xhttp_extra": None,
         "use_sni_as_host": False,
         "bot_usernames": [],
+        "order": order,
     }
 
 
@@ -238,6 +244,51 @@ def test_non_bs_host_is_not_stubbed(xray_stub):
 
     assert conf.calls[0]["remark"] == "BS server"
     assert conf.calls[0]["address"] == "plain.example.com"
+
+
+def test_hosts_emitted_sorted_by_global_order(monkeypatch):
+    """Кандидаты из разных инбаундов сортируются по order, а не по порядку тегов."""
+    tag_a, tag_b = "VLESS_A", "TROJAN_B"
+    inbound_a = {**_inbound(), "tag": tag_a, "protocol": "vless"}
+    inbound_b = {**_inbound(), "tag": tag_b, "protocol": "trojan", "network": "tcp"}
+    monkeypatch.setattr(
+        share.xray,
+        "config",
+        types.SimpleNamespace(inbounds_by_tag={tag_a: inbound_a, tag_b: inbound_b}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        share.xray,
+        "hosts",
+        {
+            tag_a: [
+                _host("a1.example.com", remark="A1", order=2),
+                _host("a2.example.com", remark="A2", order=0),
+            ],
+            tag_b: [_host("b1.example.com", remark="B1", order=1)],
+        },
+        raising=False,
+    )
+
+    class _Vless:
+        name = "vless"
+
+    class _Trojan:
+        name = "trojan"
+
+    protocol_vless = _Vless()
+    protocol_trojan = _Trojan()
+    conf = _FakeConf()
+    format_variables = defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": None})
+    share.process_inbounds_and_tags(
+        inbounds={protocol_vless: [tag_a], protocol_trojan: [tag_b]},
+        proxies={protocol_vless: _ProxySettings(), protocol_trojan: _ProxySettings()},
+        format_variables=format_variables,
+        conf=conf,
+        bs=BsContext.empty(),
+    )
+
+    assert [call["remark"] for call in conf.calls] == ["A2", "B1", "A1"]
 
 
 def _v2ray_json_conf() -> V2rayJsonConfig:

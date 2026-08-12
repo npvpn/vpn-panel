@@ -1,32 +1,74 @@
 import {
-  Accordion,
   Button,
   HStack,
+  Input,
+  InputGroup,
+  InputLeftElement,
   Modal,
   ModalBody,
   ModalCloseButton,
   ModalContent,
   ModalHeader,
   ModalOverlay,
+  Select,
   Text,
   useToast,
+  VStack,
 } from "@chakra-ui/react";
+import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useHosts } from "contexts/HostsContext";
 import { FC, useCallback, useEffect, useMemo, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
-import "slick-carousel/slick/slick-theme.css";
-import "slick-carousel/slick/slick.css";
 import { Bot } from "types/Bot";
 import { z } from "zod";
 import { useDashboard } from "../contexts/DashboardContext";
 import { NodeType } from "../contexts/NodesContext";
 import { Icon } from "./Icon";
-import { hostsSchema } from "./hostsDialog/schema";
+import { hostsFormSchema } from "./hostsDialog/schema";
 import { ModalIcon } from "./hostsDialog/constants";
-import { AccordionInbound } from "./AccordionInbound";
+import { HostsList } from "./hostsDialog/HostsList";
+
+type HostsDict = Record<string, any[]>;
+
+function flattenHosts(hosts: HostsDict | null | undefined) {
+  if (!hosts) return [];
+  const items = Object.entries(hosts).flatMap(([inbound_tag, hostList]) =>
+    (hostList as any[]).map((host) => ({
+      ...host,
+      inbound_tag,
+      order: typeof host.order === "number" ? host.order : 0,
+      xhttp_extra: host.xhttp_extra
+        ? JSON.stringify(host.xhttp_extra, null, 2)
+        : "",
+    }))
+  );
+  return items.sort((a, b) => a.order - b.order || 0);
+}
+
+function groupHosts(
+  hosts: z.infer<typeof hostsFormSchema>["hosts"],
+  inboundTags: string[]
+): HostsDict {
+  const payload: HostsDict = Object.fromEntries(
+    inboundTags.map((tag) => [tag, [] as any[]])
+  );
+  const ordered = [...hosts].sort((a, b) => a.order - b.order);
+  ordered.forEach((host, index) => {
+    const { inbound_tag, ...rest } = host;
+    if (!payload[inbound_tag]) {
+      payload[inbound_tag] = [];
+    }
+    payload[inbound_tag].push({
+      ...rest,
+      order: index,
+      xhttp_extra: rest.xhttp_extra ? JSON.parse(rest.xhttp_extra) : null,
+    });
+  });
+  return payload;
+}
 
 export const HostsDialog: FC = () => {
   const { isEditingHosts, onEditingHosts, refetchUsers, inbounds } =
@@ -34,9 +76,11 @@ export const HostsDialog: FC = () => {
   const { isLoading, hosts, fetchHosts, isPostLoading, setHosts } = useHosts();
   const toast = useToast();
   const { t } = useTranslation();
-  const [openAccordions, setOpenAccordions] = useState<string[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
   const [nodes, setNodes] = useState<NodeType[]>([]);
+  const [search, setSearch] = useState("");
+  const [inboundFilter, setInboundFilter] = useState("");
+
   const inboundMap = useMemo(() => {
     const map = new Map();
     const list =
@@ -47,7 +91,7 @@ export const HostsDialog: FC = () => {
     return map;
   }, [inbounds]);
 
-  const hostKeys = useMemo(() => {
+  const inboundTags = useMemo(() => {
     return hosts ? Object.keys(hosts) : [];
   }, [hosts]);
 
@@ -71,47 +115,30 @@ export const HostsDialog: FC = () => {
     loadData();
   }, [isEditingHosts, fetchHosts]);
 
-  const form = useForm<z.infer<typeof hostsSchema>>({
-    resolver: zodResolver(hostsSchema),
+  const form = useForm<z.infer<typeof hostsFormSchema>>({
+    resolver: zodResolver(hostsFormSchema),
     shouldUnregister: false,
+    defaultValues: { hosts: [] },
   });
 
   useEffect(() => {
     if (hosts && isEditingHosts) {
-      const formHosts = Object.fromEntries(
-        Object.entries(hosts).map(([key, hostList]) => [
-          key,
-          (hostList as any[]).map((host) => ({
-            ...host,
-            xhttp_extra: host.xhttp_extra
-              ? JSON.stringify(host.xhttp_extra, null, 2)
-              : "",
-          })),
-        ])
-      );
-      form.reset(formHosts);
+      form.reset({ hosts: flattenHosts(hosts) });
+      setSearch("");
+      setInboundFilter("");
     }
   }, [hosts, isEditingHosts, form]);
 
   const onClose = useCallback(() => {
-    setOpenAccordions([]);
+    setSearch("");
+    setInboundFilter("");
     onEditingHosts(false);
   }, [onEditingHosts]);
 
   const handleFormSubmit = useCallback(
-    (hostsData: z.infer<typeof hostsSchema>) => {
-      const payload = Object.fromEntries(
-        Object.entries(hostsData).map(([key, hostList]) => [
-          key,
-          (hostList as any[]).map((host) => ({
-            ...host,
-            xhttp_extra: host.xhttp_extra
-              ? JSON.parse(host.xhttp_extra)
-              : null,
-          })),
-        ])
-      );
-      setHosts(payload as z.infer<typeof hostsSchema>)
+    (hostsData: z.infer<typeof hostsFormSchema>) => {
+      const payload = groupHosts(hostsData.hosts, inboundTags);
+      setHosts(payload)
         .then(() => {
           toast({
             title: t("hostsDialog.savedSuccess"),
@@ -146,50 +173,8 @@ export const HostsDialog: FC = () => {
           }
         });
     },
-    [setHosts, toast, t, refetchUsers, onClose]
+    [setHosts, toast, t, refetchUsers, onClose, inboundTags]
   );
-
-  const toggleAccordion = useCallback((hostKey: string) => {
-    setOpenAccordions((prev) => {
-      if (prev.includes(hostKey)) {
-        return prev.filter((k) => k !== hostKey);
-      }
-      return [...prev, hostKey];
-    });
-  }, []);
-
-  const isAccordionOpen = useCallback(
-    (hostKey: string) => openAccordions.includes(hostKey),
-    [openAccordions]
-  );
-
-  const renderContent = useMemo(() => {
-    if (isLoading) {
-      return t("hostsDialog.loading");
-    }
-
-    if (!hosts || hostKeys.length === 0) {
-      return "No inbound found. Please check your Xray config file.";
-    }
-
-    return (
-      <Accordion w="full" allowMultiple>
-        {hostKeys.map((hostKey) => {
-          return (
-            <AccordionInbound
-              key={hostKey}
-              hostKey={hostKey}
-              isOpen={isAccordionOpen(hostKey)}
-              toggleAccordion={() => toggleAccordion(hostKey)}
-              bots={bots}
-              nodes={nodes}
-              inbound={inboundMap.get(hostKey)}
-            />
-          );
-        })}
-      </Accordion>
-    );
-  }, [isLoading, hosts, hostKeys, isAccordionOpen, bots, nodes, t]);
 
   return (
     <Modal isOpen={isEditingHosts} onClose={onClose}>
@@ -201,13 +186,57 @@ export const HostsDialog: FC = () => {
           </Icon>
         </ModalHeader>
         <ModalCloseButton mt={3} />
-        <ModalBody w="440px" pb={3} pt={3}>
+        <ModalBody w="520px" pb={3} pt={3}>
           <FormProvider {...form}>
             <form onSubmit={form.handleSubmit(handleFormSubmit)}>
               <Text mb={3} opacity={0.8} fontSize="sm">
                 {t("hostsDialog.title")}
               </Text>
-              {renderContent}
+
+              {isLoading ? (
+                t("hostsDialog.loading")
+              ) : (
+                <VStack align="stretch" spacing={3} mb={2}>
+                  <InputGroup>
+                    <InputLeftElement pointerEvents="none">
+                      <MagnifyingGlassIcon width="16px" color="gray" />
+                    </InputLeftElement>
+                    <Input
+                      placeholder={
+                        t("hostsDialog.search") ?? "Search by remark..."
+                      }
+                      size="md"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </InputGroup>
+
+                  <Select
+                    size="md"
+                    value={inboundFilter}
+                    onChange={(e) => setInboundFilter(e.target.value)}
+                  >
+                    <option value="">
+                      {t("hostsDialog.allInbounds")}
+                    </option>
+                    {inboundTags.map((tag) => (
+                      <option key={tag} value={tag}>
+                        {tag}
+                      </option>
+                    ))}
+                  </Select>
+
+                  <HostsList
+                    inboundTags={inboundTags}
+                    inboundFilter={inboundFilter}
+                    search={search}
+                    bots={bots}
+                    nodes={nodes}
+                    inboundMap={inboundMap}
+                  />
+                </VStack>
+              )}
+
               <HStack justifyContent="flex-end" py={2}>
                 <Button
                   variant="solid"

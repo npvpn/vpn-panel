@@ -80,6 +80,7 @@ def hosts(storage: dict):
                     "use_sni_as_host": host.use_sni_as_host,
                     "bot_usernames": host.bot_usernames,
                     "xhttp_extra": host.xhttp_extra,
+                    "order": host.order,
                 }
                 for host in inbound_hosts
                 if not host.is_disabled
