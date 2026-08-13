@@ -663,14 +663,26 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
             _connect_semaphore.acquire()
             try:
                 config_json = node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids)
-                logger.info(f'Connecting to "{dbnode.name}" node (attempt {attempt}/{retries})')
+                path = "HARD" if force else "SOFT"
+                logger.debug(
+                    f'[connect_node] {path} path start node_id={node_id} ("{dbnode.name}") '
+                    f"attempt={attempt}/{retries} local_session="
+                    f"{'yes' if getattr(node, '_session_id', None) else 'no'}"
+                )
 
                 if force:
                     # Hard path: new REST session (/connect stops Xray by node contract) + restart.
+                    logger.debug(
+                        f'[connect_node] HARD decision node_id={node_id} ("{dbnode.name}"): '
+                        f"cleanup local session → /connect → /restart (Xray will stop)"
+                    )
                     _cleanup_node_connection(node)
                     node.connect()
                     node.restart(config_json=config_json)
-                    logger.info(f'Hard-connected "{dbnode.name}" node with Xray restart')
+                    logger.debug(
+                        f'[connect_node] HARD done node_id={node_id} ("{dbnode.name}"): '
+                        f"Xray restarted under new session"
+                    )
                 else:
                     # Soft path: keep existing session if still valid — reattach gRPC only.
                     # Do NOT wipe session_id / call /connect on transient network errors.
@@ -679,25 +691,39 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
                         if hasattr(node, "try_restore"):
                             restored = node.try_restore()
                         if restored:
-                            logger.info(f'Restored session for "{dbnode.name}" node without /connect')
+                            logger.debug(
+                                f'[connect_node] SOFT decision node_id={node_id} ("{dbnode.name}"): '
+                                f"try_restore=OK → reattach only (no /connect, no /start)"
+                            )
                         else:
                             # No usable session, or session ok but core down → start().
                             # start() calls /connect only when session is missing/invalid.
+                            logger.debug(
+                                f'[connect_node] SOFT decision node_id={node_id} ("{dbnode.name}"): '
+                                f"try_restore=False → start() "
+                                f"( /connect only if session missing/invalid )"
+                            )
                             node.start(config_json=config_json)
                     except Exception as soft_exc:
                         if getattr(node, "_session_id", None):
                             # Session still remembered — do not escalate to error/hard /connect.
-                            logger.warning(
-                                f"[connect_node] soft reconnect deferred for node_id={node_id} "
-                                f"({dbnode.name}): {type(soft_exc).__name__}: {soft_exc}"
+                            logger.debug(
+                                f'[connect_node] SOFT deferred node_id={node_id} ("{dbnode.name}"): '
+                                f"{type(soft_exc).__name__}: {soft_exc}; "
+                                f"keep session_id, status=connected, retry later (no /connect)"
                             )
                             _change_node_status(node_id, NodeStatus.connected)
                             return
+                        logger.debug(
+                            f"[connect_node] SOFT failed without session node_id={node_id} "
+                            f'("{dbnode.name}"): {type(soft_exc).__name__}: {soft_exc}'
+                        )
                         raise
 
                 node.inbound_tags = set(node_inbound_tags)
                 version = node.get_version()
                 _change_node_status(node_id, NodeStatus.connected, version=version)
+                logger.debug(f'[connect_node] DONE node_id={node_id} ("{dbnode.name}") path={path} xray=v{version}')
                 logger.info(f'Connected to "{dbnode.name}" node, xray run on v{version}')
                 return
             except Exception as exc:
@@ -768,16 +794,24 @@ def restart_node(node_id, config=None):
         node = xray.operations.add_node(dbnode)
 
     if not node.connected:
+        logger.debug(
+            f'[restart_node] node_id={node_id} ("{dbnode.name}"): not connected → fallback to SOFT connect_node'
+        )
         return connect_node(node_id, config)
 
     try:
         logger.info(f'Restarting Xray core of "{dbnode.name}" node')
+        logger.debug(
+            f'[restart_node] node_id={node_id} ("{dbnode.name}"): POST /restart '
+            f"(Xray will stop/start; session kept if ping ok)"
+        )
 
         if config is None:
             config = xray.config.include_db_users()
 
         node.restart(config_json=node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids))
         node.inbound_tags = set(node_inbound_tags)
+        logger.debug(f'[restart_node] done node_id={node_id} ("{dbnode.name}")')
         logger.info(f'Xray core of "{dbnode.name}" node restarted')
     except Exception as e:
         try:

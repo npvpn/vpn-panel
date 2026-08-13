@@ -59,6 +59,10 @@ def core_health_check():
                     continue
                 if not config:
                     config = xray.config.include_db_users()
+                logger.debug(
+                    f"[health] node_id={node_id} ({dbnode.name}): DB=connected but ping failed → "
+                    f"schedule SOFT connect_node(force=False)"
+                )
                 xray.operations.connect_node(node_id, config)
                 reconnects_scheduled += 1
                 continue
@@ -69,9 +73,13 @@ def core_health_check():
                 if not node.started:
                     raise AssertionError("Xray core is not started on node")
                 node.api.get_sys_stats(timeout=2)
-            except (ConnectionError, NodeAPIError, xray_exc.XrayError, AssertionError):
+            except (ConnectionError, NodeAPIError, xray_exc.XrayError, AssertionError) as exc:
                 if not config:
                     config = xray.config.include_db_users()
+                logger.debug(
+                    f"[health] node_id={node_id} ({dbnode.name}): session ok but core/API unhealthy "
+                    f"({type(exc).__name__}: {exc}) → schedule restart_node (/restart)"
+                )
                 xray.operations.restart_node(node_id, config)
             continue
 
@@ -93,6 +101,10 @@ def core_health_check():
         if xray.operations.is_connect_in_progress(node_id) and not force:
             continue
 
+        logger.debug(
+            f"[health] node_id={node_id} ({dbnode.name}): status={dbnode.status.value} → "
+            f"schedule {'HARD' if force else 'SOFT'} connect_node(force={force})"
+        )
         xray.operations.connect_node(node_id, config, force=force)
         reconnects_scheduled += 1
 
