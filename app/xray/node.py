@@ -191,6 +191,50 @@ class ReSTXRayNode:
         if recreate_session:
             self._recreate_session()
 
+    def _refresh_http_transport(self):
+        """Recreate HTTP session without dropping REST session_id / node cert."""
+        self._recreate_session()
+        node_cert = getattr(self, "_node_cert", None)
+        if not node_cert:
+            return
+        self._close_temp_file(getattr(self, "_node_certfile", None))
+        self._node_certfile = string_to_temp_file(node_cert)
+        self.session.verify = self._node_certfile.name
+
+    @staticmethod
+    def _is_session_invalid(exc: NodeAPIError) -> bool:
+        if exc.status_code == 403:
+            return True
+        detail = exc.detail
+        if isinstance(detail, str) and "session id mismatch" in detail.lower():
+            return True
+        return False
+
+    @staticmethod
+    def _is_transport_error(exc: Exception) -> bool:
+        if isinstance(
+            exc,
+            (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ChunkedEncodingError,
+            ),
+        ):
+            return True
+        msg = str(exc).lower()
+        return any(
+            token in msg
+            for token in (
+                "timed out",
+                "connection aborted",
+                "unexpected eof",
+                "broken pipe",
+                "connection reset",
+                "write operation timed out",
+                "temporarily unavailable",
+            )
+        )
+
     def _prepare_config(self, config: XRayConfig):
         return inline_local_certificates(config)
 
@@ -205,14 +249,15 @@ class ReSTXRayNode:
             )
             data = res.json()
         except Exception as e:
-            exc = NodeAPIError(0, str(e))
-            raise exc
+            if self._is_transport_error(e):
+                # Keep session_id — transient network blips must not force /connect.
+                self._refresh_http_transport()
+            raise NodeAPIError(0, str(e))
 
         if res.status_code == 200:
             return data
         else:
-            exc = NodeAPIError(res.status_code, data["detail"])
-            raise exc
+            raise NodeAPIError(res.status_code, data["detail"])
 
     @property
     def connected(self):
@@ -221,8 +266,11 @@ class ReSTXRayNode:
         try:
             self.make_request("/ping", timeout=XRAY_NODE_REST_PING_TIMEOUT)
             return True
-        except NodeAPIError:
-            self._reset_local_state()
+        except NodeAPIError as exc:
+            # Only drop session when the node explicitly rejected it.
+            # Transient transport errors keep session_id for soft reattach.
+            if self._is_session_invalid(exc):
+                self._reset_local_state()
             return False
 
     @property
@@ -262,6 +310,20 @@ class ReSTXRayNode:
             self._discard_grpc_api_unlocked()
             self._api = new_api
 
+    def _ensure_control_session(self):
+        """Ensure REST session for control commands without /connect on transient errors."""
+        if self._session_id:
+            try:
+                self.make_request("/ping", timeout=XRAY_NODE_REST_PING_TIMEOUT)
+                return
+            except NodeAPIError as exc:
+                if self._is_session_invalid(exc):
+                    self._reset_local_state()
+                else:
+                    # Network blip: keep session_id, let caller retry later.
+                    raise
+        self.connect()
+
     def connect(self):
         if self._session_id:
             try:
@@ -291,14 +353,37 @@ class ReSTXRayNode:
         res = self.make_request("/", timeout=XRAY_NODE_REST_INFO_TIMEOUT)
         return res.get("core_version")
 
-    def start(self, config: XRayConfig = None, *, config_json: str | None = None):
+    def try_restore(self) -> bool:
+        """Reattach gRPC when REST session and Xray on the node are still alive.
+
+        Returns True if session is valid and core is running (gRPC reattached).
+        Returns False if there is no usable session or core is down (caller may soft-start
+        or hard-connect). Raises NodeAPIError on transient transport errors so the caller
+        does not create a new session (/connect) during a network blip.
+        """
         if not self._session_id:
-            self.connect()
-        else:
-            try:
-                self.make_request("/ping", timeout=XRAY_NODE_REST_PING_TIMEOUT)
-            except NodeAPIError:
-                self.connect()
+            return False
+        if not getattr(self, "_node_cert", None):
+            return False
+
+        try:
+            self.make_request("/ping", timeout=XRAY_NODE_REST_PING_TIMEOUT)
+            info = self.make_request("/", timeout=XRAY_NODE_REST_INFO_TIMEOUT)
+        except NodeAPIError as exc:
+            if self._is_session_invalid(exc):
+                self._reset_local_state()
+                return False
+            raise
+
+        if not info.get("started"):
+            return False
+
+        self._started = True
+        self._setup_api()
+        return True
+
+    def start(self, config: XRayConfig = None, *, config_json: str | None = None):
+        self._ensure_control_session()
 
         try:
             info = self.make_request("/", timeout=XRAY_NODE_REST_INFO_TIMEOUT)
@@ -330,16 +415,14 @@ class ReSTXRayNode:
         return res
 
     def stop(self):
-        if not self.connected:
-            self.connect()
+        self._ensure_control_session()
 
         self.make_request("/stop", timeout=XRAY_NODE_REST_STOP_TIMEOUT)
         self._close_grpc_api()
         self._started = False
 
     def restart(self, config: XRayConfig = None, *, config_json: str | None = None):
-        if not self.connected:
-            self.connect()
+        self._ensure_control_session()
 
         if config_json is None:
             assert config is not None, "restart() requires either config or config_json"
@@ -603,8 +686,35 @@ class RPyCXRayNode:
 
 class XRayNode:
     # __new__ возвращает ReSTXRayNode/RPyCXRayNode, но для mypy это остаётся типом
-    # XRayNode — атрибут нужно продублировать здесь (см. те же атрибуты в подклассах).
+    # XRayNode — атрибут/методы нужно продублировать здесь (см. те же в реализациях).
     inbound_tags: set[str] | None = None
+
+    # Тела не вызываются: __new__ всегда возвращает ReST/RPyC-реализацию.
+    @property
+    def connected(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    def started(self) -> bool:
+        raise NotImplementedError
+
+    def connect(self) -> None:
+        raise NotImplementedError
+
+    def disconnect(self) -> None:
+        raise NotImplementedError
+
+    def get_version(self) -> str | None:
+        raise NotImplementedError
+
+    def try_restore(self) -> bool:
+        raise NotImplementedError
+
+    def start(self, config: XRayConfig = None, *, config_json: str | None = None):
+        raise NotImplementedError
+
+    def restart(self, config: XRayConfig = None, *, config_json: str | None = None):
+        raise NotImplementedError
 
     def __new__(
         self,

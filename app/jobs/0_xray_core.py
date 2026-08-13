@@ -53,6 +53,8 @@ def core_health_check():
 
         if dbnode.status == NodeStatus.connected:
             if not node.connected:
+                # Soft reconnect: try_restore / start without /connect when session is kept
+                # across a transient ping failure (avoids node takeover + Xray stop).
                 if reconnects_scheduled >= max_reconnects:
                     continue
                 if not config:

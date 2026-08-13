@@ -565,7 +565,11 @@ def is_connect_stale(node_id: int) -> bool:
 
 
 def _cleanup_node_connection(node) -> None:
-    """Reset local session only — do not call remote /disconnect (it stops Xray and forces full /start)."""
+    """Reset local session only — do not call remote /disconnect (it stops Xray).
+
+    Used on hard reconnect (force=True). Soft path must not call this on network blips
+    so the existing REST session_id can be reused for try_restore / soft start.
+    """
     if node is None:
         return
     if hasattr(node, "_reset_local_state"):
@@ -658,9 +662,39 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
         for attempt in range(1, retries + 1):
             _connect_semaphore.acquire()
             try:
-                _cleanup_node_connection(node)
+                config_json = node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids)
                 logger.info(f'Connecting to "{dbnode.name}" node (attempt {attempt}/{retries})')
-                node.start(config_json=node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids))
+
+                if force:
+                    # Hard path: new REST session (/connect stops Xray by node contract) + restart.
+                    _cleanup_node_connection(node)
+                    node.connect()
+                    node.restart(config_json=config_json)
+                    logger.info(f'Hard-connected "{dbnode.name}" node with Xray restart')
+                else:
+                    # Soft path: keep existing session if still valid — reattach gRPC only.
+                    # Do NOT wipe session_id / call /connect on transient network errors.
+                    restored = False
+                    try:
+                        if hasattr(node, "try_restore"):
+                            restored = node.try_restore()
+                        if restored:
+                            logger.info(f'Restored session for "{dbnode.name}" node without /connect')
+                        else:
+                            # No usable session, or session ok but core down → start().
+                            # start() calls /connect only when session is missing/invalid.
+                            node.start(config_json=config_json)
+                    except Exception as soft_exc:
+                        if getattr(node, "_session_id", None):
+                            # Session still remembered — do not escalate to error/hard /connect.
+                            logger.warning(
+                                f"[connect_node] soft reconnect deferred for node_id={node_id} "
+                                f"({dbnode.name}): {type(soft_exc).__name__}: {soft_exc}"
+                            )
+                            _change_node_status(node_id, NodeStatus.connected)
+                            return
+                        raise
+
                 node.inbound_tags = set(node_inbound_tags)
                 version = node.get_version()
                 _change_node_status(node_id, NodeStatus.connected, version=version)
