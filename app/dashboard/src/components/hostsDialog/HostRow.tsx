@@ -52,7 +52,8 @@ type HostRowProps = {
 const HOST_KEY = "hosts";
 
 export const HostRow = memo(function HostRow(props: HostRowProps) {
-  const { register, control } = useFormContext<z.infer<typeof hostsFormSchema>>();
+  const { register, control } =
+    useFormContext<z.infer<typeof hostsFormSchema>>();
   const {
     index,
     hostId,
@@ -94,7 +95,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
       >
         <Box
           bg="white"
-          _dark={{ bg: "gray.800" }}
+          _dark={{ bg: "gray.700" }}
           borderRadius="12px"
           boxShadow="0 2px 8px rgba(0,0,0,0.08)"
           border="1px solid"
