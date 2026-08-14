@@ -37,8 +37,8 @@ def get_user_note(user: UserResponse, note_template: str) -> str:
     return note_template.replace("<days_left>", str(days_left))
 
 
-def get_subscription_user_info(user: UserResponse, *, db=None, bot_settings=None, user_id: int | None = None) -> dict:
-    """upload/download/total/expire для Happ. Если у бота юзера задан БС-лимит и есть
+def get_subscription_user_info(user: UserResponse, *, db=None, panel_settings=None, user_id: int | None = None) -> dict:
+    """upload/download/total/expire для Happ. Если задан общий БС-лимит панели и есть
     БС-расход — download/total отражают месячный агрегат БС, иначе глобальный."""
     info = {
         "upload": 0,
@@ -46,10 +46,10 @@ def get_subscription_user_info(user: UserResponse, *, db=None, bot_settings=None
         "total": user.data_limit if user.data_limit is not None else 0,
         "expire": user.expire if user.expire is not None else 0,
     }
-    if db is None or bot_settings is None or user_id is None:
+    if db is None or panel_settings is None or user_id is None:
         return info
 
-    monthly_limit = bot_settings.get("bs_monthly_limit") or 0
+    monthly_limit = panel_settings.get("bs_monthly_limit") or 0
     if not monthly_limit:
         return info
 

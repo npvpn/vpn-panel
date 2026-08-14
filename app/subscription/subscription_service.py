@@ -49,6 +49,7 @@ class SubscriptionRenderContext:
     device_limited_hard: bool
     unsupported_blocks: bool
     bot_settings: dict
+    panel_settings: dict
     bs: BsContext
     response_headers: dict[str, str]
 
@@ -98,6 +99,7 @@ def build_subscription_response_headers(
     request: Request,
     user: UserResponse,
     bot_settings: dict,
+    panel_settings: dict,
     announce_text: str,
     subscription_userinfo: str,
     user_agent: str,
@@ -118,8 +120,8 @@ def build_subscription_response_headers(
         "profile-update-interval": str(bot_settings["sub_update_interval"]),
         "subscription-userinfo": subscription_userinfo,
     }
-    headers.update(get_routing_header(user_agent, bot_settings))
-    headers.update(parse_custom_headers(bot_settings.get("sub_custom_headers") or ""))
+    headers.update(get_routing_header(user_agent, panel_settings))
+    headers.update(parse_custom_headers(panel_settings.get("sub_custom_headers") or ""))
     return headers
 
 

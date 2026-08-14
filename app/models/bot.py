@@ -3,6 +3,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.managed import ManagedStateResponse
+from app.models.settings import PANEL_SETTING_KEYS
 from config import (
     BOT_URL,
     SUB_BS_LIMIT_ANNOUNCE_TEXT,
@@ -16,8 +17,6 @@ from config import (
     SUB_PROFILE_URL,
     SUB_REVOKED_ANNOUNCE_TEXT,
     SUB_REVOKED_SERVER_TEXT,
-    SUB_ROUTING_HAPP,
-    SUB_ROUTING_V2RAYTUN,
     SUB_SUPPORT_URL,
     SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
     SUB_UNSUPPORTED_CLIENT_SERVER_TEXT,
@@ -39,8 +38,6 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "sub_update_interval": str(SUB_UPDATE_INTERVAL),
     "sub_support_url": SUB_SUPPORT_URL,
     "sub_profile_title": SUB_PROFILE_TITLE,
-    "sub_routing_happ": SUB_ROUTING_HAPP,
-    "sub_routing_v2raytun": SUB_ROUTING_V2RAYTUN,
     "sub_client_note": SUB_CLIENT_NOTE,
     "sub_profile_url": SUB_PROFILE_URL,
     "sub_subscription_domain": "",
@@ -55,14 +52,9 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "sub_expired_server_text": _normalize_server_text(SUB_EXPIRED_SERVER_TEXT),
     "sub_device_limit_server_text": _normalize_server_text(SUB_DEVICE_LIMIT_SERVER_TEXT),
     "sub_unsupported_client_server_text": _normalize_server_text(SUB_UNSUPPORTED_CLIENT_SERVER_TEXT),
-    "bs_monthly_limit": 0,
     "bs_extra_reset_pool_on_prolong": False,
     "sub_bs_limit_server_text": [],
     "sub_bs_limit_announce_text": SUB_BS_LIMIT_ANNOUNCE_TEXT,
-    "sub_v2ray_json_template": "",
-    "sub_routing_json_default": "",
-    "sub_routing_json_bs": "",
-    "sub_custom_headers": "",
     "show_ads": True,
 }
 
@@ -104,8 +96,6 @@ class BotSettingsPayload(BaseModel):
     sub_update_interval: str = ""
     sub_support_url: str = ""
     sub_profile_title: str = ""
-    sub_routing_happ: str = ""
-    sub_routing_v2raytun: str = ""
     sub_client_note: str = ""
     sub_profile_url: str = ""
     sub_subscription_domain: str = ""
@@ -115,7 +105,6 @@ class BotSettingsPayload(BaseModel):
     sub_expired_announce_text: str = ""
     sub_device_limit_announce_text: str = ""
     sub_device_limit_hard_mode: bool = False
-    bs_monthly_limit: int = 0
     bs_extra_reset_pool_on_prolong: bool = False
     sub_unsupported_client_announce_text: str = ""
     sub_revoked_server_text: list[str] = []
@@ -124,10 +113,6 @@ class BotSettingsPayload(BaseModel):
     sub_unsupported_client_server_text: list[str] = []
     sub_bs_limit_server_text: list[str] = []
     sub_bs_limit_announce_text: str = ""
-    sub_v2ray_json_template: str = ""
-    sub_routing_json_default: str = ""
-    sub_routing_json_bs: str = ""
-    sub_custom_headers: str = ""
     show_ads: bool = True
 
     @field_validator(
@@ -148,20 +133,6 @@ class BotSettingsPayload(BaseModel):
         from app.subscription.subscription_url import normalize_subscription_domain
 
         return normalize_subscription_domain(value)
-
-    @field_validator(
-        "sub_v2ray_json_template",
-        "sub_routing_json_default",
-        "sub_routing_json_bs",
-        mode="before",
-    )
-    @classmethod
-    def validate_json_field(cls, value: Any):
-        from app.xray.bs_routing import parse_json_object
-
-        # '' / None → допустимо (поле не задано); иначе обязан быть JSON-объект.
-        parse_json_object(value)
-        return value if value is not None else ""
 
 
 class BotSettingsResponse(BotSettingsPayload):
@@ -192,6 +163,8 @@ def apply_bot_settings_fallback(raw_settings: dict[str, Any] | None) -> dict[str
     }
     if raw_settings:
         for key, value in raw_settings.items():
+            if key in PANEL_SETTING_KEYS:
+                continue
             if value is None:
                 continue
             if key in text_fallback_keys and isinstance(value, str) and not value.strip():
