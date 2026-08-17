@@ -1,7 +1,7 @@
 """move panel settings out of bot_settings
 
 Revision ID: d7e9f1a2b3c4
-Revises: c4f8a1b2d3e5
+Revises: 8a985b0c7775
 Create Date: 2026-08-14 12:40:42.423120
 
 """
@@ -10,9 +10,9 @@ from datetime import datetime
 
 import sqlalchemy as sa
 from alembic import op
-
+  
 revision = "d7e9f1a2b3c4"
-down_revision = "c4f8a1b2d3e5"
+down_revision = "8a985b0c7775"
 branch_labels = None
 depends_on = None
 

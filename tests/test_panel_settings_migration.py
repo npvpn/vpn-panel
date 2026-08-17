@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import ast
 import glob
 import importlib.util
 import json
 import os
+from pathlib import Path
 
 import sqlalchemy as sa
 from sqlalchemy import create_engine, text
@@ -20,6 +22,36 @@ def _load_migration():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_panel_settings_migration_follows_master_head():
+    module = _load_migration()
+    assert module.down_revision == "8a985b0c7775"
+
+
+def test_alembic_versions_have_single_head():
+    versions = Path(__file__).resolve().parents[1] / "app/db/migrations/versions"
+    revs: dict[str, str] = {}
+    parents: set[str] = set()
+    for path in versions.glob("*.py"):
+        tree = ast.parse(path.read_text())
+        rev = down = None
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if "revision" in names:
+                rev = ast.literal_eval(node.value)
+            if "down_revision" in names:
+                down = ast.literal_eval(node.value)
+        if not rev:
+            continue
+        revs[rev] = path.name
+        if down is None:
+            continue
+        parents.update(down if isinstance(down, (tuple, list)) else (down,))
+    heads = sorted(r for r in revs if r not in parents)
+    assert heads == ["d7e9f1a2b3c4"], f"expected one alembic head, got {heads} ({[revs[h] for h in heads]})"
 
 
 class _Op:
