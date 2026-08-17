@@ -35,11 +35,33 @@ MANAGED_SECTIONS: dict[str, ManagedSection] = {
 }
 
 BOT_SETTINGS_KEY = "bot_settings"
-BOT_MANAGED_SETTINGS_FIELDS = frozenset(
-    {"username", "title", "bot_url", "web_url", "sub_support_url", "sub_subscription_domain"}
-)
 BOT_MANAGED_IDENTITY_FIELDS = frozenset({"username", "title", "web_url"})
-BOT_MANAGED_JSON_FIELDS = frozenset({"bot_url", "web_url", "sub_support_url", "sub_subscription_domain"})
+BOT_MANAGED_JSON_FIELDS = frozenset(
+    {
+        "bot_url",
+        "web_url",
+        "sub_support_url",
+        "sub_subscription_domain",
+        "show_ads",
+        "sub_profile_url",
+        "sub_profile_title",
+        "sub_update_interval",
+        "sub_client_note",
+        "bs_extra_reset_pool_on_prolong",
+        "sub_device_limit_hard_mode",
+        "sub_revoked_announce_text",
+        "sub_expired_announce_text",
+        "sub_device_limit_announce_text",
+        "sub_unsupported_client_announce_text",
+        "sub_bs_limit_announce_text",
+        "sub_revoked_server_text",
+        "sub_expired_server_text",
+        "sub_device_limit_server_text",
+        "sub_unsupported_client_server_text",
+        "sub_bs_limit_server_text",
+    }
+)
+BOT_MANAGED_SETTINGS_FIELDS = BOT_MANAGED_IDENTITY_FIELDS | BOT_MANAGED_JSON_FIELDS
 
 
 def _validate_bot_settings(data: dict[str, Any]) -> dict[str, Any]:
@@ -189,6 +211,8 @@ def apply_managed_bot_push(
         db.add(settings)
     merged = dict(settings.data or {})
     for field in BOT_MANAGED_JSON_FIELDS:
+        if field not in data:
+            continue
         merged[field] = normalized[field]
     cast(Any, settings).data = merged
 
