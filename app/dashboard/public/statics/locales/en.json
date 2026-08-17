@@ -103,6 +103,7 @@
   "hostsDialog.statusText": "User status",
   "hostsDialog.title": "Using this setting, you are able to assign specific address for each inbound.",
   "hostsDialog.username": "The username of the user",
+  "hostsDialog.header": "Host Settings",
   "inbound": "Inbound",
   "itemsPerPage": "Items per page",
   "login": "Login",

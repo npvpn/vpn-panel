@@ -208,17 +208,29 @@ export const HostsDialog: FC = () => {
     <Modal isOpen={isEditingHosts} onClose={onClose}>
       <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
 
-      <ModalContent
-        mx="3"
-        w="520px"
-        maxW="calc(100vw - 24px)"
-        h="90vh"
-        maxH="90vh"
-      >
+      <ModalContent mx="3" w="full" maxW="2xl" h="90vh" maxH="90vh">
         <ModalHeader pt={6}>
-          <Icon color="primary">
-            <ModalIcon color="white" />
-          </Icon>
+          <HStack spacing={4} align="center">
+            <Icon color="primary">
+              <ModalIcon color="white" />
+            </Icon>
+
+            <Box>
+              <Text fontSize="lg" fontWeight="semibold">
+                {t("hostsDialog.header")}
+              </Text>
+
+              <Text
+                fontSize="sm"
+                opacity={0.6}
+                mt={1}
+                maxW="490px"
+                lineHeight="1.4"
+              >
+                {t("hostsDialog.title")}
+              </Text>
+            </Box>
+          </HStack>
         </ModalHeader>
 
         <ModalCloseButton mt={3} />
@@ -243,48 +255,46 @@ export const HostsDialog: FC = () => {
                 overflow: "hidden",
               }}
             >
-              <Text mb={3} opacity={0.8} fontSize="sm" flexShrink={0}>
-                {t("hostsDialog.title")}
-              </Text>
-
               {isLoading ? (
                 t("hostsDialog.loading")
               ) : (
                 <>
-                  {/* SEARCH */}
-                  <InputGroup flexShrink={0}>
-                    <InputLeftElement pointerEvents="none">
-                      <MagnifyingGlassIcon width="16px" color="gray" />
-                    </InputLeftElement>
+                  <HStack mt={3} spacing={2} flexShrink={0}>
+                    <InputGroup flex="1" minW={0}>
+                      <InputLeftElement pointerEvents="none">
+                        <MagnifyingGlassIcon width="16px" color="gray" />
+                      </InputLeftElement>
+                      <Input
+                        placeholder={
+                          t("hostsDialog.search") ?? "Search by remark..."
+                        }
+                        size="md"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                    </InputGroup>
 
-                    <Input
-                      placeholder={
-                        t("hostsDialog.search") ?? "Search by remark..."
-                      }
+                    <Select
                       size="md"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </InputGroup>
+                      flex="1"
+                      minW={0}
+                      value={inboundFilter}
+                      onChange={(e) => setInboundFilter(e.target.value)}
+                      sx={{
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <option value="">{t("hostsDialog.allInbounds")}</option>
+                      {inboundTags.map((tag) => (
+                        <option key={tag} value={tag}>
+                          {tag}
+                        </option>
+                      ))}
+                    </Select>
+                  </HStack>
 
-                  {/* INBOUND FILTER */}
-                  <Select
-                    mt={3}
-                    size="md"
-                    flexShrink={0}
-                    value={inboundFilter}
-                    onChange={(e) => setInboundFilter(e.target.value)}
-                  >
-                    <option value="">{t("hostsDialog.allInbounds")}</option>
-
-                    {inboundTags.map((tag) => (
-                      <option key={tag} value={tag}>
-                        {tag}
-                      </option>
-                    ))}
-                  </Select>
-
-                  {/* ADD BUTTON */}
                   <Button
                     mt={3}
                     w="full"
