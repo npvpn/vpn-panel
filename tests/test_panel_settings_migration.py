@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 
+import sqlalchemy as sa
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
@@ -36,7 +37,7 @@ def _engine():
         conn.execute(
             text(
                 "CREATE TABLE global_settings ("
-                "key VARCHAR(64) PRIMARY KEY, data TEXT, created_at DATETIME, updated_at DATETIME)"
+                '"key" VARCHAR(64) PRIMARY KEY, data TEXT, created_at DATETIME, updated_at DATETIME)'
             )
         )
     return engine
@@ -90,6 +91,17 @@ def test_strip_removes_only_panel_keys():
     assert cleaned == {"show_ads": False, "web_url": "https://x"}
 
 
+def test_mysql_sql_quotes_reserved_key_column():
+    """Регресс: сырой SELECT key ... падает на MySQL (1064, KEY — reserved)."""
+    from sqlalchemy.dialects import mysql
+
+    migration = _load_migration()
+    gs = migration._global_settings_table()
+    compiled = str(sa.select(gs.c.key).where(gs.c.key == "panel").compile(dialect=mysql.dialect()))
+    assert "`key`" in compiled
+    assert "SELECT key " not in compiled
+
+
 def test_upgrade_copies_and_strips(monkeypatch):
     migration = _load_migration()
     engine = _engine()
@@ -113,7 +125,9 @@ def test_upgrade_copies_and_strips(monkeypatch):
         migration.upgrade()
 
         panel = json.loads(
-            conn.execute(text("SELECT data FROM global_settings WHERE key = :key"), {"key": "panel"}).scalar()
+            conn.execute(
+                text('SELECT data FROM global_settings WHERE "key" = :setting_key'), {"setting_key": "panel"}
+            ).scalar()
         )
         assert panel["sub_custom_headers"] == "X-A: 1"
         assert panel["bs_monthly_limit"] == 5 * GB
@@ -136,7 +150,7 @@ def test_downgrade_writes_snapshot_back_to_all_bots(monkeypatch):
         )
         conn.execute(
             text(
-                "INSERT INTO global_settings (key, data, created_at, updated_at) "
+                'INSERT INTO global_settings ("key", data, created_at, updated_at) '
                 "VALUES ('panel', :data, '2026-01-01', '2026-01-01')"
             ),
             {
@@ -152,4 +166,4 @@ def test_downgrade_writes_snapshot_back_to_all_bots(monkeypatch):
         assert bot["show_ads"] is False
         assert bot["bs_monthly_limit"] == 9
         assert bot["sub_routing_happ"] == "happ://x"
-        assert conn.execute(text("SELECT key FROM global_settings WHERE key = 'panel'")).fetchone() is None
+        assert conn.execute(text('SELECT "key" FROM global_settings WHERE "key" = \'panel\'')).fetchone() is None

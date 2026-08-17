@@ -97,33 +97,40 @@ def _dump_json(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _global_settings_table():
+    # `key` — зарезервированное слово MySQL; sa.column экранирует его сам.
+    return sa.table(
+        "global_settings",
+        sa.column("key"),
+        sa.column("data"),
+        sa.column("created_at"),
+        sa.column("updated_at"),
+    )
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     bot_rows = _load_bot_rows(bind)
     panel = _pick_panel_settings(bot_rows)
     now = datetime.utcnow()
+    gs = _global_settings_table()
+    dumped = _dump_json(panel)
 
-    existing = bind.execute(
-        sa.text("SELECT key FROM global_settings WHERE key = :key"),
-        {"key": PANEL_SETTINGS_KEY},
-    ).fetchone()
+    existing = bind.execute(sa.select(gs.c.key).where(gs.c.key == PANEL_SETTINGS_KEY)).fetchone()
     if existing is None:
         bind.execute(
-            sa.text(
-                "INSERT INTO global_settings (key, data, created_at, updated_at) "
-                "VALUES (:key, :data, :created_at, :updated_at)"
-            ),
-            {
-                "key": PANEL_SETTINGS_KEY,
-                "data": _dump_json(panel),
-                "created_at": now,
-                "updated_at": now,
-            },
+            sa.insert(gs).values(
+                {
+                    "key": PANEL_SETTINGS_KEY,
+                    "data": dumped,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
         )
     else:
         bind.execute(
-            sa.text("UPDATE global_settings SET data = :data, updated_at = :updated_at WHERE key = :key"),
-            {"key": PANEL_SETTINGS_KEY, "data": _dump_json(panel), "updated_at": now},
+            sa.update(gs).where(gs.c.key == PANEL_SETTINGS_KEY).values(data=dumped, updated_at=now)
         )
 
     for bot_id, payload in bot_rows:
@@ -138,10 +145,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
-    row = bind.execute(
-        sa.text("SELECT data FROM global_settings WHERE key = :key"),
-        {"key": PANEL_SETTINGS_KEY},
-    ).fetchone()
+    gs = _global_settings_table()
+    row = bind.execute(sa.select(gs.c.data).where(gs.c.key == PANEL_SETTINGS_KEY)).fetchone()
     panel = _parse_json(row[0]) if row else dict(DEFAULT_PANEL_SETTINGS)
     snapshot = {key: panel.get(key, DEFAULT_PANEL_SETTINGS[key]) for key in PANEL_KEYS}
 
@@ -153,4 +158,4 @@ def downgrade() -> None:
             {"data": _dump_json(merged), "bot_id": bot_id},
         )
 
-    bind.execute(sa.text("DELETE FROM global_settings WHERE key = :key"), {"key": PANEL_SETTINGS_KEY})
+    bind.execute(sa.delete(gs).where(gs.c.key == PANEL_SETTINGS_KEY))
