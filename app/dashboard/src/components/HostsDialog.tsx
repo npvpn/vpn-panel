@@ -355,14 +355,13 @@ export const HostsDialog: FC = () => {
                         overflowY="auto"
                         pr={2}
                         sx={{
+                          overscrollBehavior: "contain",
                           "&::-webkit-scrollbar": {
                             width: "4px",
                           },
-
                           "&::-webkit-scrollbar-track": {
                             background: "transparent",
                           },
-
                           "&::-webkit-scrollbar-thumb": {
                             background: "rgba(0, 0, 0, 0.2)",
                             borderRadius: "999px",
