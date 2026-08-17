@@ -20,6 +20,10 @@ DASHBOARD_PATH = config("DASHBOARD_PATH", default="/dashboard/")
 DEBUG = config("DEBUG", default=False, cast=bool)
 DOCS = config("DOCS", default=False, cast=bool)
 
+# NPVPN-1838: ручки диагностики памяти (обход кучи, tracemalloc) платные по CPU,
+# поэтому выключены по умолчанию. Метрики уровня процесса флагом не управляются.
+MEMORY_PROFILING_ENABLED = config("MEMORY_PROFILING_ENABLED", default=False, cast=bool)
+
 ALLOWED_ORIGINS = config("ALLOWED_ORIGINS", default="*").split(",")
 
 VITE_BASE_API = (

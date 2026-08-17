@@ -1,11 +1,14 @@
 from fastapi import APIRouter
 
+from config import MEMORY_PROFILING_ENABLED
+
 from . import (
     admin,
     bot,
     core,
     home,
     managed,
+    memory,
     node,
     settings,
     subscription,
@@ -29,6 +32,9 @@ routers: list[APIRouter] = [
     user.router,
     home.router,
 ]
+
+if MEMORY_PROFILING_ENABLED:
+    routers.append(memory.router)  # type: ignore[has-type]
 
 for router in routers:
     api_router.include_router(router)

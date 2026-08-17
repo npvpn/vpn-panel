@@ -199,6 +199,10 @@ from app.utils.db_metrics import register as _register_db_metrics  # noqa: E402
 
 _register_db_metrics()
 
+from app.utils.memory_metrics import register as _register_memory_metrics  # noqa: E402
+
+_register_memory_metrics()
+
 from app import dashboard, jobs, routers, telegram  # noqa
 from app.routers import api_router  # noqa
 

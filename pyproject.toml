@@ -95,6 +95,7 @@ module = [
     "xray_api.*",
     "apscheduler.*",
     "prometheus_fastapi_instrumentator.*",
+    "psutil.*",
 ]
 ignore_missing_imports = true
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import threading
+import weakref
 from collections.abc import Callable, Collection, Iterable
 
 from app.xray.bs_limit import strip_blocked_clients
@@ -99,6 +100,7 @@ class _NodeJsonCache:
         self._cache: dict[tuple, str] = {}
         self._lock = threading.Lock()
         self.build_count = 0
+        _set_current_cache(self)
 
     def __deepcopy__(self, memo):
         # XRayConfig.copy() == deepcopy(self); the per-node config copies made during a
@@ -121,10 +123,48 @@ class _NodeJsonCache:
             js = self._build(self._base, node_inbound_tags, cascade_kwargs, blocked_user_ids)
             self._cache[key] = js
             self.build_count += 1
+            _bump_cumulative_build_count()
             return js
 
 
 _attach_lock = threading.Lock()
+
+# Слабая ссылка на кэш активной волны и кумулятивный счётчик билдов — для
+# проб памяти (NPVPN-1838). Слабая ссылка нужна категорически: обычная
+# модульная ссылка запинила бы полную копию волнового конфига со всеми
+# юзерами навсегда, и сам инструмент измерения стал бы утечкой.
+_current_cache_ref: weakref.ReferenceType[_NodeJsonCache] | None = None
+_cumulative_build_count = 0
+_cumulative_build_count_lock = threading.Lock()
+
+
+def _set_current_cache(cache: _NodeJsonCache) -> None:
+    global _current_cache_ref
+    _current_cache_ref = weakref.ref(cache)
+
+
+def _bump_cumulative_build_count() -> None:
+    global _cumulative_build_count
+    with _cumulative_build_count_lock:
+        _cumulative_build_count += 1
+
+
+def get_current_node_json_cache() -> _NodeJsonCache | None:
+    """Кэш пер-нодного конфига активной (последней построенной) волны, если он ещё жив.
+
+    Возвращает None, если волна ещё не строилась или объект уже собран GC —
+    вызывающий (проба памяти) должен в этом случае просто не эмитить метрику.
+    """
+    return _current_cache_ref() if _current_cache_ref is not None else None
+
+
+def get_node_json_cache_cumulative_builds() -> int:
+    """Кумулятивное число билдов пер-нодного конфига за всё время жизни процесса.
+
+    В отличие от `_NodeJsonCache.build_count` (живёт на экземпляре и обнуляется с
+    каждой новой волной), этот счётчик не сбрасывается — им можно мерить рост.
+    """
+    return _cumulative_build_count
 
 
 def node_config_json(
