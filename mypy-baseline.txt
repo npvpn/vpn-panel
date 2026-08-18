@@ -138,8 +138,6 @@ app/routers/__init__.py:0: error: Cannot determine type of "router"  [has-type]
 app/routers/__init__.py:0: error: Cannot determine type of "router"  [has-type]
 app/routers/__init__.py:0: error: Cannot determine type of "router"  [has-type]
 app/routers/__init__.py:0: error: Cannot determine type of "router"  [has-type]
-app/utils/system.py:0: error: Library stubs not installed for "psutil"  [import-untyped]
-app/utils/system.py:0: note: Hint: "python3 -m pip install types-psutil"
 app/utils/system.py:0: error: Incompatible types in assignment (expression has type "None", variable has type "int")  [assignment]
 app/utils/system.py:0: error: Incompatible types in assignment (expression has type "None", variable has type "int")  [assignment]
 app/utils/system.py:0: error: Incompatible types in assignment (expression has type "None", variable has type "int")  [assignment]

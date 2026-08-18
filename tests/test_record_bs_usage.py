@@ -36,7 +36,7 @@ _share_stub.generate_v2ray_links = lambda *args, **kwargs: []
 sys.modules.setdefault("app.subscription.share", _share_stub)
 
 from app.db.base import Base  # noqa: E402
-from app.db.models import Bot, BotSettings, Node, NodeUserBsUsage, User  # noqa: E402
+from app.db.models import Bot, BotSettings, GlobalSetting, Node, NodeUserBsUsage, User  # noqa: E402
 from app.jobs import record_usages  # noqa: E402
 from app.jobs.record_usages import record_bs_user_stats  # noqa: E402
 from app.xray.bs_limit import period_keys  # noqa: E402
@@ -244,8 +244,11 @@ def test_backfill_is_idempotent(db):
 
 
 def _bot_with_limit(db, limit_bytes):
+    from app.models.settings import PANEL_SETTINGS_KEY
+
     db.add(Bot(id=1, username="bot1"))
-    db.add(BotSettings(id=1, bot_id=1, data={"bs_monthly_limit": limit_bytes}))
+    db.add(BotSettings(id=1, bot_id=1, data={}))
+    db.add(GlobalSetting(key=PANEL_SETTINGS_KEY, data={"bs_monthly_limit": limit_bytes}))
     user = db.query(User).filter(User.id == USER_ID).one()
     user.bot_id = 1
     db.commit()
@@ -517,7 +520,9 @@ def test_bs_monthly_limit_total_does_not_query_within_month(db):
     db.commit()
 
     dbuser = db.query(User).filter(User.id == USER_ID).one()
-    assert dbuser.bot.settings is not None  # прогреваем ленивые связи до подсчёта
+    from app.services.panel_settings import get_panel_settings
+
+    get_panel_settings(db)  # прогреваем лимит панели на сессии до подсчёта
 
     statements = []
     engine = db.get_bind()

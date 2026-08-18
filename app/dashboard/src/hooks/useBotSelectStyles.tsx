@@ -23,7 +23,7 @@ export const useBotSelectStyles = ({
   const textToken = useColorModeValue("gray.800", "white");
 
   const borderToken = useColorModeValue(
-    variant === "filter" ? "gray.600" : "gray.200",
+    variant === "filter" ? "gray.200" : "gray.200",
     "gray.600"
   );
 

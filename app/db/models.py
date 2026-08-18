@@ -185,28 +185,26 @@ class User(Base):
 
     @property
     def bs_monthly_limit_total(self) -> int | None:
-        """Месячный БС-потолок (лимит бота + купленный пул), None если лимит не задан.
+        """Месячный БС-потолок (лимит панели + купленный пул), None если лимит не задан.
 
         Пул берём с самого инстанса — оба атрибута уже загружены, и внутри месяца
-        свойство не делает ни одного запроса. В БД идём только когда период пула
+        свойство не делает ни одного запроса кроме (закешированного на сессию)
+        чтения глобального лимита. В БД за расходом идём только когда период пула
         отстал: тогда нужен агрегат ещё не списанного расхода прошлого месяца.
         """
         from sqlalchemy.orm import object_session
 
-        from app.models.bot import apply_bot_settings_fallback
+        from app.services.panel_settings import get_bs_monthly_limit
         from app.xray.bs_limit import carry_over_pool, monthly_effective_limit, period_keys
 
-        if not self.bot or not self.bot.settings:
-            return None
-        settings = apply_bot_settings_fallback(self.bot.settings.data or {})
-        monthly_limit = settings.get("bs_monthly_limit") or 0
+        db = object_session(self)
+        monthly_limit = get_bs_monthly_limit(db)
         if not monthly_limit:
             return None
 
         pool = int(self.bs_extra or 0)
         period = cast("str | None", self.bs_extra_period)
         yyyymm = period_keys(datetime.utcnow())
-        db = object_session(self)
         # Без сессии (detached-объект) агрегат не достать — отдаём заведомо
         # ненормализованный пул: если период отстал, потолок будет завышен до
         # ближайшего тика джобы учёта.

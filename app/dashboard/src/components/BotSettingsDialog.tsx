@@ -47,8 +47,6 @@ import {
   MagnifyingGlassIcon,
 } from "@heroicons/react/24/outline";
 
-const GB_IN_BYTES = 1073741824;
-
 const toText = (values: string[] = []) => values.join("\n");
 
 const toList = (value: string) =>
@@ -61,8 +59,6 @@ const emptySettings: BotSettings = {
   sub_update_interval: "",
   sub_support_url: "",
   sub_profile_title: "",
-  sub_routing_happ: "",
-  sub_routing_v2raytun: "",
   sub_client_note: "",
   sub_profile_url: "",
   sub_subscription_domain: "",
@@ -79,11 +75,6 @@ const emptySettings: BotSettings = {
   sub_unsupported_client_server_text: [],
   sub_bs_limit_server_text: [],
   sub_bs_limit_announce_text: "",
-  sub_v2ray_json_template: "",
-  sub_routing_json_default: "",
-  sub_routing_json_bs: "",
-  sub_custom_headers: "",
-  bs_monthly_limit: 0,
   bs_extra_reset_pool_on_prolong: false,
   show_ads: true,
 };
@@ -365,11 +356,6 @@ export const BotSettingsDialog: FC = () => {
         current.sub_support_url.trim() || defaultSettings.sub_support_url,
       sub_profile_title:
         current.sub_profile_title.trim() || defaultSettings.sub_profile_title,
-      sub_routing_happ:
-        current.sub_routing_happ.trim() || defaultSettings.sub_routing_happ,
-      sub_routing_v2raytun:
-        current.sub_routing_v2raytun.trim() ||
-        defaultSettings.sub_routing_v2raytun,
       sub_client_note:
         current.sub_client_note.trim() || defaultSettings.sub_client_note,
       sub_profile_url:
@@ -415,11 +401,6 @@ export const BotSettingsDialog: FC = () => {
       sub_bs_limit_announce_text:
         current.sub_bs_limit_announce_text.trim() ||
         defaultSettings.sub_bs_limit_announce_text,
-      sub_v2ray_json_template: current.sub_v2ray_json_template,
-      sub_routing_json_default: current.sub_routing_json_default,
-      sub_routing_json_bs: current.sub_routing_json_bs,
-      sub_custom_headers: current.sub_custom_headers,
-      bs_monthly_limit: current.bs_monthly_limit,
       bs_extra_reset_pool_on_prolong: current.bs_extra_reset_pool_on_prolong,
       show_ads: current.show_ads,
     };
@@ -741,7 +722,6 @@ export const BotSettingsDialog: FC = () => {
               <Tab>{t("botSettings.tabBotInfo")}</Tab>
               <Tab>{t("botSettings.tabSubscription")}</Tab>
               <Tab>{t("botSettings.tabMessages")}</Tab>
-              <Tab>{t("botSettings.tabV2rayJson")}</Tab>
             </TabList>
             {hasDraft && (
               <HStack
@@ -992,33 +972,6 @@ export const BotSettingsDialog: FC = () => {
                     </FormControl>
                   </SimpleGrid>
 
-                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl>
-                      <FormLabel>{t("botSettings.subRoutingHapp")}</FormLabel>
-                      <Input
-                        value={settings.sub_routing_happ}
-                        placeholder="happ://"
-                        onChange={(e) =>
-                          updateSettings({ sub_routing_happ: e.target.value })
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>
-                        {t("botSettings.subRoutingV2raytun")}
-                      </FormLabel>
-                      <Input
-                        value={settings.sub_routing_v2raytun}
-                        placeholder="v2ray://"
-                        onChange={(e) =>
-                          updateSettings({
-                            sub_routing_v2raytun: e.target.value,
-                          })
-                        }
-                      />
-                    </FormControl>
-                  </SimpleGrid>
-
                   <FormControl>
                     <FormLabel>{t("botSettings.subClientNote")}</FormLabel>
                     <Textarea
@@ -1028,43 +981,6 @@ export const BotSettingsDialog: FC = () => {
                         updateSettings({ sub_client_note: e.target.value })
                       }
                     />
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>{t("botSettings.subCustomHeaders")}</FormLabel>
-                    <Textarea
-                      value={settings.sub_custom_headers}
-                      placeholder={"routing-enable: 0"}
-                      onChange={(e) =>
-                        updateSettings({ sub_custom_headers: e.target.value })
-                      }
-                    />
-                    <FormHelperText>
-                      {t("botSettings.subCustomHeadersHint")}
-                    </FormHelperText>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>{t("botSettings.bsMonthlyLimitGb")}</FormLabel>
-                    <Input
-                      type="number"
-                      value={
-                        settings.bs_monthly_limit
-                          ? String(settings.bs_monthly_limit / GB_IN_BYTES)
-                          : ""
-                      }
-                      placeholder="0"
-                      onChange={(e) => {
-                        const gb = parseFloat(e.target.value);
-                        updateSettings({
-                          bs_monthly_limit:
-                            e.target.value === "" || isNaN(gb)
-                              ? 0
-                              : Math.round(gb * GB_IN_BYTES),
-                        });
-                      }}
-                    />
-                    <FormHelperText>
-                      {t("botSettings.bsMonthlyLimitGbHint")}
-                    </FormHelperText>
                   </FormControl>
                   <Box
                     border="1px solid"
@@ -1366,61 +1282,6 @@ export const BotSettingsDialog: FC = () => {
                       </SimpleGrid>
                     </VStack>
                   </Box>
-                </VStack>
-              </TabPanel>
-
-              {/* Вкладка 4: v2ray-json */}
-              <TabPanel px={0}>
-                <VStack spacing={4} align="stretch">
-                  <FormControl>
-                    <FormLabel>{t("botSettings.v2rayJsonTemplate")}</FormLabel>
-                    <Textarea
-                      fontFamily="mono"
-                      minH="180px"
-                      value={settings.sub_v2ray_json_template}
-                      placeholder='{ "dns": {...}, "routing": {...}, ... }'
-                      onChange={(e) =>
-                        updateSettings({
-                          sub_v2ray_json_template: e.target.value,
-                        })
-                      }
-                    />
-                    <FormHelperText>
-                      {t("botSettings.v2rayJsonTemplateHint")}
-                    </FormHelperText>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>{t("botSettings.routingDefault")}</FormLabel>
-                    <Textarea
-                      fontFamily="mono"
-                      minH="140px"
-                      value={settings.sub_routing_json_default}
-                      placeholder='{ "domainStrategy": "IPIfNonMatch", "rules": [...] }'
-                      onChange={(e) =>
-                        updateSettings({
-                          sub_routing_json_default: e.target.value,
-                        })
-                      }
-                    />
-                    <FormHelperText>
-                      {t("botSettings.routingDefaultHint")}
-                    </FormHelperText>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>{t("botSettings.routingBs")}</FormLabel>
-                    <Textarea
-                      fontFamily="mono"
-                      minH="140px"
-                      value={settings.sub_routing_json_bs}
-                      placeholder='{ "domainStrategy": "AsIs", "rules": [...] }'
-                      onChange={(e) =>
-                        updateSettings({ sub_routing_json_bs: e.target.value })
-                      }
-                    />
-                    <FormHelperText>
-                      {t("botSettings.routingBsHint")}
-                    </FormHelperText>
-                  </FormControl>
                 </VStack>
               </TabPanel>
             </TabPanels>

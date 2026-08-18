@@ -1999,11 +1999,11 @@ def normalize_bs_extra_period(db: Session, user_id: int, monthly_limit: int, yyy
 
 def get_bs_state(db: Session, dbuser: User) -> dict[str, int]:
     """Единая точка правды по БС-трафику пользователя. Не пишет в БД."""
+    from app.services.panel_settings import get_bs_monthly_limit
     from app.xray.bs_limit import monthly_effective_limit, period_keys
 
     user_id = cast(int, dbuser.id)
-    settings = _bot_settings_for_user(db, dbuser)
-    monthly_limit = int(settings.get("bs_monthly_limit") or 0)
+    monthly_limit = get_bs_monthly_limit(db)
     yyyymm = period_keys(datetime.utcnow())
     pool = normalize_bs_extra_period(db, user_id, monthly_limit, yyyymm, persist=False)
     return {
@@ -2057,8 +2057,9 @@ def modify_user_bs_extra(db: Session, dbuser: User, *, delta_bytes: int | None =
             return dbuser
         return reset_user_bs_extra_pool(db, dbuser)
     elif delta_bytes is not None:
-        settings = _bot_settings_for_user(db, dbuser)
-        monthly_limit = int(settings.get("bs_monthly_limit") or 0)
+        from app.services.panel_settings import get_bs_monthly_limit
+
+        monthly_limit = get_bs_monthly_limit(db)
         yyyymm = period_keys(datetime.utcnow())
         # Сначала перенос за прошлый месяц, потом покупка — иначе докупка легла бы
         # поверх ещё не пересчитанного пула.
