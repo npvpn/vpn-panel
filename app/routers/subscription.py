@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Path, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 
@@ -290,9 +290,8 @@ def revoke_subscription_device(
         raise HTTPException(status_code=404, detail="Active device not found")
 
     crud.revoke_user_device(db, dbdevice)
-    if request.method == "POST":
-        return Response(status_code=204)
-    return RedirectResponse(url=f"/{XRAY_SUBSCRIPTION_PATH}/{token}", status_code=303)
+
+    return Response(status_code=204)
 
 
 @router.get("/{token}/info", response_model=SubscriptionUserResponse)
