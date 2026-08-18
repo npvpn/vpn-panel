@@ -11,6 +11,7 @@ from app.db import GetDB, Session, crud, get_db
 from app.db.models import User
 from app.dependencies import get_validated_sub, validate_dates
 from app.models.user import SubscriptionUserResponse, UserResponse
+from app.services.panel_settings import get_panel_settings
 from app.subscription.bot_settings import resolve_bot_settings
 from app.subscription.bs_context_builder import build_bs_context
 from app.subscription.headers import build_content_disposition, get_routing_header
@@ -121,6 +122,7 @@ def build_render_context(
     dbuser: User,
     user: UserResponse,
     bot_settings: dict,
+    panel_settings: dict,
     *,
     is_revoked: bool,
     is_expired: bool,
@@ -157,12 +159,13 @@ def build_render_context(
         bot_settings=bot_settings,
         get_user_note=get_user_note,
     )
-    user_info = get_subscription_user_info(user, db=db, bot_settings=bot_settings, user_id=cast(int, dbuser.id))
+    user_info = get_subscription_user_info(user, db=db, panel_settings=panel_settings, user_id=cast(int, dbuser.id))
     subscription_userinfo = "; ".join(f"{key}={val}" for key, val in user_info.items())
     response_headers = build_subscription_response_headers(
         request=request,
         user=user,
         bot_settings=bot_settings,
+        panel_settings=panel_settings,
         announce_text=announce_text,
         subscription_userinfo=subscription_userinfo,
         user_agent=user_agent,
@@ -177,6 +180,7 @@ def build_render_context(
         device_limited_hard=device_limited_hard,
         unsupported_blocks=unsupported_blocks,
         bot_settings=bot_settings,
+        panel_settings=panel_settings,
         bs=bs,
         response_headers=response_headers,
     )
@@ -195,6 +199,7 @@ def render_subscription(ctx: SubscriptionRenderContext, plan: SubscriptionRender
         device_limited_hard=ctx.device_limited_hard,
         unsupported_client=ctx.unsupported_blocks,
         settings=ctx.bot_settings,
+        panel_settings=ctx.panel_settings,
         bs=ctx.bs,
     )
     return Response(content=conf, media_type=plan.media_type, headers=ctx.response_headers)
@@ -222,6 +227,7 @@ def user_subscription(
     is_expired = bool(dbuser.expire and dbuser.expire > 0 and dbuser.expire < int(datetime.now(UTC).timestamp()))
     user: UserResponse = UserResponse.model_validate(dbuser)
     bot_settings = resolve_bot_settings(dbuser)
+    panel_settings = get_panel_settings(db)
 
     is_limited = not is_revoked and not is_expired and crud.is_device_limit_reached(db, dbuser)
 
@@ -244,6 +250,7 @@ def user_subscription(
         dbuser,
         user,
         bot_settings,
+        panel_settings,
         is_revoked=is_revoked,
         is_expired=is_expired,
         user_agent=user_agent,
@@ -336,6 +343,7 @@ def user_subscription_with_client_type(
     is_expired = bool(dbuser.expire and dbuser.expire > 0 and dbuser.expire < int(datetime.now(UTC).timestamp()))
     user: UserResponse = UserResponse.model_validate(dbuser)
     bot_settings = resolve_bot_settings(dbuser)
+    panel_settings = get_panel_settings(db)
 
     ctx = build_render_context(
         request,
@@ -343,6 +351,7 @@ def user_subscription_with_client_type(
         dbuser,
         user,
         bot_settings,
+        panel_settings,
         is_revoked=is_revoked,
         is_expired=is_expired,
         user_agent=user_agent,

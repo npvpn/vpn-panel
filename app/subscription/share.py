@@ -81,7 +81,7 @@ def _render(
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
     conf передаётся готовым только для v2ray-json (его конструктор принимает
-    шаблон и routing-оверрайды из настроек бота).
+    шаблон и routing-оверрайды из настроек панели).
     """
     if conf is None:
         factory = CONF_FACTORIES.get(render_format)
@@ -132,13 +132,16 @@ def generate_subscription(
     device_limited_hard: bool = False,
     unsupported_client: bool = False,
     settings: dict | None = None,
+    panel_settings: dict | None = None,
     bs: BsContext | None = None,
 ) -> str:
     bs = bs or BsContext.empty()
     from app.models.bot import DEFAULT_BOT_SETTINGS, apply_bot_settings_fallback
+    from app.models.settings import apply_panel_settings_fallback
     from config import USE_CUSTOM_JSON_DEFAULT
 
     resolved_settings = apply_bot_settings_fallback(settings or DEFAULT_BOT_SETTINGS)
+    resolved_panel = apply_panel_settings_fallback(panel_settings)
 
     from app.xray.bs_routing import parse_json_object
 
@@ -149,9 +152,9 @@ def generate_subscription(
             logger.warning("[sub] ignoring invalid %s: %s", name, exc)
             return None
 
-    v2ray_template_override = _safe_json(resolved_settings.get("sub_v2ray_json_template"), "sub_v2ray_json_template")
-    routing_default_override = _safe_json(resolved_settings.get("sub_routing_json_default"), "sub_routing_json_default")
-    routing_bs_override = _safe_json(resolved_settings.get("sub_routing_json_bs"), "sub_routing_json_bs")
+    v2ray_template_override = _safe_json(resolved_panel.get("sub_v2ray_json_template"), "sub_v2ray_json_template")
+    routing_default_override = _safe_json(resolved_panel.get("sub_routing_json_default"), "sub_routing_json_default")
+    routing_bs_override = _safe_json(resolved_panel.get("sub_routing_json_bs"), "sub_routing_json_bs")
 
     render_format = config_format
     if config_format == "incy":

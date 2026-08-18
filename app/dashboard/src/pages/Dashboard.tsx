@@ -2,6 +2,7 @@ import { Box, VStack } from "@chakra-ui/react";
 import { AppSettingsDialog } from "components/AppSettingsDialog";
 import { CoreSettingsModal } from "components/CoreSettingsModal";
 import { BotSettingsDialog } from "components/BotSettingsDialog";
+import { PanelSettingsDialog } from "components/PanelSettingsDialog";
 import { DeleteUserModal } from "components/DeleteUserModal";
 import { Filters } from "components/Filters";
 import { Footer } from "components/Footer";
@@ -52,6 +53,7 @@ export const Dashboard: FC = () => {
         <SyncInboundsModal />
         <CoreSettingsModal />
         <BotSettingsDialog />
+        <PanelSettingsDialog />
         <AppSettingsDialog />
       </Box>
       <Footer />

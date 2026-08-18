@@ -9,8 +9,7 @@ from sqlalchemy.sql.dml import Insert
 
 from app import logger, scheduler, xray
 from app.db import GetDB, crud
-from app.db.models import Admin, BotSettings, Node, NodeUsage, NodeUserBsUsage, NodeUserUsage, System, User
-from app.models.bot import apply_bot_settings_fallback
+from app.db.models import Admin, Node, NodeUsage, NodeUserBsUsage, NodeUserUsage, System, User
 from app.utils.concurrency import get_xray_executor
 from app.xray.bs_limit import bs_counter_step, period_keys
 from config import (
@@ -137,7 +136,7 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
         # на каждого активного юзера до конца транзакции. Порядок по id детерминированный,
         # чтобы не плодить взаимные блокировки с транзакциями API.
         stale_users = (
-            db.query(User.id, User.bot_id)
+            db.query(User.id)
             .filter(
                 User.id.in_(uids),
                 User.bs_extra_period.is_not(None),
@@ -147,15 +146,13 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
             .all()
         )
         if stale_users:
-            bot_monthly_limits = {}
-            for bot_id, data in db.query(BotSettings.bot_id, BotSettings.data).all():
-                settings = apply_bot_settings_fallback(data)
-                bot_monthly_limits[bot_id] = settings.get("bs_monthly_limit") or 0
+            from app.services.panel_settings import get_bs_monthly_limit
 
+            monthly_limit = get_bs_monthly_limit(db)
             # Перенос пула на новый месяц — до апдейта счётчиков, пока строки прошлого
             # периода ещё не перезаписаны.
-            for uid, bot_id in stale_users:
-                crud.normalize_bs_extra_period(db, uid, bot_monthly_limits.get(bot_id, 0), yyyymm, persist=True)
+            for (uid,) in stale_users:
+                crud.normalize_bs_extra_period(db, uid, monthly_limit, yyyymm, persist=True)
 
         to_insert, to_update = [], []
         for uid, delta in deltas.items():

@@ -11,6 +11,7 @@ import {
   useColorMode,
 } from "@chakra-ui/react";
 import {
+  AdjustmentsHorizontalIcon,
   ArrowLeftOnRectangleIcon,
   Bars3Icon,
   ChartPieIcon,
@@ -57,6 +58,7 @@ const NodesIcon = chakra(SquaresPlusIcon, iconProps);
 const NodesUsageIcon = chakra(ChartPieIcon, iconProps);
 const ResetUsageIcon = chakra(DocumentMinusIcon, iconProps);
 const BotSettingsIcon = chakra(WrenchScrewdriverIcon, iconProps);
+const PanelSettingsIcon = chakra(AdjustmentsHorizontalIcon, iconProps);
 const AppSettingsIcon = chakra(DevicePhoneMobileIcon, iconProps);
 const NotificationCircle = chakra(Box, {
   baseStyle: {
@@ -101,6 +103,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
     onEditingNodes,
     onEditingBotSettings,
     onEditingAppSettings,
+    onEditingPanelSettings,
     onShowingNodesUsage,
   } = useDashboard();
   const { t } = useTranslation();
@@ -146,11 +149,11 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
               }
               position="relative"
             ></MenuButton>
-            <MenuList minW="170px" zIndex={99999} className="menuList">
+            <MenuList minW="200px" zIndex={99999} className="menuList">
               {isSudo() && (
                 <>
                   <MenuItem
-                    maxW="170px"
+                    maxW="200px"
                     fontSize="sm"
                     icon={<HostsIcon />}
                     onClick={onEditingHosts.bind(null, true)}
@@ -158,7 +161,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
                     {t("header.hostSettings")}
                   </MenuItem>
                   <MenuItem
-                    maxW="170px"
+                    maxW="200px"
                     fontSize="sm"
                     icon={<NodesIcon />}
                     onClick={onEditingNodes.bind(null, true)}
@@ -166,7 +169,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
                     {t("header.nodeSettings")}
                   </MenuItem>
                   <MenuItem
-                    maxW="170px"
+                    maxW="200px"
                     fontSize="sm"
                     icon={<NodesUsageIcon />}
                     onClick={onShowingNodesUsage.bind(null, true)}
@@ -174,7 +177,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
                     {t("header.nodesUsage")}
                   </MenuItem>
                   <MenuItem
-                    maxW="170px"
+                    maxW="200px"
                     fontSize="sm"
                     icon={<ResetUsageIcon />}
                     onClick={onResetAllUsage.bind(null, true)}
@@ -182,7 +185,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
                     {t("resetAllUsage")}
                   </MenuItem>
                   <MenuItem
-                    maxW="170px"
+                    maxW="200px"
                     fontSize="sm"
                     icon={<BotSettingsIcon />}
                     onClick={onEditingBotSettings.bind(null, true)}
@@ -190,7 +193,15 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
                     {t("header.botSettings")}
                   </MenuItem>
                   <MenuItem
-                    maxW="170px"
+                    maxW="200px"
+                    fontSize="sm"
+                    icon={<PanelSettingsIcon />}
+                    onClick={onEditingPanelSettings.bind(null, true)}
+                  >
+                    {t("header.panelSettings")}
+                  </MenuItem>
+                  <MenuItem
+                    maxW="200px"
                     fontSize="sm"
                     icon={<AppSettingsIcon />}
                     onClick={onEditingAppSettings.bind(null, true)}
@@ -200,7 +211,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
                 </>
               )}
               <Link to="/login">
-                <MenuItem maxW="170px" fontSize="sm" icon={<LogoutIcon />}>
+                <MenuItem maxW="200px" fontSize="sm" icon={<LogoutIcon />}>
                   {t("header.logout")}
                 </MenuItem>
               </Link>

@@ -6,9 +6,32 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from config import SUB_ROUTING_HAPP, SUB_ROUTING_V2RAYTUN
+
 logger = logging.getLogger(__name__)
 
 CLIENT_APPS_KEY = "client_apps"
+PANEL_SETTINGS_KEY = "panel"
+
+PANEL_SETTING_KEYS: tuple[str, ...] = (
+    "sub_custom_headers",
+    "bs_monthly_limit",
+    "sub_routing_happ",
+    "sub_routing_v2raytun",
+    "sub_v2ray_json_template",
+    "sub_routing_json_default",
+    "sub_routing_json_bs",
+)
+
+DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
+    "sub_custom_headers": "",
+    "bs_monthly_limit": 0,
+    "sub_routing_happ": SUB_ROUTING_HAPP,
+    "sub_routing_v2raytun": SUB_ROUTING_V2RAYTUN,
+    "sub_v2ray_json_template": "",
+    "sub_routing_json_default": "",
+    "sub_routing_json_bs": "",
+}
 
 PLATFORMS: tuple[str, ...] = ("ios", "macos", "android", "androidtv", "windows", "linux")
 
@@ -146,6 +169,48 @@ class ClientAppsPayload(BaseModel):
 
 class ClientAppsWithManagedResponse(ClientAppsPayload):
     managed: dict[str, Any] | None = None
+
+
+class PanelSettingsPayload(BaseModel):
+    sub_custom_headers: str = ""
+    bs_monthly_limit: int = 0
+    sub_routing_happ: str = ""
+    sub_routing_v2raytun: str = ""
+    sub_v2ray_json_template: str = ""
+    sub_routing_json_default: str = ""
+    sub_routing_json_bs: str = ""
+
+    @field_validator(
+        "sub_v2ray_json_template",
+        "sub_routing_json_default",
+        "sub_routing_json_bs",
+        mode="before",
+    )
+    @classmethod
+    def validate_json_field(cls, value: Any):
+        from app.xray.bs_routing import parse_json_object
+
+        parse_json_object(value)
+        return value if value is not None else ""
+
+
+def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Настройки панели из БД, дополненные дефолтами. Битые поля не роняют чтение."""
+    base = dict(DEFAULT_PANEL_SETTINGS)
+    if not raw:
+        return base
+    for key in PANEL_SETTING_KEYS:
+        if key not in raw or raw[key] is None:
+            continue
+        if key == "bs_monthly_limit":
+            try:
+                base[key] = int(raw[key] or 0)
+            except (TypeError, ValueError):
+                continue
+            continue
+        base[key] = raw[key]
+    base["bs_monthly_limit"] = int(base.get("bs_monthly_limit") or 0)
+    return base
 
 
 def merge_client_apps_defaults(raw: dict[str, Any] | None) -> dict[str, Any]:
