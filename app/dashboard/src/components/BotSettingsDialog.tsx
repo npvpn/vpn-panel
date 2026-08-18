@@ -287,6 +287,8 @@ export const BotSettingsDialog: FC = () => {
 
   const managedState = settings.managed || selectedBotModel?.managed || null;
   const isManaged = !!managedState;
+  const fieldHint = (hintKey: string) =>
+    isManaged ? t("botSettings.managedFieldHint") : t(hintKey);
   const adminSyncEnabled = selectedBotModel?.admin_sync_enabled ?? true;
 
   const setAdminSync = (enabled: boolean) => {
@@ -868,7 +870,7 @@ export const BotSettingsDialog: FC = () => {
                     </FormControl>
                   </SimpleGrid>
 
-                  <FormControl>
+                  <FormControl isDisabled={isManaged}>
                     <FormLabel>{t("botSettings.showAds")}</FormLabel>
                     <Switch
                       colorScheme="primary"
@@ -878,7 +880,7 @@ export const BotSettingsDialog: FC = () => {
                       }
                     />
                     <FormHelperText>
-                      {t("botSettings.showAdsHint")}
+                      {fieldHint("botSettings.showAdsHint")}
                     </FormHelperText>
                   </FormControl>
                 </VStack>
@@ -903,7 +905,7 @@ export const BotSettingsDialog: FC = () => {
                           : t("botSettings.subSupportUrlHint")}
                       </FormHelperText>
                     </FormControl>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>{t("botSettings.subProfileTitle")}</FormLabel>
                       <Input
                         value={settings.sub_profile_title}
@@ -913,13 +915,13 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {t("botSettings.subProfileTitleHint")}
+                        {fieldHint("botSettings.subProfileTitleHint")}
                       </FormHelperText>
                     </FormControl>
                   </SimpleGrid>
 
                   <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>{t("botSettings.subProfileUrl")}</FormLabel>
                       <Input
                         value={settings.sub_profile_url}
@@ -929,7 +931,7 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {t("botSettings.subProfileUrlHint")}
+                        {fieldHint("botSettings.subProfileUrlHint")}
                       </FormHelperText>
                     </FormControl>
                     <FormControl isDisabled={isManaged}>
@@ -954,7 +956,7 @@ export const BotSettingsDialog: FC = () => {
                   </SimpleGrid>
 
                   <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>
                         {t("botSettings.subUpdateInterval")}
                       </FormLabel>
@@ -967,12 +969,12 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {t("botSettings.subUpdateIntervalHint")}
+                        {fieldHint("botSettings.subUpdateIntervalHint")}
                       </FormHelperText>
                     </FormControl>
                   </SimpleGrid>
 
-                  <FormControl>
+                  <FormControl isDisabled={isManaged}>
                     <FormLabel>{t("botSettings.subClientNote")}</FormLabel>
                     <Textarea
                       value={settings.sub_client_note}
@@ -981,6 +983,11 @@ export const BotSettingsDialog: FC = () => {
                         updateSettings({ sub_client_note: e.target.value })
                       }
                     />
+                    {isManaged && (
+                      <FormHelperText>
+                        {t("botSettings.managedFieldHint")}
+                      </FormHelperText>
+                    )}
                   </FormControl>
                   <Box
                     border="1px solid"
@@ -988,7 +995,7 @@ export const BotSettingsDialog: FC = () => {
                     borderRadius="md"
                     p={4}
                   >
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>
                         {t("botSettings.bsExtraResetPoolOnProlong")}
                       </FormLabel>
@@ -1002,7 +1009,7 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {t("botSettings.bsExtraResetPoolOnProlongHint")}
+                        {fieldHint("botSettings.bsExtraResetPoolOnProlongHint")}
                       </FormHelperText>
                     </FormControl>
                   </Box>
@@ -1030,7 +1037,7 @@ export const BotSettingsDialog: FC = () => {
                       </ChakraText>
 
                       <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subRevokedAnnounceText")}
                           </FormLabel>
@@ -1047,8 +1054,13 @@ export const BotSettingsDialog: FC = () => {
                             _placeholder={{ fontSize: "12px" }}
                             minH="90px"
                           />
+                          {isManaged && (
+                            <FormHelperText>
+                              {t("botSettings.managedFieldHint")}
+                            </FormHelperText>
+                          )}
                         </FormControl>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subExpiredAnnounceText")}
                           </FormLabel>
@@ -1065,11 +1077,16 @@ export const BotSettingsDialog: FC = () => {
                             _placeholder={{ fontSize: "12px" }}
                             minH="90px"
                           />
+                          {isManaged && (
+                            <FormHelperText>
+                              {t("botSettings.managedFieldHint")}
+                            </FormHelperText>
+                          )}
                         </FormControl>
                       </SimpleGrid>
 
                       <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subUnsupportedClientAnnounceText")}
                           </FormLabel>
@@ -1089,8 +1106,13 @@ export const BotSettingsDialog: FC = () => {
                             _placeholder={{ fontSize: "12px" }}
                             minH="90px"
                           />
+                          {isManaged && (
+                            <FormHelperText>
+                              {t("botSettings.managedFieldHint")}
+                            </FormHelperText>
+                          )}
                         </FormControl>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subDeviceLimitAnnounceText")}
                           </FormLabel>
@@ -1107,10 +1129,15 @@ export const BotSettingsDialog: FC = () => {
                             _placeholder={{ fontSize: "12px" }}
                             minH="90px"
                           />
+                          {isManaged && (
+                            <FormHelperText>
+                              {t("botSettings.managedFieldHint")}
+                            </FormHelperText>
+                          )}
                         </FormControl>
                       </SimpleGrid>
 
-                      <FormControl>
+                      <FormControl isDisabled={isManaged}>
                         <FormLabel>
                           {t("botSettings.subBsLimitAnnounceText")}
                         </FormLabel>
@@ -1126,6 +1153,11 @@ export const BotSettingsDialog: FC = () => {
                           }
                           _placeholder={{ fontSize: "12px" }}
                         />
+                        {isManaged && (
+                          <FormHelperText>
+                            {t("botSettings.managedFieldHint")}
+                          </FormHelperText>
+                        )}
                       </FormControl>
                     </VStack>
                   </Box>
@@ -1136,7 +1168,7 @@ export const BotSettingsDialog: FC = () => {
                     borderRadius="md"
                     p={4}
                   >
-                    <FormControl>
+                    <FormControl isDisabled={isManaged}>
                       <FormLabel>
                         {t("botSettings.subDeviceLimitHardMode")}
                       </FormLabel>
@@ -1151,7 +1183,7 @@ export const BotSettingsDialog: FC = () => {
                         _placeholder={{ fontSize: "12px" }}
                       />
                       <FormHelperText>
-                        {t("botSettings.subDeviceLimitHardModeHint")}
+                        {fieldHint("botSettings.subDeviceLimitHardModeHint")}
                       </FormHelperText>
                     </FormControl>
                   </Box>
@@ -1175,7 +1207,7 @@ export const BotSettingsDialog: FC = () => {
                       </ChakraText>
 
                       <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subRevokedServerText")}
                           </FormLabel>
@@ -1192,10 +1224,10 @@ export const BotSettingsDialog: FC = () => {
                             }
                           />
                           <FormHelperText>
-                            {t("botSettings.serverTextHint")}
+                            {fieldHint("botSettings.serverTextHint")}
                           </FormHelperText>
                         </FormControl>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subExpiredServerText")}
                           </FormLabel>
@@ -1212,10 +1244,10 @@ export const BotSettingsDialog: FC = () => {
                             }
                           />
                           <FormHelperText>
-                            {t("botSettings.serverTextHint")}
+                            {fieldHint("botSettings.serverTextHint")}
                           </FormHelperText>
                         </FormControl>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subBsLimitServerText")}
                           </FormLabel>
@@ -1232,12 +1264,12 @@ export const BotSettingsDialog: FC = () => {
                             }
                           />
                           <FormHelperText>
-                            {t("botSettings.serverTextHint")}
+                            {fieldHint("botSettings.serverTextHint")}
                           </FormHelperText>
                         </FormControl>
                       </SimpleGrid>
                       <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subDeviceLimitServerText")}
                           </FormLabel>
@@ -1254,10 +1286,10 @@ export const BotSettingsDialog: FC = () => {
                             }
                           />
                           <FormHelperText>
-                            {t("botSettings.serverTextHint")}
+                            {fieldHint("botSettings.serverTextHint")}
                           </FormHelperText>
                         </FormControl>
-                        <FormControl>
+                        <FormControl isDisabled={isManaged}>
                           <FormLabel>
                             {t("botSettings.subUnsupportedClientServerText")}
                           </FormLabel>
@@ -1276,7 +1308,7 @@ export const BotSettingsDialog: FC = () => {
                             }
                           />
                           <FormHelperText>
-                            {t("botSettings.serverTextHint")}
+                            {fieldHint("botSettings.serverTextHint")}
                           </FormHelperText>
                         </FormControl>
                       </SimpleGrid>
