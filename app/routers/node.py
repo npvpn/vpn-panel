@@ -152,9 +152,11 @@ def modify_node(
 ):
     """Update a node's details. Only accessible to sudo admins."""
     updated_node = crud.update_node(db, dbnode, modified_node)
+    # remove_node → remote /disconnect (stops Xray). Reattach must be HARD:
+    # new session + /restart, not soft try_restore (session already wiped).
     xray.operations.remove_node(updated_node.id)
     if updated_node.status != NodeStatus.disabled:
-        bg.add_task(xray.operations.connect_node, node_id=updated_node.id)
+        bg.add_task(xray.operations.connect_node, node_id=updated_node.id, force=True)
 
     xray.hosts.update()
     logger.info(f'Node "{dbnode.name}" modified')
