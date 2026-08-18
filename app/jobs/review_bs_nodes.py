@@ -1,7 +1,7 @@
-"""Reconcile агрегатного per-bot лимита БС-нод (NPVPN-1456).
+"""Reconcile агрегатного лимита БС-нод (NPVPN-1456).
 
 Суммирует node_user_bs_usage по всем is_bs-нодам юзера за текущий месяц,
-сравнивает с per-bot месячным лимитом из BotSettings.data и при превышении
+сравнивает с общим месячным лимитом панели и при превышении
 блокирует юзера на ВСЕХ БС-нодах (node_user_blocks). Тяжёлую node_user_usages не трогает.
 """
 
@@ -13,9 +13,9 @@ from sqlalchemy import func
 from app import logger, scheduler, xray
 from app.db import GetDB
 from app.db.crud import get_user_by_id
-from app.db.models import BotSettings, Node, NodeUserBlock, NodeUserBsUsage, User
-from app.models.bot import apply_bot_settings_fallback
+from app.db.models import Node, NodeUserBlock, NodeUserBsUsage, User
 from app.models.user import UserStatus
+from app.services.panel_settings import get_bs_monthly_limit
 from app.xray.bs_limit import (
     aggregate_bs_usage,
     carry_over_pool,
@@ -24,15 +24,6 @@ from app.xray.bs_limit import (
     period_keys,
 )
 from config import JOB_REVIEW_BS_NODES_INTERVAL
-
-
-def _bot_monthly_limits(db):
-    """{bot_id: monthly_limit} в байтах из BotSettings.data."""
-    limits = {}
-    for bot_id, data in db.query(BotSettings.bot_id, BotSettings.data).all():
-        settings = apply_bot_settings_fallback(data)
-        limits[bot_id] = settings.get("bs_monthly_limit") or 0
-    return limits
 
 
 def _stale_used_since(rows, since):
@@ -111,13 +102,11 @@ def review_bs_nodes():
         for r in stale_rows:
             stale.setdefault(r.user_id, []).append((r.monthly_period, int(r.used or 0)))
 
-        bot_limits = _bot_monthly_limits(db)
+        monthly_limit = get_bs_monthly_limit(db)
         user_info = (
             {
-                uid: (bot_id, bs_extra or 0, bs_extra_period)
-                for uid, bot_id, bs_extra, bs_extra_period in db.query(
-                    User.id, User.bot_id, User.bs_extra, User.bs_extra_period
-                )
+                uid: (bs_extra or 0, bs_extra_period)
+                for uid, bs_extra, bs_extra_period in db.query(User.id, User.bs_extra, User.bs_extra_period)
                 .filter(User.id.in_(user_ids))
                 .all()
             }
@@ -127,8 +116,7 @@ def review_bs_nodes():
 
         over_users = set()
         for uid, monthly_used in totals.items():
-            bot_id, bs_extra, extra_period = user_info.get(uid, (None, 0, None))
-            monthly_limit = bot_limits.get(bot_id, 0)
+            bs_extra, extra_period = user_info.get(uid, (0, None))
             pool = _effective_pool(bs_extra, extra_period, yyyymm, stale.get(uid, []), monthly_limit)
             if over_limit_monthly_pool(monthly_used, monthly_limit, pool):
                 over_users.add(uid)
