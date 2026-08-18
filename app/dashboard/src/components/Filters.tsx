@@ -13,7 +13,6 @@ import {
   InputRightElement,
   Spinner,
 } from "@chakra-ui/react";
-import { StylesConfig } from "react-select";
 import {
   ArrowPathIcon,
   MagnifyingGlassIcon,

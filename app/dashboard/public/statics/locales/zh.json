@@ -101,6 +101,7 @@
   "hostsDialog.statusText": "用户状态",
   "hostsDialog.title": "使用此设置，您可以为每个入站分配特定的地址。",
   "hostsDialog.username": "用户的用户名",
+  "hostsDialog.header": "主机设置",
   "inbound": "入站",
   "itemsPerPage": "每页条数",
   "login": "登录",

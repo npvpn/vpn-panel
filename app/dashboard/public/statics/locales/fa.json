@@ -106,6 +106,7 @@
   "hostsDialog.statusText": "وضعیت کاربر",
   "hostsDialog.title": "با انتخاب این تنظیمات، می‌توانید برای هر ورودی یک آدرس منحصر به فرد انتخاب کنید.",
   "hostsDialog.username": "نام کاربری کاربر",
+  "hostsDialog.header": "تنظیمات میزبان",
   "inbound": "ورودی",
   "itemsPerPage": "تعداد در صفحه",
   "login": "ورود",
