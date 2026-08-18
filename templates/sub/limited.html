@@ -80,8 +80,7 @@
 
             try {
               const response = await fetch(
-                `/{{ sub_path }}/{{ token }}/devices/${deviceId}/revoke`,
-                { method: 'POST' }
+                `/{{ sub_path }}/{{ token }}/devices/${deviceId}/revoke`
               );
 
               if (!response.ok) {
