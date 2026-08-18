@@ -103,6 +103,7 @@
   "hostsDialog.statusText": "Статус пользователя",
   "hostsDialog.title": "Используя эту настройку, Вы можете настроить свои inbound.",
   "hostsDialog.username": "Имя пользователя",
+  "hostsDialog.header": "Настройки хоста",
   "inbound": "inbound",
   "itemsPerPage": "Элементов на страницу",
   "login": "Вход",
