@@ -122,11 +122,6 @@
             };
             return colors[this.user.status.value] || '#7b7b7b';
           },
-          // get trafficText() {
-          //   const used = bytesFormat(this.user.used_traffic);
-          //   const limit = this.user.data_limit > 0 ? bytesFormat(this.user.data_limit) : 'Безлимит';
-          //   return `${used} / ${limit}`;
-          // },
           get isBsActive() {
             return this.user.bs_monthly_limit_total > 0;
           },
