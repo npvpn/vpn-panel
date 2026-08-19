@@ -15,7 +15,6 @@ import {
   Select,
   Text,
   useToast,
-  VStack,
 } from "@chakra-ui/react";
 import { PlusIcon as HeroIconPlusIcon } from "@heroicons/react/24/outline";
 import {
@@ -42,6 +41,7 @@ type HostsDict = Record<string, any[]>;
 
 function flattenHosts(hosts: HostsDict | null | undefined) {
   if (!hosts) return [];
+
   const items = Object.entries(hosts).flatMap(([inbound_tag, hostList]) =>
     (hostList as any[]).map((host) => ({
       ...host,
@@ -52,6 +52,7 @@ function flattenHosts(hosts: HostsDict | null | undefined) {
         : "",
     }))
   );
+
   return items.sort((a, b) => a.order - b.order || 0);
 }
 
@@ -62,40 +63,53 @@ function groupHosts(
   const payload: HostsDict = Object.fromEntries(
     inboundTags.map((tag) => [tag, [] as any[]])
   );
+
   const ordered = [...hosts].sort((a, b) => a.order - b.order);
+
   ordered.forEach((host, index) => {
     const { inbound_tag, ...rest } = host;
+
     if (!payload[inbound_tag]) {
       payload[inbound_tag] = [];
     }
+
     payload[inbound_tag].push({
       ...rest,
       order: index,
       xhttp_extra: rest.xhttp_extra ? JSON.parse(rest.xhttp_extra) : null,
     });
   });
+
   return payload;
 }
 
 export const HostsDialog: FC = () => {
   const { isEditingHosts, onEditingHosts, refetchUsers, inbounds } =
     useDashboard();
+
   const { isLoading, hosts, fetchHosts, isPostLoading, setHosts } = useHosts();
+
   const toast = useToast();
   const { t } = useTranslation();
+
   const [bots, setBots] = useState<Bot[]>([]);
   const [nodes, setNodes] = useState<NodeType[]>([]);
+
   const [search, setSearch] = useState("");
   const [inboundFilter, setInboundFilter] = useState("");
+
   const [isAddingHost, setIsAddingHost] = useState(false);
 
   const inboundMap = useMemo(() => {
     const map = new Map();
+
     const list =
       inbounds instanceof Map ? Array.from(inbounds.values()).flat() : [];
+
     for (const i of list) {
       map.set(i.tag, i);
     }
+
     return map;
   }, [inbounds]);
 
@@ -109,10 +123,12 @@ export const HostsDialog: FC = () => {
     const loadData = async () => {
       try {
         await fetchHosts();
+
         const [botsData, nodesData] = await Promise.all([
           fetch<Bot[]>("/bots").catch(() => [] as Bot[]),
           fetch<NodeType[]>("/nodes").catch(() => [] as NodeType[]),
         ]);
+
         setBots(botsData);
         setNodes(nodesData);
       } catch (error) {
@@ -126,7 +142,9 @@ export const HostsDialog: FC = () => {
   const form = useForm<z.infer<typeof hostsFormSchema>>({
     resolver: zodResolver(hostsFormSchema),
     shouldUnregister: false,
-    defaultValues: { hosts: [] },
+    defaultValues: {
+      hosts: [],
+    },
   });
 
   const { append } = useFieldArray({
@@ -136,7 +154,10 @@ export const HostsDialog: FC = () => {
 
   useEffect(() => {
     if (hosts && isEditingHosts) {
-      form.reset({ hosts: flattenHosts(hosts) });
+      form.reset({
+        hosts: flattenHosts(hosts),
+      });
+
       setSearch("");
       setInboundFilter("");
     }
@@ -145,12 +166,15 @@ export const HostsDialog: FC = () => {
   const onClose = useCallback(() => {
     setSearch("");
     setInboundFilter("");
+    setIsAddingHost(false);
+
     onEditingHosts(false);
   }, [onEditingHosts]);
 
   const handleFormSubmit = useCallback(
     (hostsData: z.infer<typeof hostsFormSchema>) => {
       const payload = groupHosts(hostsData.hosts, inboundTags);
+
       setHosts(payload)
         .then(() => {
           toast({
@@ -160,6 +184,7 @@ export const HostsDialog: FC = () => {
             position: "top",
             duration: 3000,
           });
+
           refetchUsers();
           onClose();
         })
@@ -173,6 +198,7 @@ export const HostsDialog: FC = () => {
               duration: 3000,
             });
           }
+
           if (err?.response?.status === 422) {
             Object.keys(err.response._data.detail).forEach((key) => {
               toast({
@@ -256,14 +282,16 @@ export const HostsDialog: FC = () => {
               }}
             >
               {isLoading ? (
-                t("hostsDialog.loading")
+                <Text>{t("hostsDialog.loading")}</Text>
               ) : (
                 <>
+                  {/* SEARCH + FILTER */}
                   <HStack mt={3} spacing={2} flexShrink={0}>
                     <InputGroup flex="1" minW={0}>
                       <InputLeftElement pointerEvents="none">
                         <MagnifyingGlassIcon width="16px" color="gray" />
                       </InputLeftElement>
+
                       <Input
                         placeholder={
                           t("hostsDialog.search") ?? "Search by remark..."
@@ -287,6 +315,7 @@ export const HostsDialog: FC = () => {
                       }}
                     >
                       <option value="">{t("hostsDialog.allInbounds")}</option>
+
                       {inboundTags.map((tag) => (
                         <option key={tag} value={tag}>
                           {tag}
@@ -295,45 +324,58 @@ export const HostsDialog: FC = () => {
                     </Select>
                   </HStack>
 
-                  <Button
-                    mt={3}
-                    w="full"
-                    flexShrink={0}
-                    variant="outline"
-                    leftIcon={<HeroIconPlusIcon width="20px" strokeWidth={2} />}
-                    rightIcon={
-                      <ChevronDownIcon
-                        width="16px"
-                        style={{
-                          transform: isAddingHost
-                            ? "rotate(180deg)"
-                            : "rotate(0deg)",
-                          transition: "transform 0.2s ease",
-                        }}
-                      />
-                    }
-                    onClick={() => setIsAddingHost((prev) => !prev)}
-                  >
-                    {t("hostsDialog.addNewHost")}
-                  </Button>
-
                   <Box
                     mt={3}
-                    flex={1}
+                    flex="1 1 0"
                     minH={0}
-                    display="flex"
-                    flexDirection="column"
-                    overflow="hidden"
+                    overflowY="auto"
+                    overflowX="hidden"
+                    pr={2}
+                    sx={{
+                      overscrollBehavior: "contain",
+
+                      "&::-webkit-scrollbar": {
+                        width: "4px",
+                      },
+
+                      "&::-webkit-scrollbar-track": {
+                        background: "transparent",
+                      },
+
+                      "&::-webkit-scrollbar-thumb": {
+                        background: "rgba(0, 0, 0, 0.2)",
+                        borderRadius: "999px",
+                      },
+                    }}
                   >
-                    {/* ADD HOST FORM */}
-                    <Collapse
-                      in={isAddingHost}
-                      animateOpacity
-                      style={{
-                        flexShrink: 0,
-                      }}
+                    {/* ADD HOST BUTTON */}
+                    <Button
+                      w="full"
+                      flexShrink={0}
+                      variant="outline"
+                      mb={3}
+                      leftIcon={
+                        <HeroIconPlusIcon width="20px" strokeWidth={2} />
+                      }
+                      rightIcon={
+                        <ChevronDownIcon
+                          width="16px"
+                          style={{
+                            transform: isAddingHost
+                              ? "rotate(180deg)"
+                              : "rotate(0deg)",
+                            transition: "transform 0.2s ease",
+                          }}
+                        />
+                      }
+                      onClick={() => setIsAddingHost((prev) => !prev)}
                     >
-                      <Box pb={3}>
+                      {t("hostsDialog.addNewHost")}
+                    </Button>
+
+                    {/* ADD HOST FORM */}
+                    <Collapse in={isAddingHost} animateOpacity>
+                      <Box pt={3} pb={3}>
                         <AddHostForm
                           inboundTags={inboundTags}
                           defaultInboundTag={
@@ -346,43 +388,20 @@ export const HostsDialog: FC = () => {
                         />
                       </Box>
                     </Collapse>
-                    <Box flex={1} minH={0} overflow="hidden">
-                      <VStack
-                        h="full"
-                        minH={0}
-                        align="stretch"
-                        spacing={3}
-                        overflowY="auto"
-                        pr={2}
-                        sx={{
-                          overscrollBehavior: "contain",
-                          "&::-webkit-scrollbar": {
-                            width: "4px",
-                          },
-                          "&::-webkit-scrollbar-track": {
-                            background: "transparent",
-                          },
-                          "&::-webkit-scrollbar-thumb": {
-                            background: "rgba(0, 0, 0, 0.2)",
-                            borderRadius: "999px",
-                          },
-                        }}
-                      >
-                        <HostsList
-                          inboundTags={inboundTags}
-                          inboundFilter={inboundFilter}
-                          search={search}
-                          bots={bots}
-                          nodes={nodes}
-                          inboundMap={inboundMap}
-                        />
-                      </VStack>
-                    </Box>
+
+                    {/* HOSTS LIST */}
+                    <HostsList
+                      inboundTags={inboundTags}
+                      inboundFilter={inboundFilter}
+                      search={search}
+                      bots={bots}
+                      nodes={nodes}
+                      inboundMap={inboundMap}
+                    />
                   </Box>
                 </>
               )}
 
-              {/* APPLY */}
               <HStack
                 justifyContent="flex-end"
                 py={3}
