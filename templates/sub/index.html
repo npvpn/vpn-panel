@@ -37,7 +37,9 @@
         used_traffic: "{{ user.used_traffic or 0 }}",
         data_limit: "{% if not user.data_limit %}0{% else %}{{ user.data_limit }}{% endif %}",
         expire: "{% if not user.expire %}0{% else %}{{ user.expire }}{% endif %}",
-        reset_strategy: "{{ user.data_limit_reset_strategy.value }}"
+        reset_strategy: "{{ user.data_limit_reset_strategy.value }}",
+        bs_monthly_used: "{{ user.bs_monthly_used or 0 }}",
+        bs_monthly_limit_total: "{% if not user.bs_monthly_limit_total %}0{% else %}{{ user.bs_monthly_limit_total }}{% endif %}"
       };
 
       function bytesFormat(bytes, decimals = 2) {
@@ -204,9 +206,17 @@
             };
             return classes[this.user.status.value] || 'text-gray-500';
           },
-          get trafficText() {
-            const used = bytesFormat(this.user.used_traffic);
-            const limit = this.user.data_limit > 0 ? bytesFormat(this.user.data_limit) : 'Безлимит';
+          // get trafficText() {
+          //   const used = bytesFormat(this.user.used_traffic);
+          //   const limit = this.user.data_limit > 0 ? bytesFormat(this.user.data_limit) : 'Безлимит';
+          //   return `${used}/${limit}`;
+          // },
+          get isBsActive() {
+            return this.user.bs_monthly_limit_total > 0;
+          },
+          get bsTrafficText() {
+            const used = bytesFormat(this.user.bs_monthly_used);
+            const limit = bytesFormat(this.user.bs_monthly_limit_total);
             return `${used}/${limit}`;
           },
           get expirationText() {
@@ -631,9 +641,9 @@ sudo apt install ./Happ.linux.x64.deb
                   <span class="text-[#7b7b7b] tariff-info">Статус</span>
                   <span class="tariff-info" :class="statusClass" x-text="statusText"></span>
                 </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Трафик</span>
-                  <span class="tariff-info" x-text="trafficText"></span>
+                <div class="flex justify-between items-center" x-show="isBsActive">
+                  <span class="text-[#7b7b7b] tariff-info">Трафик (белый список)</span>
+                  <span class="tariff-info" x-text="bsTrafficText"></span>
                 </div>
                 <div class="flex justify-between items-center">
                   <span class="text-[#7b7b7b] tariff-info">Действует до</span>
