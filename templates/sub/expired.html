@@ -142,6 +142,13 @@
               Войти в личный кабинет
             </a>
           </div>
+        {% elif pay_url %}
+          {# Без веб-кабинета оплатить больше негде: Телеграм заблокирован (NPVPN-1848). #}
+          <div class="button-wrapper_revoke">
+            <a href="{{ pay_url }}/{{ token }}" class="dark-btn" rel="noreferrer">
+              Продлить подписку
+            </a>
+          </div>
         {% endif %}
       </div>
 

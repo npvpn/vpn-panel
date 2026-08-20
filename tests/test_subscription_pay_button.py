@@ -18,7 +18,7 @@ _PAY_URL = "https://api.example.com/pay/resume/7"
 _TOKEN = "eyJhbGciOiJIUzI1NiJ9.payload.signature"
 
 
-def _page_context(*, pay_url: str, token: str) -> dict:
+def _page_context(*, pay_url: str, token: str, web_url: str = "") -> dict:
     """Минимум, без которого шаблон не рендерится (tojson не терпит Undefined)."""
     return {
         "pay_url": pay_url,
@@ -28,7 +28,7 @@ def _page_context(*, pay_url: str, token: str) -> dict:
         "user": {},
         "devices": [],
         "sub_path": "sub",
-        "web_url": "",
+        "web_url": web_url,
         "bot_url": "",
         "show_ads": True,
     }
@@ -129,3 +129,46 @@ def test_sub_pay_url_is_a_managed_json_field():
     from app.services.managed_settings import BOT_MANAGED_JSON_FIELDS
 
     assert "sub_pay_url" in BOT_MANAGED_JSON_FIELDS
+
+
+def _render(template: str, **ctx) -> str:
+    """Рендер настоящего шаблона обоими каталогами — как это делает app/templates/__init__.py."""
+    import jinja2
+
+    env = jinja2.Environment(
+        loader=jinja2.FileSystemLoader([str(_ROOT / "app" / "templates"), str(_ROOT / "templates")]),
+        undefined=jinja2.ChainableUndefined,
+    )
+    return env.get_template(template).render(_page_context(**ctx))
+
+
+def test_expired_page_shows_pay_button_without_web_cabinet():
+    """Просроченным отдаётся sub/expired.html, а НЕ subscription/index.html.
+
+    Кнопка, поставленная только в index.html, не показывалась вообще никому:
+    активные не просрочены, а просроченные видят другой шаблон (NPVPN-1848).
+    """
+    html = _render("sub/expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="")
+
+    assert f'href="{_PAY_URL}/{_TOKEN}"' in html
+    assert "Продлить подписку" in html
+
+
+def test_expired_page_prefers_cabinet_when_web_exists():
+    """С веб-кабинетом путь к оплате уже есть — по DofD кнопка только «для челов без веба»."""
+    html = _render("sub/expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
+
+    assert "Войти в личный кабинет" in html
+    assert _PAY_URL not in html
+
+
+def test_expired_page_without_pay_url_has_no_button():
+    html = _render("sub/expired.html", pay_url="", token=_TOKEN, web_url="")
+
+    assert "Продлить подписку" not in html
+
+
+def test_index_page_hides_button_when_web_exists():
+    html = _render("subscription/index.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
+
+    assert _PAY_URL not in html
