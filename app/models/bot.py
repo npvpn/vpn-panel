@@ -43,6 +43,7 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "sub_subscription_domain": "",
     "bot_url": BOT_URL,
     "web_url": "",
+    "sub_pay_url": "",
     "sub_revoked_announce_text": SUB_REVOKED_ANNOUNCE_TEXT,
     "sub_expired_announce_text": SUB_EXPIRED_ANNOUNCE_TEXT,
     "sub_device_limit_announce_text": SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
@@ -101,6 +102,7 @@ class BotSettingsPayload(BaseModel):
     sub_subscription_domain: str = ""
     bot_url: str = ""
     web_url: str = ""
+    sub_pay_url: str = ""
     sub_revoked_announce_text: str = ""
     sub_expired_announce_text: str = ""
     sub_device_limit_announce_text: str = ""
