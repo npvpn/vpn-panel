@@ -136,17 +136,21 @@
           </div>
         </div>
 
+        {# Оплата прямо со страницы: Телеграм заблокирован, и это единственная точка
+           продления, до которой клиент с истёкшей подпиской точно доберётся (NPVPN-1848).
+           Показываем независимо от наличия веб-кабинета — кнопка ведёт сразу в форму оплаты,
+           а кабинет требует ещё нескольких шагов. #}
+        {% if pay_url %}
+          <div class="button-wrapper_revoke">
+            <a href="{{ pay_url }}/{{ token }}" class="dark-btn" rel="noreferrer">
+              Продлить подписку
+            </a>
+          </div>
+        {% endif %}
         {% if web_url %}
           <div class="button-wrapper_revoke">
             <a href="{{ web_url }}" class="dark-btn">
               Войти в личный кабинет
-            </a>
-          </div>
-        {% elif pay_url %}
-          {# Без веб-кабинета оплатить больше негде: Телеграм заблокирован (NPVPN-1848). #}
-          <div class="button-wrapper_revoke">
-            <a href="{{ pay_url }}/{{ token }}" class="dark-btn" rel="noreferrer">
-              Продлить подписку
             </a>
           </div>
         {% endif %}

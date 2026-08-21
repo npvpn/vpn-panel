@@ -496,15 +496,6 @@ sudo dpkg -i Happ.linux.x64.deb</code>
             </div>
             <p class="text-xs text-center text-gray-500 mt-3" x-text="resetText" x-show="resetText"></p>
           </div>
-          {# Без веб-кабинета оплатить больше негде: Телеграм заблокирован (NPVPN-1848).
-             Проверки статуса нет — этот шаблон и так рендерится только не-истёкшим. #}
-          {% if pay_url and not web_url %}
-          <a
-            href="{{ pay_url }}/{{ token }}"
-            rel="noreferrer"
-            class="block w-full text-center rounded-b-lg bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 mt-3"
-          >Продлить подписку</a>
-          {% endif %}
         </div>
         <!--div class="bg-gray-800 p-4 rounded-lg">
           <h3 class="font-semibold mb-1">Нужна помощь?</h3>

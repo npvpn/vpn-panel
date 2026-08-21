@@ -76,35 +76,6 @@ def test_missing_key_gives_empty_string():
     assert resolve_pay_url({}) == ""
 
 
-def test_template_href_carries_base_url_and_token():
-    """Токен знает только панель — базовый URL из настроек склеивается с токеном в шаблоне.
-
-    Собственный Environment, а не app.templates: тот тянет config и БД-зависимости,
-    а нас интересует ровно разметка кнопки.
-    """
-    import jinja2
-
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(str(_ROOT / "app" / "templates")),
-        undefined=jinja2.ChainableUndefined,
-    )
-    html = env.get_template("subscription/index.html").render(_page_context(pay_url=_PAY_URL, token=_TOKEN))
-
-    assert f'href="{_PAY_URL}/{_TOKEN}"' in html
-
-
-def test_template_hides_button_without_pay_url():
-    import jinja2
-
-    env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader(str(_ROOT / "app" / "templates")),
-        undefined=jinja2.ChainableUndefined,
-    )
-    html = env.get_template("subscription/index.html").render(_page_context(pay_url="", token=_TOKEN))
-
-    assert "Продлить подписку" not in html
-
-
 def test_managed_payload_accepts_sub_pay_url():
     """extra='forbid': незнакомый ключ в payload'е роняет весь settings_sync, а не только эту фичу."""
     from app.models.managed import ManagedBotSettingsPayload
@@ -142,7 +113,7 @@ def _render(template: str, **ctx) -> str:
     return env.get_template(template).render(_page_context(**ctx))
 
 
-def test_expired_page_shows_pay_button_without_web_cabinet():
+def test_expired_page_shows_pay_button():
     """Просроченным отдаётся sub/expired.html, а НЕ subscription/index.html.
 
     Кнопка, поставленная только в index.html, не показывалась вообще никому:
@@ -154,12 +125,12 @@ def test_expired_page_shows_pay_button_without_web_cabinet():
     assert "Продлить подписку" in html
 
 
-def test_expired_page_prefers_cabinet_when_web_exists():
-    """С веб-кабинетом путь к оплате уже есть — по DofD кнопка только «для челов без веба»."""
+def test_expired_page_shows_pay_button_alongside_cabinet():
+    """Веб-кабинет кнопку не отменяет: он ведёт в оплату за несколько шагов, а кнопка — сразу."""
     html = _render("sub/expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
 
+    assert f'href="{_PAY_URL}/{_TOKEN}"' in html
     assert "Войти в личный кабинет" in html
-    assert _PAY_URL not in html
 
 
 def test_expired_page_without_pay_url_has_no_button():
@@ -168,7 +139,9 @@ def test_expired_page_without_pay_url_has_no_button():
     assert "Продлить подписку" not in html
 
 
-def test_index_page_hides_button_when_web_exists():
-    html = _render("subscription/index.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
+def test_active_page_has_no_pay_button():
+    """Кнопка — только для просроченных: на index.html подписка ещё жива, продлевать нечего."""
+    html = _render("subscription/index.html", pay_url=_PAY_URL, token=_TOKEN, web_url="")
 
     assert _PAY_URL not in html
+    assert "Продлить подписку" not in html
