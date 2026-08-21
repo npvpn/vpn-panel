@@ -357,6 +357,7 @@ export const HostsDialog: FC = () => {
                     overflowY="auto"
                     overflowX="hidden"
                     pr={2}
+                    pb={4}
                     sx={{
                       overscrollBehavior: "contain",
 
