@@ -86,6 +86,19 @@
             return lower.includes('windows') || lower.includes('linux') || lower.includes('pc');
           },
 
+          formatUserAgent(userAgent) {
+            if (!userAgent) return 'Неизвестно';
+
+            const parts = userAgent.split('/');
+            if (parts.length >= 3) {
+                return `${parts[0]}/${parts[1]}`;
+            }
+
+            return userAgent.length > 20 
+                ? userAgent.substring(0, 20) + '...' 
+                : userAgent;
+          },
+
           copyTerminalCommands() {
             const text = document.getElementById('linux-commands').innerText;
             navigator.clipboard.writeText(text).then(() => {
