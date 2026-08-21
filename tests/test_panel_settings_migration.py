@@ -51,7 +51,9 @@ def test_alembic_versions_have_single_head():
             continue
         parents.update(down if isinstance(down, (tuple, list)) else (down,))
     heads = sorted(r for r in revs if r not in parents)
-    assert heads == ["d7e9f1a2b3c4"], f"expected one alembic head, got {heads} ({[revs[h] for h in heads]})"
+    # Проверяем сам инвариант — «голова одна», — а не её конкретный id: иначе
+    # каждая новая миграция обязана править этот тест, хотя ветвления нет.
+    assert len(heads) == 1, f"expected one alembic head, got {heads} ({[revs[h] for h in heads]})"
 
 
 class _Op:
