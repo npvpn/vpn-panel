@@ -285,44 +285,70 @@ export const HostsDialog: FC = () => {
                 <Text>{t("hostsDialog.loading")}</Text>
               ) : (
                 <>
-                  {/* SEARCH + FILTER */}
-                  <HStack mt={3} spacing={2} flexShrink={0}>
-                    <InputGroup flex="1" minW={0}>
-                      <InputLeftElement pointerEvents="none">
-                        <MagnifyingGlassIcon width="16px" color="gray" />
-                      </InputLeftElement>
+                  <Box flexShrink={0}>
+                    {/* SEARCH + FILTER */}
+                    <HStack mt={3} spacing={2}>
+                      <InputGroup flex="1" minW={0}>
+                        <InputLeftElement pointerEvents="none">
+                          <MagnifyingGlassIcon width="16px" color="gray" />
+                        </InputLeftElement>
 
-                      <Input
-                        placeholder={
-                          t("hostsDialog.search") ?? "Search by remark..."
-                        }
+                        <Input
+                          placeholder={
+                            t("hostsDialog.search") ?? "Search by remark..."
+                          }
+                          size="md"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                        />
+                      </InputGroup>
+
+                      <Select
                         size="md"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                    </InputGroup>
+                        flex="1"
+                        minW={0}
+                        value={inboundFilter}
+                        onChange={(e) => setInboundFilter(e.target.value)}
+                        sx={{
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <option value="">{t("hostsDialog.allInbounds")}</option>
 
-                    <Select
-                      size="md"
-                      flex="1"
-                      minW={0}
-                      value={inboundFilter}
-                      onChange={(e) => setInboundFilter(e.target.value)}
-                      sx={{
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                      }}
+                        {inboundTags.map((tag) => (
+                          <option key={tag} value={tag}>
+                            {tag}
+                          </option>
+                        ))}
+                      </Select>
+                    </HStack>
+
+                    {/* ADD HOST BUTTON */}
+                    <Button
+                      mt={3}
+                      w="full"
+                      variant="outline"
+                      leftIcon={
+                        <HeroIconPlusIcon width="20px" strokeWidth={2} />
+                      }
+                      rightIcon={
+                        <ChevronDownIcon
+                          width="16px"
+                          style={{
+                            transform: isAddingHost
+                              ? "rotate(180deg)"
+                              : "rotate(0deg)",
+                            transition: "transform 0.2s ease",
+                          }}
+                        />
+                      }
+                      onClick={() => setIsAddingHost((prev) => !prev)}
                     >
-                      <option value="">{t("hostsDialog.allInbounds")}</option>
-
-                      {inboundTags.map((tag) => (
-                        <option key={tag} value={tag}>
-                          {tag}
-                        </option>
-                      ))}
-                    </Select>
-                  </HStack>
+                      {t("hostsDialog.addNewHost")}
+                    </Button>
+                  </Box>
 
                   <Box
                     mt={3}
@@ -348,34 +374,9 @@ export const HostsDialog: FC = () => {
                       },
                     }}
                   >
-                    {/* ADD HOST BUTTON */}
-                    <Button
-                      w="full"
-                      flexShrink={0}
-                      variant="outline"
-                      mb={3}
-                      leftIcon={
-                        <HeroIconPlusIcon width="20px" strokeWidth={2} />
-                      }
-                      rightIcon={
-                        <ChevronDownIcon
-                          width="16px"
-                          style={{
-                            transform: isAddingHost
-                              ? "rotate(180deg)"
-                              : "rotate(0deg)",
-                            transition: "transform 0.2s ease",
-                          }}
-                        />
-                      }
-                      onClick={() => setIsAddingHost((prev) => !prev)}
-                    >
-                      {t("hostsDialog.addNewHost")}
-                    </Button>
-
                     {/* ADD HOST FORM */}
                     <Collapse in={isAddingHost} animateOpacity>
-                      <Box pt={3} pb={3}>
+                      <Box pt={0} pb={3}>
                         <AddHostForm
                           inboundTags={inboundTags}
                           defaultInboundTag={
