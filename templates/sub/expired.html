@@ -52,9 +52,12 @@
             }; 
               return colors[this.user.status.value] || '#7b7b7b'; 
           },
-          get trafficText() {
-            const used = bytesFormat(this.user.used_traffic);
-            const limit = this.user.data_limit > 0 ? bytesFormat(this.user.data_limit) : 'Безлимит';
+          get isBsActive() {
+            return this.user.bs_monthly_limit_total > 0;
+          },
+          get bsTrafficText() {
+            const used = bytesFormat(this.user.bs_monthly_used);
+            const limit = bytesFormat(this.user.bs_monthly_limit_total);
             return `${used}/${limit}`;
           },
           get expirationText() {
@@ -114,9 +117,9 @@
             <span class="tariff-info" :style="{ color: statusColor }" x-text="statusText"></span>
           </div>
 
-          <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">Трафик</span>
-            <span class="tariff-info" x-text="trafficText"></span>
+          <div class="info-row" x-show="isBsActive">
+            <span class="text-[#7b7b7b] tariff-info">Трафик (белый список)</span>
+            <span class="tariff-info" x-text="bsTrafficText"></span>
           </div>
 
           <div class="info-row">
