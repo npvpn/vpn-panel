@@ -140,18 +140,20 @@
            продления, до которой клиент с истёкшей подпиской точно доберётся (NPVPN-1848).
            Показываем независимо от наличия веб-кабинета — кнопка ведёт сразу в форму оплаты,
            а кабинет требует ещё нескольких шагов. #}
-        {% if pay_url %}
+        {% if pay_url or web_url %}
+          {# Одна обёртка на обе кнопки: .button-wrapper_revoke — position: fixed,
+             две такие легли бы ровно друг на друга и видно было бы только нижнюю. #}
           <div class="button-wrapper_revoke">
-            <a href="{{ pay_url }}/{{ token }}" class="dark-btn" rel="noreferrer">
-              Продлить подписку
-            </a>
-          </div>
-        {% endif %}
-        {% if web_url %}
-          <div class="button-wrapper_revoke">
-            <a href="{{ web_url }}" class="dark-btn">
-              Войти в личный кабинет
-            </a>
+            {% if pay_url %}
+              <a href="{{ pay_url }}/{{ token }}" class="dark-btn" rel="noreferrer">
+                Продлить подписку
+              </a>
+            {% endif %}
+            {% if web_url %}
+              <a href="{{ web_url }}" class="{% if pay_url %}light-btn{% else %}dark-btn{% endif %}">
+                Войти в личный кабинет
+              </a>
+            {% endif %}
           </div>
         {% endif %}
       </div>
