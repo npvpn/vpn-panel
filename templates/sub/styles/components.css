@@ -84,7 +84,7 @@
 /* Информационная карточка */
 .info-card {
     /* max-width: 632px; */
-    max-width: 670px;
+    max-width: 327px;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -189,7 +189,7 @@
     line-height: 114%;
     color: var(--gray-4);
     padding: 16px;
-    padding-bottom: 40px;
+    padding-bottom: 25px;
     background-color: var(--white);
     position: fixed;
     bottom: 0;
@@ -206,13 +206,36 @@
     }
 }
 
+.account-block {
+    box-sizing: border-box;
+    width: 100%;
+
+    background-color: var(--surface-2);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    color: black;
+    align-items: flex-start;
+    text-align: left;
+    border-radius: 24px;
+}
+
+.account-block h3 {
+    font-family: var(--third-family);
+}
+
+.account-block p {
+    font-size: 14px;
+}
+
 .limited-btn {
     display: flex;
     font-size: 16px;
     justify-content: center;
     align-items: center;
-    background-color: #f6f6f6;
-    color: var(--black);
+    background-color: var(--black);
+    color: var(--white);
     text-decoration: none;
     padding: 16px 0;
     border: none;
@@ -247,6 +270,52 @@
     box-sizing: border-box;
     height: 76px;
     overflow: hidden;
+}
+
+/* Подсказка */
+.hint {
+    width: 100%;
+    background: var(--surface-2);
+    border-radius: 100px;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: row;
+    align-items: start;
+    justify-content: space-between;
+    gap: 12px;
+    box-sizing: border-box;
+    margin-bottom: 16px;
+}
+
+.hint-info {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    align-items: start;
+}
+
+.hint p {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.hint svg {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+}
+
+.hint-close {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 24px;
+    cursor: pointer;
 }
 
 .device-card__left {
@@ -737,7 +806,7 @@
 .page-content_limited {
     width: 100%;
     max-width: 342px;
-    padding-bottom: 125px;
+    /* padding-bottom: 125px; */
     margin: 0 auto;
     box-sizing: content-box;
 }
@@ -932,6 +1001,11 @@
 }
 
 @media (min-width: 1024px) {
+    .info-row {
+        max-width: 327px;
+        width: 100%;
+    }
+
     .primary-apps {
         margin-bottom: 16px;
     }
@@ -962,7 +1036,7 @@
     }
 
     .card-content {
-        padding-bottom: 120px;    
+        padding-bottom: 120px;
     }
 
     .page-content {
@@ -1035,7 +1109,7 @@
 
     .page-content_limited {
         flex: 1;
-        max-width: 728px;
+        max-width: 952px;
         width: 100%;
         padding: 0 24px;
     }
@@ -1065,7 +1139,7 @@
         display: flex;
         flex-direction: row;
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 8px;
         align-items: flex-start;
     }
 
