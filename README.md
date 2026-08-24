@@ -17,7 +17,108 @@
 
 ---
 
+
+
 ## Установка
+
+### Обновление с оригинальной панели
+
+Если панель была установлена из оригинального репозитория Marzban, вы можете переключить ее на `npvpn panel` без переустановки:
+
+1. Подключитесь к серверу, где установлена панель.
+2. Откройте `docker-compose`:
+
+```bash
+marzban edit
+```
+
+1. В сервисе `marzban` укажите образ `npvpn/panel:latest` и проверьте блок `volumes`:
+
+```
+services:
+marzban:
+    image: npvpn/panel:latest
+    restart: always
+    env_file: .env
+    network_mode: host
+    volumes:
+    - /var/lib/marzban:/var/lib/marzban
+    - /var/lib/marzban/logs:/var/lib/marzban-node
+    - <путь к сертифиату на сервере>:<путь к сертификату внутри контейнера>
+    - <путь к ключу на сервере>:<путь к ключу внутри контейнера>
+    depends_on:
+    mysql:
+        condition: service_healthy
+```
+
+1. Загрузите новый образ:
+
+```bash
+docker pull npvpn/panel:latest
+```
+
+1. Перезапустите панель:
+
+```bash
+marzban restart
+```
+
+---
+
+
+
+### Обычная установка
+
+**SQLite** — без SSL, панель на порту 8000.
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install
+```
+
+Задайте аккаунт поддержки, название подписки и аккаунт бота (или оставьте пустыми). После установки:
+
+```bash
+marzban cli admin create
+```
+
+Войдите по адресу `http://<IP или домен>:8000/dashboard/#/login`.
+
+**MySQL / MariaDB** — автоматические Let's Encrypt, volumes сертификатов в compose, HTTPS на порту 8001. UFW, админ панели и GitHub runner не ставятся (это только `install-partner`).
+
+Перед запуском: A-запись домена на IP сервера, порт 80 свободен (certbot standalone), Debian/Ubuntu.
+
+Интерактивно (скрипт спросит домен и email для Let's Encrypt):
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mysql
+```
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mariadb
+```
+
+С параметрами:
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mysql \
+  --domain panel.example.com \
+  --cert-email admin@example.com \
+  --non-interactive
+```
+
+Опционально: `--uvicorn-port 8001`, `--skip-dns-check`, `--skip-cert` (сертификаты уже лежат в `/etc/letsencrypt/live/<домен>/`), `--no-logs`.
+
+После установки создайте администратора:
+
+```bash
+marzban cli admin create
+```
+
+Войдите по адресу `https://<домен>:8001/dashboard/`.
+
+---
+
+
 
 ### Партнёрский сервер (рекомендуется)
 
@@ -50,148 +151,11 @@ sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/mar
 
 Панель будет доступна по адресу: `https://<домен>:8001/dashboard/`
 
-**Обновление панели на партнёрах:** образ собирается в этом репозитории (`build.yml` → Docker Hub). Выкат — Actions приватного [`npvpn/telegram_bot`](https://github.com/npvpn/telegram_bot) (workflow **Deploy partner panels**). Инструкция: [docs/deploy.md](https://github.com/npvpn/telegram_bot/blob/master/docs/deploy.md#partner-panels).
+**Обновление панели на партнёрах:** образ собирается в этом репозитории (`build.yml` → Docker Hub). Выкат — Actions приватного `[npvpn/telegram_bot](https://github.com/npvpn/telegram_bot)` (workflow **Deploy partner panels**). Инструкция: [docs/deploy.md](https://github.com/npvpn/telegram_bot/blob/master/docs/deploy.md#partner-panels).
 
 ---
 
-### Обычная установка (без автоматизации SSL/certbot)
 
-1. Используйте команду для установки панели с нужной базой данных:
-
-- **Install Marzban with SQLite**:
-
-  ```bash
-  sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install
-  ```
-
-- **Install Marzban with MySQL**:
-
-  ```bash
-  sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mysql
-  ```
-
-- **Install Marzban with MariaDB**:
-
-  ```bash
-  sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mariadb
-  ```
-
-2. Следуйте инструкции по установке и задайте значения для аккаунта поддержки, названия подписки в клиенте, аккаунта бота (или оставьте пустыми).
-Дождитесь окончания загрузки и ваша панель запущена.
-
-3. Если вы используете не SQLite, то предварительно потребуются сертификаты для сервера, на котором запущена панель.
-
-4. Введите 
-
-```bash
-marzban edit
-```
-
-чтобы открыть docker-compose.yaml.
-
-5. Пропишите путь к вашим сертификатам на сервере и путь, где они будут внутри контейнера marzban:
-
-```                                                                       
-services:
-marzban:
-    image: npvpn/panel:latest
-    restart: always
-    env_file: .env
-    network_mode: host
-    volumes:
-    - /var/lib/marzban:/var/lib/marzban
-    - /var/lib/marzban/logs:/var/lib/marzban-node
-    - <путь к сертифиату на сервере>:<путь к сертификату внутри контейнера>
-    - <путь к ключу на сервере>:<путь к ключу внутри контейнера>
-    depends_on:
-    mysql:
-        condition: service_healthy
-```
-
-Сохраняем и выходим.
-
-6. Вводим 
-
-```bash
-marzban edit-env
-```
-
-чтобы открыть файл с переменными окружения.
-
-7. Раскомментируйте строки 
-
-```bash
-# UVICORN_SSL_CERTFILE = "/var/lib/marzban/certs/example.com/fullchain.pem"
-# UVICORN_SSL_KEYFILE = "/var/lib/marzban/certs/example.com/key.pem"
-```
-
-и замените на пути к сертифкату и ключу внутри контейнера, которые вы прописали ранее:
-
-```bash
-UVICORN_SSL_CERTFILE = "<путь к сертификату внутри контейнера>"
-UVICORN_SSL_KEYFILE = "<путь к ключу внутри контейнера>"
-```
-
-Сохраняем и выходим.
-
-8. Перезапустите marzban:
-```bash
-marzban restart
-```
-
-9. Создайте администратора панели с помощью команды:
-```bash
-marzban cli admin create
-```
-
-10. Войдите в панель по адресу **<ваш домен>:8000/dashboard/#/login** и введите данные для администратора.
-
----
-
-## Обновление с оригинальной панели
-
-Если панель была установлена из оригинального репозитория Marzban, вы можете переключить ее на `npvpn panel` без переустановки:
-
-1. Подключитесь к серверу, где установлена панель.
-
-2. Откройте `docker-compose`:
-
-```bash
-marzban edit
-```
-
-3. В сервисе `marzban` укажите образ `npvpn/panel:latest` и проверьте блок `volumes`:
-
-```
-services:
-marzban:
-    image: npvpn/panel:latest
-    restart: always
-    env_file: .env
-    network_mode: host
-    volumes:
-    - /var/lib/marzban:/var/lib/marzban
-    - /var/lib/marzban/logs:/var/lib/marzban-node
-    - <путь к сертифиату на сервере>:<путь к сертификату внутри контейнера>
-    - <путь к ключу на сервере>:<путь к ключу внутри контейнера>
-    depends_on:
-    mysql:
-        condition: service_healthy
-```
-
-4. Загрузите новый образ:
-
-```bash
-docker pull npvpn/panel:latest
-```
-
-5. Перезапустите панель:
-
-```bash
-marzban restart
-```
-
----
 
 ## Лицензия
 
@@ -202,6 +166,8 @@ marzban restart
 
 ---
 
+
+
 ## Контакты
 
-Telegram: https://t.me/npvpn  
+Telegram: [https://t.me/npvpn](https://t.me/npvpn)  
