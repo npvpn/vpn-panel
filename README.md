@@ -21,6 +21,8 @@
 
 ## Установка
 
+
+
 ### Обновление с оригинальной панели
 
 Если панель была установлена из оригинального репозитория Marzban, вы можете переключить ее на `npvpn panel` без переустановки:
@@ -152,6 +154,70 @@ sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/mar
 Панель будет доступна по адресу: `https://<домен>:8001/dashboard/`
 
 **Обновление панели на партнёрах:** образ собирается в этом репозитории (`build.yml` → Docker Hub). Выкат — Actions приватного `[npvpn/telegram_bot](https://github.com/npvpn/telegram_bot)` (workflow **Deploy partner panels**). Инструкция: [docs/deploy.md](https://github.com/npvpn/telegram_bot/blob/master/docs/deploy.md#partner-panels).
+
+---
+
+
+
+## Установка ноды
+
+
+
+### Обновление оригинальной ноды
+
+Мигрировать уже установленную ноду (Watchtower, conntrack, node_exporter).
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ migrate
+```
+
+Если нода используется с ботом npvpn, передайте публичный IP сервера бота — тогда `:9100` откроется только ему:
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ migrate --bot-server-ip 1.2.3.4
+```
+
+Подробнее: [Marzban-scripts/README.md](https://github.com/npvpn/Marzban-scripts/blob/master/README.md).
+
+---
+
+
+
+### Новая установка
+
+На отдельном сервере:
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install
+```
+
+С кастомным именем:
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install --name marzban-node2
+```
+
+Вместе с нодой ставится **node_exporter** (`:9100`, host network) для Prometheus на боте. IP бота от npvpn можно передать сразу — тогда `:9100` откроется только ему (nftables, без включения UFW):
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install --bot-server-ip 1.2.3.4
+```
+
+Без флага скрипт спросит IP интерактивно; пустой ввод — exporter поднимется, порт останется публичным. `--skip-firewall` пропускает ограничение порта.
+
+Только CLI-команда `marzban-node` (без самой ноды):
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install-script
+```
+
+Список команд: `marzban-node help`.
+
+Обновить или сменить версию Xray-core:
+
+```bash
+sudo marzban-node core-update
+```
 
 ---
 
