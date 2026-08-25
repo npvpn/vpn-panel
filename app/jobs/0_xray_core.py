@@ -7,6 +7,7 @@ from app.models.node import NodeStatus
 from app.xray.node import NodeAPIError
 from config import (
     JOB_CORE_HEALTH_CHECK_INTERVAL,
+    XRAY_NODE_CONNECT_STALE_TIMEOUT,
     XRAY_NODE_ERROR_RECONNECT_INTERVAL,
     XRAY_NODE_MAX_CONCURRENT_CONNECTS,
 )
@@ -16,8 +17,14 @@ _error_reconnect_last: dict[int, float] = {}
 
 
 def _should_force_reconnect(node_id: int, status: NodeStatus, now: float) -> bool:
-    if status == NodeStatus.connecting and xray.operations.is_connect_stale(node_id):
-        return True
+    if status == NodeStatus.connecting:
+        if xray.operations.is_connect_stale(node_id):
+            return True
+        # Soft-defer leaves connecting without an active lock; escalate by DB age.
+        age = xray.operations.connecting_age_seconds(node_id)
+        if age is not None and age >= XRAY_NODE_CONNECT_STALE_TIMEOUT:
+            return True
+        return False
     if status != NodeStatus.error:
         return False
     last_attempt = _error_reconnect_last.get(node_id, 0)
