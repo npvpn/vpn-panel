@@ -150,7 +150,8 @@ export const HostsList: FC<Props> = ({
 
           return (
             <HostRow
-              key={`${index}-${host.remark || "host"}`}
+              // key={`${index}-${host.remark || "host"}`}
+              key={index}
               hostId={`${index}`}
               index={index}
               inboundTag={host.inbound_tag}
