@@ -285,75 +285,51 @@ export const HostsDialog: FC = () => {
                 <Text>{t("hostsDialog.loading")}</Text>
               ) : (
                 <>
-                  {/* SEARCH + FILTER */}
-                  <HStack mt={3} spacing={2} flexShrink={0}>
-                    <InputGroup flex="1" minW={0}>
-                      <InputLeftElement pointerEvents="none">
-                        <MagnifyingGlassIcon width="16px" color="gray" />
-                      </InputLeftElement>
+                  <Box flexShrink={0}>
+                    {/* SEARCH + FILTER */}
+                    <HStack mt={3} spacing={2}>
+                      <InputGroup flex="1" minW={0}>
+                        <InputLeftElement pointerEvents="none">
+                          <MagnifyingGlassIcon width="16px" color="gray" />
+                        </InputLeftElement>
 
-                      <Input
-                        placeholder={
-                          t("hostsDialog.search") ?? "Search by remark..."
-                        }
+                        <Input
+                          placeholder={
+                            t("hostsDialog.search") ?? "Search by remark..."
+                          }
+                          size="md"
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                        />
+                      </InputGroup>
+
+                      <Select
                         size="md"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                    </InputGroup>
+                        flex="1"
+                        minW={0}
+                        value={inboundFilter}
+                        onChange={(e) => setInboundFilter(e.target.value)}
+                        sx={{
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <option value="">{t("hostsDialog.allInbounds")}</option>
 
-                    <Select
-                      size="md"
-                      flex="1"
-                      minW={0}
-                      value={inboundFilter}
-                      onChange={(e) => setInboundFilter(e.target.value)}
-                      sx={{
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <option value="">{t("hostsDialog.allInbounds")}</option>
+                        {inboundTags.map((tag) => (
+                          <option key={tag} value={tag}>
+                            {tag}
+                          </option>
+                        ))}
+                      </Select>
+                    </HStack>
 
-                      {inboundTags.map((tag) => (
-                        <option key={tag} value={tag}>
-                          {tag}
-                        </option>
-                      ))}
-                    </Select>
-                  </HStack>
-
-                  <Box
-                    mt={3}
-                    flex="1 1 0"
-                    minH={0}
-                    overflowY="auto"
-                    overflowX="hidden"
-                    pr={2}
-                    sx={{
-                      overscrollBehavior: "contain",
-
-                      "&::-webkit-scrollbar": {
-                        width: "4px",
-                      },
-
-                      "&::-webkit-scrollbar-track": {
-                        background: "transparent",
-                      },
-
-                      "&::-webkit-scrollbar-thumb": {
-                        background: "rgba(0, 0, 0, 0.2)",
-                        borderRadius: "999px",
-                      },
-                    }}
-                  >
                     {/* ADD HOST BUTTON */}
                     <Button
+                      mt={3}
                       w="full"
-                      flexShrink={0}
                       variant="outline"
-                      mb={3}
                       leftIcon={
                         <HeroIconPlusIcon width="20px" strokeWidth={2} />
                       }
@@ -372,10 +348,36 @@ export const HostsDialog: FC = () => {
                     >
                       {t("hostsDialog.addNewHost")}
                     </Button>
+                  </Box>
 
+                  <Box
+                    mt={3}
+                    flex="1 1 0"
+                    minH={0}
+                    overflowY="auto"
+                    overflowX="hidden"
+                    pr={2}
+                    pb={4}
+                    sx={{
+                      overscrollBehavior: "contain",
+
+                      "&::-webkit-scrollbar": {
+                        width: "4px",
+                      },
+
+                      "&::-webkit-scrollbar-track": {
+                        background: "transparent",
+                      },
+
+                      "&::-webkit-scrollbar-thumb": {
+                        background: "rgba(0, 0, 0, 0.2)",
+                        borderRadius: "999px",
+                      },
+                    }}
+                  >
                     {/* ADD HOST FORM */}
                     <Collapse in={isAddingHost} animateOpacity>
-                      <Box pt={3} pb={3}>
+                      <Box pt={0} pb={3}>
                         <AddHostForm
                           inboundTags={inboundTags}
                           defaultInboundTag={

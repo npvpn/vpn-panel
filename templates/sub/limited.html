@@ -43,8 +43,15 @@
           deviceLimit: Number("{{ user.device_limit or 0 }}"),
           revokingId: null,
 
+          showHint: true,
+
           showRevokeModal: false,
           selectedDevice: null,
+
+          hideHint() {
+            this.showHint = false;
+          },
+
           openRevokeModal(device) {
             this.selectedDevice = device;
             this.showRevokeModal = true;
@@ -122,10 +129,13 @@
             };
             return colors[this.user.status.value] || '#7b7b7b';
           },
-          get trafficText() {
-            const used = bytesFormat(this.user.used_traffic);
-            const limit = this.user.data_limit > 0 ? bytesFormat(this.user.data_limit) : 'Безлимит';
-            return `${used} / ${limit}`;
+          get isBsActive() {
+            return this.user.bs_monthly_limit_total > 0;
+          },
+          get bsTrafficText() {
+            const used = bytesFormat(this.user.bs_monthly_used);
+            const limit = bytesFormat(this.user.bs_monthly_limit_total);
+            return `${used}/${limit}`;
           },
           get expirationText() {
             if (this.user.expire == 0) return 'Никогда';
@@ -174,13 +184,45 @@
         <header class="page-header">
           <h2 class="page-title">Лимит устройств достигнут</h2>
           <p class="device-count">
-          <!-- Подключено {% if user.device_limit %}{{ devices|length }} из {{ user.device_limit }}{% else %}{{ devices|length }}{% endif %} -->
-            Подключено <span x-text="deviceCount"></span>
+          <span x-text="deviceCount"></span>
           <span x-show="deviceLimit > 0">
             из <span x-text="deviceLimit"></span>
           </span>
         </p>
         </header>
+
+        <div class="hint" x-show="showHint" x-transition>
+          <div class="hint-info">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="11.9999" r="9" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <rect x="12" y="8" width="0.01" height="0.01" stroke="#141413" stroke-width="3" stroke-linejoin="round" />
+              <path d="M12 12V16" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <p>Удалите одно из устройств, чтобы подключить новое</p>
+          </div>
+          <button
+            type="button"
+            class="hint-close"
+            @click="hideHint()"
+            aria-label="Закрыть подсказку"
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M7 7L17 17M7 17L17 7"
+                stroke="#B8B8B8"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
 
         <div class="card-content">
           <!-- DEVICES LIST -->
@@ -204,22 +246,11 @@
                     </template>
                   </div>
 
-                  <!-- <div class="device-card__info">
-                    <div class="device-card__name" x-text="device.device_model"></div>
-
-                    <div class="device-card__os">
-                      <span x-text="device.device_os"></span>
-                      <span x-show="device.ver_os" x-text="' ' + device.ver_os"></span>
-                    </div>
-
-                    <div class="device-card__user-agent" x-show="device.user_agent" x-text="device.user_agent"></div>
-                  </div> -->
                   <div class="device-card__info">
                     <div class="device-card__name" x-text="device.device_model"></div>
 
                     <div class="device-card__os">
                         <span x-text="device.device_os"></span>
-                        <!-- <span x-show="device.ver_os" x-text="' • ' + device.ver_os"></span> -->
                         <template x-if="device.user_agent">
                             <span x-text="' • ' + formatUserAgent(device.user_agent)"></span>
                         </template>
@@ -237,36 +268,41 @@
                   :disabled="revokingId === device.id"
                   @click="openRevokeModal(device)"
                 >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path d="M7 7L17 17M7 17L17 7"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"/>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <g clip-path="url(#clip0_5280_1914)">
+                      <path d="M8 6.14239L8 4.4709C8 3.30611 8 2.72371 8.34942 2.36186C8.69883 2 9.26121 2 10.386 2L13.614 2C14.7388 2 15.3012 2 15.6506 2.36186C16 2.72371 16 3.30611 16 4.4709V6.14239" stroke="#141413" stroke-width="2" />
+                      <path d="M12 21.0002C10.6442 21.0002 9.70218 20.9992 8.97266 20.925C8.26177 20.8528 7.85572 20.7184 7.54492 20.5168C7.28461 20.348 7.05193 20.1398 6.85547 19.8997C6.62098 19.6129 6.44287 19.2241 6.29297 18.5256C6.13912 17.8086 6.03462 16.8716 5.88574 15.5237L4.88184 6.43091L19.1182 6.43091L18.1143 15.5237C17.9654 16.8716 17.8609 17.8086 17.707 18.5256C17.5571 19.2241 17.38 19.6129 17.1455 19.8997C16.949 20.14 16.7155 20.3479 16.4551 20.5168C16.1444 20.7184 15.7389 20.8527 15.0283 20.925C14.2987 20.9992 13.3561 21.0002 12 21.0002Z" stroke="#141413" stroke-width="2" />
+                      <path d="M3 6.12198H21" stroke="#141413" stroke-width="2" stroke-linecap="round" />
+                    </g>
+                    <defs>
+                      <clipPath id="clip0_5280_1914">
+                        <rect width="24" height="24" fill="white" />
+                      </clipPath>
+                    </defs>
                   </svg>
                 </button>
               </div>
             </template>
-
-            <!-- {% if web_url %}
-              <button class="btn-fourth w-full font-semibold" onclick="window.open('{{ web_url }}', '_blank')" rel="noopener noreferrer">
-                <div class="device_button" style="border-radius: 16px;">
-                    <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M8.07107 1V8.07107M8.07107 8.07107V15.1421M8.07107 8.07107H1M8.07107 8.07107H15.1421" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                Добавить устройства
-              </button>
-            {% endif %} -->
-
           </div>
 
           <p class="empty-devices" x-show="devices.length === 0">
             Активных устройств сейчас нет
           </p>
+
+          <!-- ACCOUNT BLOCK -->
+          {% if web_url %}
+            <div class="account-block">
+              <h3>Как подключить больше устройств</h3>
+              <p>Войдите в личный кабинет и увеличьте лимит</p>
+              <a href="{{ web_url }}" class="limited-btn">
+                Войти в личный кабинет
+              </a>
+            </div>
+          {% endif %}
         
           <!-- INFO CARD -->
           <div class="info-card">
-            <h2 class="page-title mb-3">Текущий тариф</h2>
+            <h2 class="page-title mb-3 text-[24px]">Тариф</h2>
             <div class="info-row">
               <span class="text-[#7b7b7b] tariff-info">ID</span>
               <span class="tariff-info" x-text="user.username"></span>
@@ -277,9 +313,9 @@
               <span class="tariff-info" :style="{ color: statusColor }" x-text="statusText"></span>
             </div>
 
-            <div class="info-row">
-              <span class="text-[#7b7b7b] tariff-info">Трафик</span>
-              <span class="tariff-info" x-text="trafficText"></span>
+            <div class="info-row" x-show="isBsActive">
+              <span class="text-[#7b7b7b] tariff-info">Трафик (белый список)</span>
+              <span class="tariff-info" x-text="bsTrafficText"></span>
             </div>
 
             <div class="info-row">
@@ -311,8 +347,10 @@
               <div class="modal-header">
                   <div class="modal-content">
                       <h3 class="modal-title">
-                          Выйти с устройства?
+                          Удалить устройство<br>
+                          из списка?
                       </h3>
+                      <p>Оно исчезнет из списка ваших устройств. Вы сможете снова добавить его позже.</p>
                   </div>
                   <button
                       class="modal-close"
@@ -334,20 +372,6 @@
                       </svg>
                   </button>
               </div>
-              <div
-                  class="modal-device"
-                  x-show="selectedDevice"
-              >
-                  <p
-                      class="modal-device-name"
-                      x-text="selectedDevice?.device_model"
-                  ></p>
-
-                  <p
-                      class="modal-device-info"
-                      x-text="`${selectedDevice?.device_os || ''}${selectedDevice?.ver_os ? ' ' + selectedDevice.ver_os : ''}`"
-                  ></p>
-              </div>
               <div class="modal-actions">
                   <button
                       class="btn-secondary"
@@ -366,15 +390,10 @@
       </div>
 
       <footer class="footer_limited">
-          {% if web_url %}
-            <a href="{{ web_url }}" class="limited-btn">
-              Перейти в личный кабинет
-            </a>
-          {% endif %}
           {% if show_ads %}
           <p>
             Сайт работает на платформе
-            <a href="https://www.npvpn.net/" class="footer-link" target="_blank" rel="noopener noreferrer">
+            <a href="https://github.com/npvpn/vpn-panel" class="footer-link" target="_blank" rel="noopener noreferrer">
               npvpn
             </a>
           </p>
