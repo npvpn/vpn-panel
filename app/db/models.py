@@ -138,7 +138,11 @@ class User(Base):
         default=UserDataLimitResetStrategy.no_reset,
     )
     usage_logs = relationship("UserUsageResetLogs", back_populates="user")  # maybe rename it to reset_usage_logs?
-    expire = Column(Integer, nullable=True)
+    # BigInteger, а не Integer: в MySQL Integer — это INT со сроком жизни до
+    # 2038-01-19 03:14:07 (2147483647). Бессрочные подписки бота выставляют
+    # именно этот потолок, и любое продление поверх него роняло UPDATE с
+    # "Out of range value for column 'expire'" (NPVPN-1879).
+    expire = Column(BigInteger, nullable=True)
     admin_id = Column(Integer, ForeignKey("admins.id"))
     admin = relationship("Admin", back_populates="users")
     sub_revoked_at = Column(DateTime, nullable=True, default=None)
@@ -345,7 +349,7 @@ class NextPlan(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     data_limit = Column(BigInteger, nullable=False)
-    expire = Column(Integer, nullable=True)
+    expire = Column(BigInteger, nullable=True)  # см. User.expire (NPVPN-1879)
     add_remaining_traffic = Column(Boolean, nullable=False, default=False, server_default="0")
     fire_on_either = Column(Boolean, nullable=False, default=True, server_default="0")
 
