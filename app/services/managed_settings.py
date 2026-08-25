@@ -42,6 +42,7 @@ BOT_MANAGED_JSON_FIELDS = frozenset(
         "web_url",
         "sub_support_url",
         "sub_subscription_domain",
+        "sub_pay_url",
         "show_ads",
         "sub_profile_url",
         "sub_profile_title",
