@@ -438,7 +438,6 @@ get alternativeApps() {
                 </template>
 
                   <div>
-                    <!-- Обычные устройства -->
                     <template x-if="selectedOs !== 'TV'">
                       <div>
                         <p class="steps-title mb-4">
@@ -525,9 +524,12 @@ get alternativeApps() {
                     <template x-if="selectedOs === 'TV'">
                       <div>
                         <p class="steps-title tv-step-title mb-2">
-                          Сначала установите приложение «Happ Proxy» на телефон iPhone или Android
+                          Сначала установите приложение
+                          <template x-if="primaryApp?.name">
+                            <span>«<span x-text="primaryApp.name"></span>»</span>
+                          </template>
+                          на телефон iPhone или Android
                         </p>
-
                         <p class="steps-text tv-step-text">
                           Настройте и убедитесь что VPN корректно работает на телефоне.
                           После этого скачайте то же приложение на телевизор AndroidTV через Google Play,
@@ -605,13 +607,73 @@ get alternativeApps() {
                   <p class="steps-text tv-step-text mb-4">
                     На телевизоре появится QR-код. Отсканируйте его
                     на мобильном телефоне. Выберите настройки подключения
-                    для телевизора. После добавления выберите страну
+                    для телевизора.
+                  </p>
+                  <p class="steps-text tv-step-text mb-4">
+                    После добавления выберите страну
                     и нажмите «Подключить»
                   </p>
                 </div>
 
                 <template x-if="!['QR','TV'].includes(selectedOs)">
                   <div class="button-row">
+                    <button
+                      @click="copyToClipboard(user.subscription_url)"
+                      class="copy-button"
+                    >
+                      <template x-if="!copiedKey">
+                        <svg
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            d="M16 3H4V16"
+                            stroke="#141413"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                          <path
+                            d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z"
+                            stroke="#141413"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                      </template>
+
+                      <template x-if="copiedKey">
+                        <svg
+                          width="24"
+                          height="24"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <circle
+                            cx="12"
+                            cy="12"
+                            r="9"
+                            stroke="#2FC26E"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                          <path
+                            d="M15 10L11 14L9 12"
+                            stroke="#2FC26E"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                      </template>
+                    </button>
+
                     <template x-if="selectedApp && selectedApp.scheme">
                       <a
                         :href="`${selectedApp.scheme}://add/${user.subscription_url}`"
@@ -620,24 +682,10 @@ get alternativeApps() {
                         x-text="`Добавить ключ в ${selectedApp.name}`"
                       ></a>
                     </template>
-
-                    <button
-                      @click="copyToClipboard(user.subscription_url)"
-                      class="copy-button"
-                    >
-                      <template x-if="!copiedKey">
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M13.3335 2.5H3.3335V13.3333" stroke="#141413" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round" />
-                          <path d="M6.6665 5.83331H16.6665V15.8333C16.6665 16.7538 15.9203 17.5 14.9998 17.5H8.33317C7.4127 17.5 6.6665 16.7538 6.6665 15.8333V5.83331Z" stroke="#141413" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                      </template>
-                      <span x-text="copiedKey ? 'Ключ скопирован!' : 'Копировать ключ'" style="font-family: var(--third-family);"></span>
-                    </button>
                   </div>
                 </template>
               </div>
             </div>
-
 
             {% if web_url %}
               <div class="button-wrapper">
@@ -646,7 +694,7 @@ get alternativeApps() {
                     Войти в личный кабинет
                 </a>
               </div>
-            {% endif %} 
+            {% endif %}
           </main>
     
           <main x-show="currentPage === 'tariff'" style="max-width: 680px;">
