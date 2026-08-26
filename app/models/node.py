@@ -1,6 +1,28 @@
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Хостеры считают ТБ десятичными (10^12), не TiB. Форма панели вводит ТБ, API хранит байты.
+SI_TB_BYTES = 10**12
+
+
+def hosting_tb_to_bytes(raw: str | float | int | Decimal | None) -> int | None:
+    """Переводит ТБ из формы (0.7 / '0,7' / '') в SI-байты. Пустое → None."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip().replace(",", ".")
+        if not text:
+            return None
+        raw = text
+    try:
+        tb = Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        raise ValueError("hosting traffic limit must be a number in TB") from None
+    if tb <= 0:
+        raise ValueError("hosting traffic limit must be positive")
+    return int((tb * SI_TB_BYTES).to_integral_value())
 
 
 class NodeStatus(str, Enum):
@@ -52,6 +74,16 @@ class Node(BaseModel):
     cascade_routes: list[CascadeRouteModel] | None = None
     is_bs: bool = False
     cascade_balancer_strategy: NodeBalancerStrategy = NodeBalancerStrategy.random
+    hosting_traffic_limit_bytes: int | None = None
+
+    @field_validator("hosting_traffic_limit_bytes")
+    @classmethod
+    def _positive_hosting_limit(cls, v):
+        if v is None:
+            return None
+        if v <= 0:
+            raise ValueError("hosting_traffic_limit_bytes must be positive")
+        return v
 
 
 class NodeCreate(Node):

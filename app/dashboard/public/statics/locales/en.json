@@ -136,6 +136,8 @@
   "nodes.show-certificate": "Show certificate",
   "nodes.title": "Using Marzban-Node, you are able to scale up your connection quality by adding different nodes on different servers.",
   "nodes.usageCoefficient": "Usage Ratio",
+  "nodes.hostingTrafficLimitTb": "Hosting traffic limit (TB)",
+  "nodes.hostingTrafficLimitTbHint": "Empty — no limit. Fractions allowed: 0.7. 1 TB = 10¹² bytes (SI, as billed by the host).",
   "nodes.inbounds": "Inbounds on this node",
   "nodes.inboundsHint": "Leave all unchecked to use every inbound (default).",
   "nodes.role": "Node role",

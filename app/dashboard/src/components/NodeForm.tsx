@@ -280,6 +280,18 @@ export const NodeForm: NodeFormType = ({
             />
           </Box>
         </HStack>
+        <Box w="100%">
+          <CustomInput
+            label={t("nodes.hostingTrafficLimitTb")}
+            size="sm"
+            placeholder="0,7"
+            {...form.register("hosting_traffic_limit_tb")}
+            error={form.formState?.errors?.hosting_traffic_limit_tb?.message}
+          />
+          <Text fontSize="xs" opacity={0.7} mt={1}>
+            {t("nodes.hostingTrafficLimitTbHint")}
+          </Text>
+        </Box>
         <FormControl py={1}>
           <FormLabel>{t("nodes.role")}</FormLabel>
           <Controller
