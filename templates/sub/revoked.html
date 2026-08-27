@@ -128,24 +128,36 @@
             </span>
           </div>
         </div>
-  
-        {% if web_url %}
-          <div class="button-wrapper_revoke">
+
+        <div class="button-wrapper_revoke">
+          <div class="hint mb-0">
+              <div class="hint-info">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="12" cy="11.9999" r="9" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                      <rect x="12" y="8" width="0.01" height="0.01" stroke="#141413" stroke-width="3" stroke-linejoin="round" />
+                      <path d="M12 12V16" stroke="#141413" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+
+                  <p>
+                      Чтобы продолжить пользоваться сервисом, перейдите в личный кабинет для приобретения подписки
+                  </p>
+              </div>
+          </div>
+          {% if web_url %}
             <a href="{{ web_url }}" class="dark-btn">
               Войти в личный кабинет
             </a>
-          </div>
-        {% endif %}
-      </div>  
+          {% endif %}
+        </div>
 
-      {% if show_ads %}
-      <footer class="footer">
-        Сайт работает на платформе
-        <a href="https://github.com/npvpn/vpn-panel" class="footer-link" target="_blank" rel="noopener noreferrer">
-          npvpn
-        </a>
-      </footer>
-      {% endif %}
-    </div>
-  </body>
+        {% if show_ads %}
+          <footer class="footer">
+            Сайт работает на платформе
+            <a href="https://github.com/npvpn/vpn-panel" class="footer-link" target="_blank" rel="noopener noreferrer">
+              npvpn
+            </a>
+          </footer>
+        {% endif %}
+      </div>
+    </body>
 </html>
