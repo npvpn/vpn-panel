@@ -87,6 +87,7 @@ export const AddHostForm: FC<Props> = ({
 
   const handleAdd = form.handleSubmit((data) => {
     onAdded(data.hosts[0]);
+
     form.reset({
       hosts: [
         {
@@ -94,6 +95,12 @@ export const AddHostForm: FC<Props> = ({
           inbound_tag: defaultInboundTag || inboundTags[0] || "",
         },
       ],
+    });
+
+    requestAnimationFrame(() => {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
     });
   });
 
@@ -144,7 +151,7 @@ export const AddHostForm: FC<Props> = ({
                 bots={bots}
                 nodes={nodes}
                 inbound={inboundMap.get(inboundTag)}
-                accordionErrors={form.formState.errors.hosts}
+                accordionErrors={form.formState.errors.hosts?.[0]}
                 proxyHostSecurity={proxyHostSecurity}
                 proxyALPN={proxyALPN}
                 proxyFingerprint={proxyFingerprint}

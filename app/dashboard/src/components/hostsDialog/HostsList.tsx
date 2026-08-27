@@ -1,6 +1,13 @@
 import { VStack, Text } from "@chakra-ui/react";
-import { FC, useCallback, useMemo } from "react";
-import { useFormContext, useWatch } from "react-hook-form";
+import { FC, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  FieldArrayWithId,
+  UseFieldArrayInsert,
+  UseFieldArrayMove,
+  UseFieldArrayRemove,
+  useFormContext,
+  useWatch,
+} from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
@@ -14,22 +21,32 @@ import { NodeType } from "contexts/NodesContext";
 import { hostsFormSchema } from "./schema";
 import { HostRow } from "./HostRow";
 
+type HostField = FieldArrayWithId<z.infer<typeof hostsFormSchema>, "hosts">;
+
 type Props = {
+  fields: HostField[];
   inboundTags: string[];
   inboundFilter: string;
   search: string;
   bots: Bot[];
   nodes: NodeType[];
   inboundMap: Map<string, any>;
+  insert: UseFieldArrayInsert<z.infer<typeof hostsFormSchema>, "hosts">;
+  move: UseFieldArrayMove;
+  remove: UseFieldArrayRemove;
 };
 
 export const HostsList: FC<Props> = ({
+  fields,
   inboundTags,
   inboundFilter,
   search,
   bots,
   nodes,
   inboundMap,
+  insert,
+  move,
+  remove,
 }) => {
   const { t } = useTranslation();
 
@@ -46,9 +63,9 @@ export const HostsList: FC<Props> = ({
   const visibleIndexes = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return (watchedHosts || [])
-      .map((_, index) => index)
-      .filter((index) => {
+    return fields
+      .map((field, index) => ({ field, index }))
+      .filter(({ index }) => {
         const host = watchedHosts?.[index];
 
         if (!host) return false;
@@ -62,70 +79,47 @@ export const HostsList: FC<Props> = ({
         }
 
         return true;
-      });
-  }, [watchedHosts, inboundFilter, search]);
-
-  const setHosts = useCallback(
-    (hosts: z.infer<typeof hostsFormSchema>["hosts"]) => {
-      const renumbered = hosts.map((host, index) => ({
-        ...host,
-        order: index,
-      }));
-
-      form.setValue("hosts", renumbered, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-    },
-    [form]
-  );
+      })
+      .map(({ index }) => index);
+  }, [fields, watchedHosts, inboundFilter, search]);
 
   const duplicateHost = useCallback(
     (index: number) => {
-      const hosts = [...(form.getValues("hosts") || [])];
-      const value = hosts[index];
+      const value = form.getValues(`hosts.${index}`);
 
       if (!value) return;
 
-      hosts.splice(index + 1, 0, structuredClone(value));
-
-      setHosts(hosts);
+      insert(index + 1, structuredClone(value), {
+        shouldFocus: false,
+      });
     },
-    [form, setHosts]
+    [form, insert]
   );
+
+  const visibleIndexesRef = useRef(visibleIndexes);
+
+  useEffect(() => {
+    visibleIndexesRef.current = visibleIndexes;
+  }, [visibleIndexes]);
 
   const moveHostPosition = useCallback(
     (index: number, direction: "up" | "down") => {
-      const visiblePos = visibleIndexes.indexOf(index);
-
+      const currentVisibleIndexes = visibleIndexesRef.current;
+      const visiblePos = currentVisibleIndexes.indexOf(index);
       if (visiblePos < 0) return;
-
       const targetPos = direction === "up" ? visiblePos - 1 : visiblePos + 1;
-
-      const targetIndex = visibleIndexes[targetPos];
-
+      const targetIndex = currentVisibleIndexes[targetPos];
       if (targetIndex === undefined) return;
-
-      const hosts = [...(form.getValues("hosts") || [])];
-
-      const tmp = hosts[index];
-      hosts[index] = hosts[targetIndex];
-      hosts[targetIndex] = tmp;
-
-      setHosts(hosts);
+      move(index, targetIndex);
     },
-    [form, setHosts, visibleIndexes]
+    [move]
   );
 
   const removeHost = useCallback(
     (index: number) => {
-      const hosts = [...(form.getValues("hosts") || [])];
-
-      hosts.splice(index, 1);
-
-      setHosts(hosts);
+      remove(index);
     },
-    [form, setHosts]
+    [remove]
   );
 
   if (inboundTags.length === 0) {
@@ -144,17 +138,16 @@ export const HostsList: FC<Props> = ({
         </Text>
       ) : (
         visibleIndexes.map((index, visiblePos) => {
-          const host = watchedHosts?.[index];
+          const field = fields[index];
 
-          if (!host) return null;
+          if (!field) return null;
 
           return (
             <HostRow
-              // key={`${index}-${host.remark || "host"}`}
-              key={index}
-              hostId={`${index}`}
+              key={field.id}
+              hostId={field.id}
               index={index}
-              inboundTag={host.inbound_tag}
+              inboundTag={watchedHosts?.[index]?.inbound_tag ?? ""}
               canMoveUp={visiblePos > 0}
               canMoveDown={visiblePos < visibleIndexes.length - 1}
               duplicateHost={duplicateHost}
@@ -162,8 +155,8 @@ export const HostsList: FC<Props> = ({
               removeHost={removeHost}
               bots={bots}
               nodes={nodes}
-              inbound={inboundMap.get(host.inbound_tag)}
-              accordionErrors={accordionErrors}
+              inbound={inboundMap.get(watchedHosts?.[index]?.inbound_tag)}
+              accordionErrors={accordionErrors?.[index]}
               proxyHostSecurity={proxyHostSecurity}
               proxyALPN={proxyALPN}
               proxyFingerprint={proxyFingerprint}
