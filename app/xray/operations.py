@@ -1,5 +1,6 @@
 import threading
 import time
+from datetime import datetime
 from functools import cache
 from typing import TYPE_CHECKING
 
@@ -544,6 +545,17 @@ def _change_node_status(node_id: int, status: NodeStatus, message: str = None, v
             raise
 
 
+def connecting_age_seconds(node_id: int) -> float | None:
+    """Seconds since node entered connecting (DB last_status_change), or None."""
+    with GetDB() as db:
+        dbnode = crud.get_node_by_id(db, node_id)
+        if not dbnode or dbnode.status != NodeStatus.connecting:
+            return None
+        if not dbnode.last_status_change:
+            return None
+        return max(0.0, (datetime.utcnow() - dbnode.last_status_change).total_seconds())
+
+
 global _connecting_nodes
 _connecting_nodes = set()
 _connecting_started_at = {}
@@ -643,10 +655,13 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
             logger.info(f"[connect_node] skip disabled node_id={dbnode.id}")
             return
 
-        status_changed = _change_node_status(node_id, NodeStatus.connecting)
-        if not status_changed:
-            logger.info(f"[connect_node] status update rejected for node_id={node_id}")
-            return
+        # Soft retries leave status=connecting; do not rewrite it (would reset last_status_change
+        # and wipe xray_version), so health can escalate via connecting_age_seconds.
+        if dbnode.status != NodeStatus.connecting:
+            status_changed = _change_node_status(node_id, NodeStatus.connecting)
+            if not status_changed:
+                logger.info(f"[connect_node] status update rejected for node_id={node_id}")
+                return
 
         if config is None:
             config = xray.config.include_db_users()
@@ -706,13 +721,15 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
                             node.start(config_json=config_json)
                     except Exception as soft_exc:
                         if getattr(node, "_session_id", None):
-                            # Session still remembered — do not escalate to error/hard /connect.
+                            # Session still remembered — do not escalate to error/hard /connect yet.
+                            # IMPORTANT: do NOT mark DB status=connected here. That caused fake
+                            # "Подключен" without xray_version and blocked recovery (health assumed OK).
+                            # Leave status=connecting; health retries soft, then HARD after stale.
                             logger.debug(
                                 f'[connect_node] SOFT deferred node_id={node_id} ("{dbnode.name}"): '
                                 f"{type(soft_exc).__name__}: {soft_exc}; "
-                                f"keep session_id, status=connected, retry later (no /connect)"
+                                f"keep session_id, status=connecting, retry later (no /connect)"
                             )
-                            _change_node_status(node_id, NodeStatus.connected)
                             return
                         logger.debug(
                             f"[connect_node] SOFT failed without session node_id={node_id} "
@@ -839,4 +856,5 @@ __all__ = [
     "restart_node",
     "is_connect_in_progress",
     "is_connect_stale",
+    "connecting_age_seconds",
 ]
