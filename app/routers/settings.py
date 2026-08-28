@@ -9,6 +9,7 @@ from app.models.settings import (
     ClientAppsPayload,
     ClientAppsWithManagedResponse,
     PanelSettingsPayload,
+    PanelSettingsResponse,
 )
 from app.services import client_apps as client_apps_service
 from app.services import managed_settings as managed_svc
@@ -49,23 +50,23 @@ def get_default_client_apps(
     return DEFAULT_CLIENT_APPS
 
 
-@router.get("/settings/panel", response_model=PanelSettingsPayload)
+@router.get("/settings/panel", response_model=PanelSettingsResponse)
 def get_panel_settings(
     db: Session = Depends(get_db),
     admin: Admin = Depends(Admin.check_sudo_admin),
 ):
     del admin
-    return panel_settings_service.get_panel_settings(db)
+    return panel_settings_service.with_primary_jwt_secret(db, panel_settings_service.get_panel_settings(db))
 
 
-@router.put("/settings/panel", response_model=PanelSettingsPayload)
+@router.put("/settings/panel", response_model=PanelSettingsResponse)
 def update_panel_settings(
     payload: PanelSettingsPayload,
     db: Session = Depends(get_db),
     admin: Admin = Depends(Admin.check_sudo_admin),
 ):
     del admin
-    return panel_settings_service.save_panel_settings(db, payload)
+    return panel_settings_service.with_primary_jwt_secret(db, panel_settings_service.save_panel_settings(db, payload))
 
 
 @router.get("/settings/panel/defaults", response_model=PanelSettingsPayload)

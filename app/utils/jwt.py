@@ -7,7 +7,7 @@ from math import ceil
 
 import jwt
 
-from config import JWT_ACCESS_TOKEN_EXPIRE_MINUTES, SUBSCRIPTION_LEGACY_SECRET_KEYS
+from config import JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
 
 @cache
@@ -19,9 +19,11 @@ def get_secret_key():
 
 
 def get_subscription_secret_keys() -> list[str]:
+    from app.services.panel_settings import get_cached_legacy_subscription_secret_keys
+
     primary_key = get_secret_key()
     keys = [primary_key]
-    for key in SUBSCRIPTION_LEGACY_SECRET_KEYS:
+    for key in get_cached_legacy_subscription_secret_keys():
         if key and key not in keys:
             keys.append(key)
     return keys
