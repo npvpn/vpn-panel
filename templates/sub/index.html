@@ -687,12 +687,16 @@ get alternativeApps() {
               </div>
             </div>
 
-            {% if web_url %}
+            {% if web_url or bot_url %}
               <div class="button-wrapper">
-                  <a href="{{ web_url }}"
-                      class="dark-btn">
-                      Войти в личный кабинет
-                  </a>
+                <a
+                  href="{{ web_url or bot_url }}"
+                  class="dark-btn"
+                  style="font-family: var(--third-family)"
+                  rel="noopener noreferrer"
+                >
+                  Войти в личный кабинет
+                </a>
               </div>
             {% endif %}
           </main>
