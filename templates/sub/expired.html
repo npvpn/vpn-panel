@@ -100,8 +100,9 @@
         <!-- HEADER -->
         <div class="page-header">
           <h2 class="page-title">Подписка истекла</h2>
-          {% if web_url %}
-            <p class="device-count">Войдите в личный кабинет для управления подпиской</p>
+
+          {% if web_url or bot_url %}
+            <p p class="device-count">Войдите в личный кабинет для управления подпиской</p>
           {% endif %}
         </div>
 
@@ -152,11 +153,13 @@
                 Продлить подписку
               </a>
             {% endif %}
-            {% if web_url %}
-              <a href="{{ web_url }}" class="{% if pay_url %}light-btn{% else %}dark-btn{% endif %}">
+
+            {% if web_url or bot_url %}
+              <a href="{{ web_url or bot_url }}" class="{% if pay_url %}light-btn{% else %}dark-btn{% endif %}">
                 Войти в личный кабинет
               </a>
             {% endif %}
+
           </div>
         {% endif %}
       </div>
