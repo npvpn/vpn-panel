@@ -4,6 +4,45 @@ import { z } from "zod";
 import { create } from "zustand";
 import { FilterUsageType, useDashboard } from "./DashboardContext";
 
+/** SI ТБ, как у хостеров в счетах (не TiB). */
+export const SI_TB_BYTES = 1_000_000_000_000;
+
+export function tbStringToBytes(raw: unknown): number | null {
+  if (raw == null || raw === "") {
+    return null;
+  }
+  const text = String(raw).trim().replace(",", ".");
+  if (!text) {
+    return null;
+  }
+  const value = Number(text);
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.round(value * SI_TB_BYTES);
+}
+
+export function bytesToTbString(bytes: number | null | undefined): string {
+  if (bytes == null || bytes <= 0) {
+    return "";
+  }
+  return String(bytes / SI_TB_BYTES);
+}
+
+const hostingTrafficLimitTb = z
+  .union([z.string(), z.number(), z.null()])
+  .optional()
+  .refine(
+    (value) => {
+      if (value == null || value === "") {
+        return true;
+      }
+      const parsed = Number(String(value).trim().replace(",", "."));
+      return Number.isFinite(parsed) && parsed > 0;
+    },
+    { message: "Must be a positive number in TB" }
+  );
+
 export const NodeSchema = z.object({
   name: z.string().min(1),
   address: z.string().min(1),
@@ -40,6 +79,8 @@ export const NodeSchema = z.object({
   cascade_balancer_strategy: z
     .enum(["random", "roundRobin", "leastPing", "leastLoad"])
     .optional(),
+  hosting_traffic_limit_bytes: z.number().nullable().optional(),
+  hosting_traffic_limit_tb: hostingTrafficLimitTb,
 });
 
 export type NodeType = z.infer<typeof NodeSchema>;
@@ -57,7 +98,17 @@ export const getNodeDefaultValues = (): NodeType => ({
   cascade_routes: [],
   is_bs: false,
   cascade_balancer_strategy: "random",
+  hosting_traffic_limit_bytes: null,
+  hosting_traffic_limit_tb: "",
 });
+
+function withHostingLimitBytes(body: NodeType) {
+  const { hosting_traffic_limit_tb, ...rest } = body;
+  return {
+    ...rest,
+    hosting_traffic_limit_bytes: tbStringToBytes(hosting_traffic_limit_tb),
+  };
+}
 
 export const FetchNodesQueryKey = "fetch-nodes-query-key";
 
@@ -86,7 +137,7 @@ export const useNodesQuery = () => {
 export const useNodes = create<NodeStore>((set, get) => ({
   nodes: [],
   addNode(body) {
-    return fetch("/node", { method: "POST", body });
+    return fetch("/node", { method: "POST", body: withHostingLimitBytes(body) });
   },
   fetchNodes() {
     return fetch("/nodes");
@@ -97,7 +148,7 @@ export const useNodes = create<NodeStore>((set, get) => ({
   updateNode(body) {
     return fetch(`/node/${body.id}`, {
       method: "PUT",
-      body,
+      body: withHostingLimitBytes(body),
     });
   },
   setDeletingNode(node) {

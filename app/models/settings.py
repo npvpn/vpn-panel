@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-from config import SUB_ROUTING_HAPP, SUB_ROUTING_V2RAYTUN
+from config import SUB_ROUTING_HAPP, SUB_ROUTING_V2RAYTUN, SUBSCRIPTION_LEGACY_SECRET_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,10 @@ PANEL_SETTING_KEYS: tuple[str, ...] = (
     "sub_v2ray_json_template",
     "sub_routing_json_default",
     "sub_routing_json_bs",
+    "subscription_legacy_secret_keys",
 )
+
+LEGACY_SECRET_KEYS_SETTING = "subscription_legacy_secret_keys"
 
 DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "sub_custom_headers": "",
@@ -31,6 +34,7 @@ DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "sub_v2ray_json_template": "",
     "sub_routing_json_default": "",
     "sub_routing_json_bs": "",
+    "subscription_legacy_secret_keys": list(SUBSCRIPTION_LEGACY_SECRET_KEYS),
 }
 
 PLATFORMS: tuple[str, ...] = ("ios", "macos", "android", "androidtv", "windows", "linux")
@@ -171,6 +175,27 @@ class ClientAppsWithManagedResponse(ClientAppsPayload):
     managed: dict[str, Any] | None = None
 
 
+def normalize_legacy_secret_keys(value: Any) -> list[str]:
+    """Trim, drop empties, dedupe; accept list or comma-separated string."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        source: list[Any] = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        source = list(value)
+    else:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in source:
+        key = str(item or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
 class PanelSettingsPayload(BaseModel):
     sub_custom_headers: str = ""
     bs_monthly_limit: int = 0
@@ -179,6 +204,7 @@ class PanelSettingsPayload(BaseModel):
     sub_v2ray_json_template: str = ""
     sub_routing_json_default: str = ""
     sub_routing_json_bs: str = ""
+    subscription_legacy_secret_keys: list[str] = Field(default_factory=list)
 
     @field_validator(
         "sub_v2ray_json_template",
@@ -193,10 +219,25 @@ class PanelSettingsPayload(BaseModel):
         parse_json_object(value)
         return value if value is not None else ""
 
+    @field_validator("subscription_legacy_secret_keys", mode="before")
+    @classmethod
+    def validate_legacy_secret_keys(cls, value: Any) -> list[str]:
+        return normalize_legacy_secret_keys(value)
+
+
+class PanelSettingsResponse(PanelSettingsPayload):
+    """GET/PUT ответ: primary JWT только для чтения, в global_settings не пишется."""
+
+    primary_jwt_secret: str = ""
+
 
 def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
-    """Настройки панели из БД, дополненные дефолтами. Битые поля не роняют чтение."""
+    """Настройки панели из БД, дополненные дефолтами. Битые поля не роняют чтение.
+
+    `subscription_legacy_secret_keys`: ключа нет в JSON — env; ключ есть (в т.ч. []) — БД.
+    """
     base = dict(DEFAULT_PANEL_SETTINGS)
+    base[LEGACY_SECRET_KEYS_SETTING] = list(DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING])
     if not raw:
         return base
     for key in PANEL_SETTING_KEYS:
@@ -207,6 +248,9 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
                 base[key] = int(raw[key] or 0)
             except (TypeError, ValueError):
                 continue
+            continue
+        if key == LEGACY_SECRET_KEYS_SETTING:
+            base[key] = normalize_legacy_secret_keys(raw[key])
             continue
         base[key] = raw[key]
     base["bs_monthly_limit"] = int(base.get("bs_monthly_limit") or 0)

@@ -6,4 +6,6 @@ export type PanelSettings = {
   sub_v2ray_json_template: string;
   sub_routing_json_default: string;
   sub_routing_json_bs: string;
+  subscription_legacy_secret_keys: string[];
+  primary_jwt_secret?: string;
 };

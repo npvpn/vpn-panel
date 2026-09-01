@@ -6,6 +6,7 @@ import {
   NodeType,
   useNodes,
   FetchNodesQueryKey,
+  bytesToTbString,
 } from "contexts/NodesContext";
 import { useMutation, useQueryClient } from "react-query";
 import { useToast, Tooltip, IconButton } from "@chakra-ui/react";
@@ -34,7 +35,10 @@ export const NodeAccordionForm: FC<Props> = ({
   const toast = useToast();
 
   const form = useForm<NodeType>({
-    defaultValues: node,
+    defaultValues: {
+      ...node,
+      hosting_traffic_limit_tb: bytesToTbString(node.hosting_traffic_limit_bytes),
+    },
     resolver: zodResolver(NodeSchema),
   });
 

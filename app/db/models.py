@@ -532,6 +532,8 @@ class Node(Base):
         server_default=NodeBalancerStrategy.random.value,
     )
     is_bs = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    # Лимит трафика у хостера на этот сервер (SI-байты). NULL — лимита нет.
+    hosting_traffic_limit_bytes = Column(BigInteger, nullable=True)
 
 
 class NodeUserUsage(Base):
