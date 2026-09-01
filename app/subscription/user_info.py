@@ -85,23 +85,28 @@ def resolve_device_limit_subscription_state(
 ) -> tuple[UserResponse, bool, bool, bool]:
     """Returns user, device_limited, device_limited_hard_for_gen, unsupported_blocks."""
     device_limited = False
-    hard_device_limited = False
+    device_limited_hard_for_gen = False
     unsupported_client = False
+    hard_mode = bool(bot_settings.get("sub_device_limit_hard_mode"))
     if not is_revoked and not is_expired:
         registered, unsupported_client = crud.register_user_device(
-            db, dbuser, x_hwid, x_device_os, x_ver_os, x_device_model, user_agent
+            db,
+            dbuser,
+            x_hwid,
+            x_device_os,
+            x_ver_os,
+            x_device_model,
+            user_agent,
+            hard_mode=hard_mode,
         )
-        hard_device_limited = not registered and not unsupported_client
-        device_limited = hard_device_limited or crud.is_device_limit_exceeded(db, dbuser)
+        dbdevice = None
+        if registered:
+            dbdevice = crud.get_user_device_by_hwid(db, dbuser, x_hwid or crud.UNKNOWN_DEVICE_HWID)
+        within_limit = crud.is_device_within_limit(db, dbuser, dbdevice)
+        over_limit = not unsupported_client and not within_limit
+        device_limited = over_limit
+        device_limited_hard_for_gen = over_limit and hard_mode
     unsupported_blocks = unsupported_client
-    hard_mode = bool(bot_settings.get("sub_device_limit_hard_mode"))
-    if (
-        is_revoked
-        or is_expired
-        or unsupported_blocks
-        or (hard_mode and device_limited)
-        or (not hard_mode and hard_device_limited)
-    ):
+    if is_revoked or is_expired or unsupported_blocks or device_limited_hard_for_gen:
         user = get_empty_subscription_user(user)
-    device_limited_hard_for_gen = (hard_mode and device_limited) or (not hard_mode and hard_device_limited)
     return user, device_limited, device_limited_hard_for_gen, unsupported_blocks

@@ -39,6 +39,7 @@ from app.models.user import (
     UsersUsagesResponse,
     UserUsagesResponse,
 )
+from app.subscription.bot_settings import resolve_bot_settings
 from app.utils import report, responses
 from app.utils.request_context import request_id_var
 from config import SYNC_INBOUNDS_DB_CHUNK_SIZE, SYNC_INBOUNDS_MAX_CONCURRENCY
@@ -259,7 +260,8 @@ def add_user_device(
     dbuser: UserResponse = Depends(get_validated_user),
     db: Session = Depends(get_db),
 ):
-    if dbuser.device_limit and crud.count_user_devices(db, dbuser) >= dbuser.device_limit:
+    hard_mode = bool(resolve_bot_settings(cast(DBUser, dbuser)).get("sub_device_limit_hard_mode"))
+    if hard_mode and dbuser.device_limit and crud.count_user_devices(db, dbuser) >= dbuser.device_limit:
         raise HTTPException(status_code=403, detail="Device limit reached")
     try:
         dbdevice = crud.create_user_device(db, dbuser, device)

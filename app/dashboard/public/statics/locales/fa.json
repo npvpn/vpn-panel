@@ -314,7 +314,7 @@
   "botSettings.subRevokedAnnounceText": "متن اعلان لغو",
   "botSettings.subExpiredAnnounceText": "متن اعلان انقضا",
   "botSettings.subDeviceLimitHardMode": "جایگزین سخت محدودیت دستگاه",
-  "botSettings.subDeviceLimitHardModeHint": "فعال: فقط سرورهای جایگزین. غیرفعال (پیش‌فرض): جایگزین‌ها بالای سرورهای اصلی.",
+  "botSettings.subDeviceLimitHardModeHint": "فعال: محدودیت واقعی — دستگاه‌های جدید بیش از حد اضافه نمی‌شوند و دستگاه‌های اضافی فقط جایگزین می‌بینند. غیرفعال (پیش‌فرض): هشدار — دستگاه‌ها بدون محدودیت اضافه می‌شوند و اضافی‌ها جایگزین بالای سرورهای اصلی می‌گیرند.",
   "botSettings.subDeviceLimitAnnounceText": "متن اعلان محدودیت دستگاه",
   "botSettings.subUnsupportedClientAnnounceText": "متن اعلان کلاینت پشتیبانی‌نشده",
   "botSettings.subRevokedServerText": "متن سرور لغوشده",

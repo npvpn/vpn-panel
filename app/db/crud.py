@@ -784,6 +784,9 @@ def get_user_devices(db: Session, dbuser: User) -> list[UserDevice]:
     return db.query(UserDevice).filter(UserDevice.user_id == dbuser.id).order_by(UserDevice.last_seen.desc()).all()
 
 
+UNKNOWN_DEVICE_HWID = "Неизвестное устройство"
+
+
 def get_user_active_devices(db: Session, dbuser: User) -> list[UserDevice]:
     return (
         db.query(UserDevice)
@@ -794,6 +797,40 @@ def get_user_active_devices(db: Session, dbuser: User) -> list[UserDevice]:
         .order_by(UserDevice.last_seen.desc())
         .all()
     )
+
+
+def get_user_active_devices_by_first_seen(db: Session, dbuser: User) -> list[UserDevice]:
+    return (
+        db.query(UserDevice)
+        .filter(
+            UserDevice.user_id == dbuser.id,
+            UserDevice.status == "active",
+        )
+        .order_by(UserDevice.first_seen.asc(), UserDevice.id.asc())
+        .all()
+    )
+
+
+def is_device_within_limit(db: Session, dbuser: User, dbdevice: UserDevice | None) -> bool:
+    """True if the device is among the first N active by first_seen (then id)."""
+    limit = dbuser.device_limit
+    if not limit:
+        return True
+    if dbdevice is None:
+        return False
+    for index, device in enumerate(get_user_active_devices_by_first_seen(db, dbuser)):
+        if device.id == dbdevice.id:
+            return index < int(limit)
+    return False
+
+
+def _hard_mode_blocks_new_device(db: Session, dbuser: User, *, hard_mode: bool) -> bool:
+    if not hard_mode:
+        return False
+    limit = dbuser.device_limit
+    if not limit:
+        return False
+    return count_user_devices(db, dbuser) >= int(limit)
 
 
 def get_user_device(db: Session, dbuser: User, device_id: int) -> UserDevice | None:
@@ -905,23 +942,22 @@ def register_user_device(
     ver_os: str | None,
     device_model: str | None,
     user_agent: str | None,
+    *,
+    hard_mode: bool = False,
 ) -> tuple[bool, bool]:
-    unknown_hwid = "Неизвестное устройство"
     if not hwid:
-        dbdevice = get_user_device_by_hwid(db, dbuser, unknown_hwid)
+        dbdevice = get_user_device_by_hwid(db, dbuser, UNKNOWN_DEVICE_HWID)
         if dbdevice:
             if _unknown_user_agents_match(cast(str | None, dbdevice.user_agent), user_agent):
                 _update_unknown_device_metadata(dbdevice, device_os, ver_os, device_model, user_agent)
                 db.commit()
                 return True, False
             return False, True
-        if dbuser.device_limit:
-            current = count_user_devices(db, dbuser)
-            if current >= dbuser.device_limit:
-                return False, False
+        if _hard_mode_blocks_new_device(db, dbuser, hard_mode=hard_mode):
+            return False, False
         dbdevice = UserDevice(
             user_id=dbuser.id,
-            hwid=unknown_hwid,
+            hwid=UNKNOWN_DEVICE_HWID,
             device_os=device_os,
             ver_os=ver_os,
             device_model=device_model,
@@ -948,10 +984,8 @@ def register_user_device(
         db.commit()
         return True, False
 
-    if dbuser.device_limit:
-        current = count_user_devices(db, dbuser)
-        if current >= dbuser.device_limit:
-            return False, False
+    if _hard_mode_blocks_new_device(db, dbuser, hard_mode=hard_mode):
+        return False, False
 
     dbdevice = UserDevice(
         user_id=dbuser.id,
