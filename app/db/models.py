@@ -545,6 +545,10 @@ class NodeUserUsage(Base):
     node_id = Column(Integer, ForeignKey("nodes.id"))
     node = relationship("Node", back_populates="user_usages")
     used_traffic = Column(BigInteger, default=0)
+    # Момент последнего тика, в котором по этой паре (user, node) реально шёл
+    # трафик. created_at округлён до часа и потому не отличает «сидит сейчас»
+    # от «пинганул 55 минут назад» — дашборд присутствия смотрит сюда (NPVPN-1966).
+    last_seen_at = Column(DateTime, nullable=True, default=None)
 
 
 class NodeUserBsUsage(Base):
