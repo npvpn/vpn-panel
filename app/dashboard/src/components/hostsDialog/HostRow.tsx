@@ -45,52 +45,48 @@ type HostRowProps = {
   proxyALPN: any[];
   proxyFingerprint: any[];
   isFirst?: boolean;
-  /** create — форма добавления: без duplicate/move/delete и без badge (inbound выбирается снаружи) */
   mode?: "list" | "create";
 };
 
 const HOST_KEY = "hosts";
 
-export const HostRow = memo(function HostRow(props: HostRowProps) {
+export const HostRow = memo(function HostRow({
+  index,
+  hostId,
+  inboundTag,
+  bots,
+  nodes,
+  inbound,
+  accordionErrors,
+  t,
+  duplicateHost,
+  moveHostPosition,
+  removeHost,
+  canMoveUp,
+  canMoveDown,
+  proxyHostSecurity,
+  proxyALPN,
+  proxyFingerprint,
+  isFirst,
+  mode = "list",
+}: HostRowProps) {
   const { register, control } =
     useFormContext<z.infer<typeof hostsFormSchema>>();
-  const {
-    index,
-    hostId,
-    inboundTag,
-    bots,
-    nodes,
-    inbound,
-    accordionErrors,
-    t,
-    duplicateHost,
-    moveHostPosition,
-    removeHost,
-    canMoveUp,
-    canMoveDown,
-    proxyHostSecurity,
-    proxyALPN,
-    proxyFingerprint,
-    isFirst,
-    mode = "list",
-  } = props;
+
   const isCreate = mode === "create";
 
   return (
     <>
       {!isFirst && !isCreate && <Divider my={1.5} />}
+
       <motion.div
-        key={hostId}
-        layout
         initial={false}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{
-          layout: { type: "spring", stiffness: 500, damping: 30 },
           opacity: { duration: 0.1 },
         }}
         id={hostId}
-        whileDrag={{ scale: 1.05, zIndex: 10 }}
         style={{ width: "100%" }}
       >
         <Box
@@ -103,7 +99,9 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
           transition="all 0.2s ease"
           _hover={{
             boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-            _dark: { boxShadow: "0 4px 16px rgba(0,0,0,0.4)" },
+            _dark: {
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            },
           }}
         >
           <VStack p={3} w="full" spacing={3}>
@@ -124,7 +122,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
               <RHFInput
                 label="Remark"
                 registerProps={register(`${HOST_KEY}.${index}.remark`)}
-                error={accordionErrors?.[index]?.remark}
+                error={accordionErrors?.remark}
                 rightElement={<HostInfoPopover t={t} />}
                 formControlProps={{
                   position: "relative",
@@ -140,11 +138,11 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
             <RHFInput
               label="Address"
               registerProps={register(`${HOST_KEY}.${index}.address`)}
-              error={accordionErrors?.[index]?.address}
+              error={accordionErrors?.address}
               placeholder="example.com"
               rightElement={<HostInfoPopover t={t} />}
               formControlProps={{
-                isInvalid: !!accordionErrors?.[index]?.address,
+                isInvalid: !!accordionErrors?.address,
               }}
             />
 
@@ -152,7 +150,12 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
               <AccordionItem border="0">
                 {({ isExpanded }) => (
                   <>
-                    <div style={{ display: "flex", alignItems: "center" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
                       <AccordionButton
                         display="flex"
                         px={0}
@@ -172,23 +175,22 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                           <AccordionIcon fontSize="sm" ml={1} />
                         </Text>
 
-                        <Container flex="1" px="0" display={"contents"}>
+                        <Container flex="1" px="0" display="contents">
                           <Controller
                             control={control}
                             name={`${HOST_KEY}.${index}.is_disabled`}
-                            render={({ field }) => {
-                              return (
-                                <Switch
-                                  mx="1.5"
-                                  colorScheme="primary"
-                                  isChecked={!field.value}
-                                  onChange={(e) =>
-                                    field.onChange(!e.target.checked)
-                                  }
-                                />
-                              );
-                            }}
+                            render={({ field }) => (
+                              <Switch
+                                mx="1.5"
+                                colorScheme="primary"
+                                isChecked={!field.value}
+                                onChange={(e) =>
+                                  field.onChange(!e.target.checked)
+                                }
+                              />
+                            )}
                           />
+
                           {!isCreate && (
                             <Tooltip label="Delete" placement="top">
                               <IconButton
@@ -196,7 +198,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                                 size="sm"
                                 colorScheme="red"
                                 variant="ghost"
-                                onClick={removeHost.bind(null, index)}
+                                onClick={() => removeHost(index)}
                               >
                                 <DeleteIcon />
                               </IconButton>
@@ -204,6 +206,7 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                           )}
                         </Container>
                       </AccordionButton>
+
                       {!isCreate && (
                         <>
                           <Tooltip label="Duplicate" placement="top">
@@ -217,10 +220,11 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                               <DuplicateIcon />
                             </IconButton>
                           </Tooltip>
+
                           {canMoveDown && (
                             <Tooltip label="Move Down" placement="top">
                               <IconButton
-                                aria-label="DownIcon"
+                                aria-label="Move Down"
                                 size="sm"
                                 colorScheme="white"
                                 variant="ghost"
@@ -230,10 +234,11 @@ export const HostRow = memo(function HostRow(props: HostRowProps) {
                               </IconButton>
                             </Tooltip>
                           )}
+
                           {canMoveUp && (
                             <Tooltip label="Move Up" placement="top">
                               <IconButton
-                                aria-label="UpIcon"
+                                aria-label="Move Up"
                                 size="sm"
                                 colorScheme="white"
                                 variant="ghost"

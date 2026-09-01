@@ -64,9 +64,7 @@ function groupHosts(
     inboundTags.map((tag) => [tag, [] as any[]])
   );
 
-  const ordered = [...hosts].sort((a, b) => a.order - b.order);
-
-  ordered.forEach((host, index) => {
+  hosts.forEach((host, index) => {
     const { inbound_tag, ...rest } = host;
 
     if (!payload[inbound_tag]) {
@@ -147,7 +145,7 @@ export const HostsDialog: FC = () => {
     },
   });
 
-  const { append } = useFieldArray({
+  const { fields, prepend, insert, move, remove } = useFieldArray({
     control: form.control,
     name: "hosts",
   });
@@ -217,17 +215,14 @@ export const HostsDialog: FC = () => {
 
   const handleHostAdded = useCallback(
     (host: z.infer<typeof hostItemSchema>) => {
-      const current = form.getValues("hosts") || [];
-
-      append({
+      prepend({
         ...EMPTY_HOST,
         ...host,
-        order: current.length,
       });
 
       setIsAddingHost(false);
     },
-    [append, form]
+    [prepend]
   );
 
   return (
@@ -393,12 +388,16 @@ export const HostsDialog: FC = () => {
 
                     {/* HOSTS LIST */}
                     <HostsList
+                      fields={fields}
                       inboundTags={inboundTags}
                       inboundFilter={inboundFilter}
                       search={search}
                       bots={bots}
                       nodes={nodes}
                       inboundMap={inboundMap}
+                      insert={insert}
+                      move={move}
+                      remove={remove}
                     />
                   </Box>
                 </>
