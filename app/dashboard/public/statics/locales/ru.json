@@ -353,7 +353,7 @@
   "botSettings.subRevokedAnnounceText": "Текст объявления при отзыве",
   "botSettings.subExpiredAnnounceText": "Текст объявления при истечении",
   "botSettings.subDeviceLimitHardMode": "Жёсткая заглушка при лимите устройств",
-  "botSettings.subDeviceLimitHardModeHint": "Включено: только заглушки. Выключено (по умолчанию): заглушки поверх основных серверов.",
+  "botSettings.subDeviceLimitHardModeHint": "Включено: реальный лимит — новые устройства сверх лимита не добавляются, у лишних только заглушка. Выключено (по умолчанию): предупреждение — устройства добавляются без ограничения, у сверх лимита заглушка поверх серверов.",
   "botSettings.subDeviceLimitAnnounceText": "Текст объявления при лимите устройств",
   "botSettings.subUnsupportedClientAnnounceText": "Текст объявления для неподдерживаемого клиента",
   "botSettings.subRevokedServerText": "Текст серверов при отзыве",

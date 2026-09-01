@@ -318,7 +318,7 @@
   "botSettings.subRevokedAnnounceText": "撤销公告文本",
   "botSettings.subExpiredAnnounceText": "过期公告文本",
   "botSettings.subDeviceLimitHardMode": "设备限制硬占位",
-  "botSettings.subDeviceLimitHardModeHint": "开启：仅显示占位服务器。关闭（默认）：占位服务器列在主要服务器之上。",
+  "botSettings.subDeviceLimitHardModeHint": "开启：真实限制——超出上限的新设备不会被添加，多余设备仅显示占位服务器。关闭（默认）：仅警告——设备可任意添加，超出上限的设备在主要服务器之上显示占位。",
   "botSettings.subDeviceLimitAnnounceText": "设备限制公告文本",
   "botSettings.subUnsupportedClientAnnounceText": "不支持客户端公告文本",
   "botSettings.subRevokedServerText": "撤销服务器文本",
