@@ -91,7 +91,11 @@
         <!-- HEADER -->
         <div class="page-header">
           <h2 class="page-title">Подписка была отозвана</h2>
-          <p class="device-count">Войдите в личный кабинет для управления подпиской</p>
+
+          {% if web_url or bot_url %}
+            <p class="device-count">Войдите в личный кабинет для управления подпиской</p>
+          {% endif %}
+          
         </div>
   
         <!-- INFO CARD -->
@@ -143,8 +147,8 @@
                   </p>
               </div>
           </div>
-          {% if web_url %}
-            <a href="{{ web_url }}" class="dark-btn">
+          {% if web_url or bot_url %}
+            <a href="{{ web_url or bot_url}}" class="dark-btn">
               Войти в личный кабинет
             </a>
           {% endif %}

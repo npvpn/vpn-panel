@@ -290,11 +290,11 @@
           </p>
 
           <!-- ACCOUNT BLOCK -->
-          {% if web_url %}
+          {% if web_url or bot_url %}
             <div class="account-block">
               <h3>Как подключить больше устройств</h3>
               <p>Войдите в личный кабинет и увеличьте лимит</p>
-              <a href="{{ web_url }}" class="limited-btn">
+              <a href="{{ web_url or bot_url }}" class="limited-btn">
                 Войти в личный кабинет
               </a>
             </div>
