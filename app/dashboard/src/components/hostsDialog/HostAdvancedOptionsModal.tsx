@@ -40,7 +40,7 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
           {remark ? ` — ${remark}` : ""}
         </ModalHeader>
         <ModalCloseButton />
-        <ModalBody pb={6}>
+        <ModalBody pb={6} sx={{ overscrollBehavior: "contain" }}>
           <HostAdvancedOptions {...advancedOptionsProps} />
         </ModalBody>
       </ModalContent>
