@@ -90,6 +90,7 @@ export const HostRow = memo(function HostRow({
         style={{ width: "100%" }}
       >
         <Box
+          data-row-index={isCreate ? undefined : index}
           bg="white"
           _dark={{ bg: "gray.700" }}
           borderRadius="12px"
