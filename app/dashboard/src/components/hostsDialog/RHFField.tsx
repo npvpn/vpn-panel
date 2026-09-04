@@ -24,6 +24,7 @@ export const RHFField = ({
     <FormLabel
       display="flex"
       justifyContent="space-between"
+      alignItems="center"
       {...formLabelProps}
     >
       <span>{label}</span>

@@ -1,5 +1,13 @@
 import { VStack, Text } from "@chakra-ui/react";
-import { FC, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  FC,
+  FocusEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   FieldArrayWithId,
   UseFieldArrayInsert,
@@ -27,6 +35,7 @@ type Props = {
   fields: HostField[];
   inboundTags: string[];
   inboundFilter: string;
+  botFilter: string;
   search: string;
   bots: Bot[];
   nodes: NodeType[];
@@ -40,6 +49,7 @@ export const HostsList: FC<Props> = ({
   fields,
   inboundTags,
   inboundFilter,
+  botFilter,
   search,
   bots,
   nodes,
@@ -60,12 +70,30 @@ export const HostsList: FC<Props> = ({
     name: "hosts",
   });
 
+  // Row currently being edited (has focus inside it) stays visible even if the
+  // edit itself would make it fail the search/inbound filter mid-keystroke.
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+
+  const handleFocusCapture = useCallback((e: FocusEvent<HTMLDivElement>) => {
+    const rowEl = (e.target as HTMLElement).closest<HTMLElement>(
+      "[data-row-index]"
+    );
+    const idx = rowEl ? Number(rowEl.dataset.rowIndex) : NaN;
+    setFocusedIndex(Number.isNaN(idx) ? null : idx);
+  }, []);
+
+  const handleBlurCapture = useCallback(() => {
+    setFocusedIndex(null);
+  }, []);
+
   const visibleIndexes = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return fields
       .map((field, index) => ({ field, index }))
       .filter(({ index }) => {
+        if (index === focusedIndex) return true;
+
         const host = watchedHosts?.[index];
 
         if (!host) return false;
@@ -74,14 +102,25 @@ export const HostsList: FC<Props> = ({
           return false;
         }
 
-        if (query && !(host.remark || "").toLowerCase().includes(query)) {
-          return false;
+        if (botFilter) {
+          const botUsernames: string[] = host.bot_usernames || [];
+          if (botUsernames.length > 0 && !botUsernames.includes(botFilter)) {
+            return false;
+          }
+        }
+
+        if (query) {
+          const remark = (host.remark || "").toLowerCase();
+          const address = (host.address || "").toLowerCase();
+          if (!remark.includes(query) && !address.includes(query)) {
+            return false;
+          }
         }
 
         return true;
       })
       .map(({ index }) => index);
-  }, [fields, watchedHosts, inboundFilter, search]);
+  }, [fields, watchedHosts, inboundFilter, botFilter, search, focusedIndex]);
 
   const duplicateHost = useCallback(
     (index: number) => {
@@ -131,7 +170,13 @@ export const HostsList: FC<Props> = ({
   }
 
   return (
-    <VStack w="full" align="stretch" spacing={3}>
+    <VStack
+      w="full"
+      align="stretch"
+      spacing={3}
+      onFocusCapture={handleFocusCapture}
+      onBlurCapture={handleBlurCapture}
+    >
       {visibleIndexes.length === 0 ? (
         <Text opacity={0.7} fontSize="sm" py={4} textAlign="center">
           {t("hostsDialog.notFound")}

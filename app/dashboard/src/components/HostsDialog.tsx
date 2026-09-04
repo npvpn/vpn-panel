@@ -13,8 +13,10 @@ import {
   ModalHeader,
   ModalOverlay,
   Select,
+  Stack,
   Text,
   useToast,
+  VStack,
 } from "@chakra-ui/react";
 import { PlusIcon as HeroIconPlusIcon } from "@heroicons/react/24/outline";
 import {
@@ -95,6 +97,7 @@ export const HostsDialog: FC = () => {
 
   const [search, setSearch] = useState("");
   const [inboundFilter, setInboundFilter] = useState("");
+  const [botFilter, setBotFilter] = useState("");
 
   const [isAddingHost, setIsAddingHost] = useState(false);
 
@@ -158,22 +161,27 @@ export const HostsDialog: FC = () => {
 
       setSearch("");
       setInboundFilter("");
+      setBotFilter("");
     }
   }, [hosts, isEditingHosts, form]);
 
   const onClose = useCallback(() => {
     setSearch("");
     setInboundFilter("");
+    setBotFilter("");
     setIsAddingHost(false);
 
     onEditingHosts(false);
   }, [onEditingHosts]);
 
-  const handleFormSubmit = useCallback(
-    (hostsData: z.infer<typeof hostsFormSchema>) => {
+  const submitHosts = useCallback(
+    (
+      hostsData: z.infer<typeof hostsFormSchema>,
+      { closeAfter }: { closeAfter: boolean }
+    ) => {
       const payload = groupHosts(hostsData.hosts, inboundTags);
 
-      setHosts(payload)
+      return setHosts(payload)
         .then(() => {
           toast({
             title: t("hostsDialog.savedSuccess"),
@@ -184,7 +192,10 @@ export const HostsDialog: FC = () => {
           });
 
           refetchUsers();
-          onClose();
+
+          if (closeAfter) {
+            onClose();
+          }
         })
         .catch((err) => {
           if (err?.response?.status === 409 || err?.response?.status === 400) {
@@ -211,6 +222,18 @@ export const HostsDialog: FC = () => {
         });
     },
     [setHosts, toast, t, refetchUsers, onClose, inboundTags]
+  );
+
+  const handleFormSubmit = useCallback(
+    (hostsData: z.infer<typeof hostsFormSchema>) =>
+      submitHosts(hostsData, { closeAfter: true }),
+    [submitHosts]
+  );
+
+  const handleFormSubmitAndContinue = useCallback(
+    (hostsData: z.infer<typeof hostsFormSchema>) =>
+      submitHosts(hostsData, { closeAfter: false }),
+    [submitHosts]
   );
 
   const handleHostAdded = useCallback(
@@ -281,44 +304,98 @@ export const HostsDialog: FC = () => {
               ) : (
                 <>
                   <Box flexShrink={0}>
-                    {/* SEARCH + FILTER */}
-                    <HStack mt={3} spacing={2}>
-                      <InputGroup flex="1" minW={0}>
-                        <InputLeftElement pointerEvents="none">
-                          <MagnifyingGlassIcon width="16px" color="gray" />
-                        </InputLeftElement>
+                    {/* SEARCH + FILTERS */}
+                    {(() => {
+                      const searchInput = (
+                        <InputGroup flex="1" minW={0}>
+                          <InputLeftElement pointerEvents="none">
+                            <MagnifyingGlassIcon width="16px" color="gray" />
+                          </InputLeftElement>
 
-                        <Input
-                          placeholder={
-                            t("hostsDialog.search") ?? "Search by remark..."
-                          }
+                          <Input
+                            placeholder={
+                              t("hostsDialog.search") ??
+                              "Search by remark or address..."
+                            }
+                            size="md"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                          />
+                        </InputGroup>
+                      );
+
+                      const inboundSelect = (
+                        <Select
                           size="md"
-                          value={search}
-                          onChange={(e) => setSearch(e.target.value)}
-                        />
-                      </InputGroup>
-
-                      <Select
-                        size="md"
-                        flex="1"
-                        minW={0}
-                        value={inboundFilter}
-                        onChange={(e) => setInboundFilter(e.target.value)}
-                        sx={{
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <option value="">{t("hostsDialog.allInbounds")}</option>
-
-                        {inboundTags.map((tag) => (
-                          <option key={tag} value={tag}>
-                            {tag}
+                          flex="1"
+                          minW={0}
+                          aria-label={
+                            t("hostsDialog.filterInbound") ?? undefined
+                          }
+                          value={inboundFilter}
+                          onChange={(e) => setInboundFilter(e.target.value)}
+                          sx={{
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <option value="">
+                            {t("hostsDialog.allInbounds")}
                           </option>
-                        ))}
-                      </Select>
-                    </HStack>
+
+                          {inboundTags.map((tag) => (
+                            <option key={tag} value={tag}>
+                              {tag}
+                            </option>
+                          ))}
+                        </Select>
+                      );
+
+                      if (bots.length < 2) {
+                        return (
+                          <HStack mt={3} spacing={2}>
+                            {searchInput}
+                            {inboundSelect}
+                          </HStack>
+                        );
+                      }
+
+                      const botSelect = (
+                        <Select
+                          size="md"
+                          flex="1"
+                          minW={0}
+                          aria-label={t("hostsDialog.filterBot") ?? undefined}
+                          value={botFilter}
+                          onChange={(e) => setBotFilter(e.target.value)}
+                          sx={{
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <option value="">{t("hostsDialog.allBots")}</option>
+
+                          {bots.map((bot) => (
+                            <option key={bot.username} value={bot.username}>
+                              @{bot.username}
+                              {bot.title ? ` (${bot.title})` : ""}
+                            </option>
+                          ))}
+                        </Select>
+                      );
+
+                      return (
+                        <VStack mt={3} spacing={2} align="stretch">
+                          <HStack spacing={2}>{searchInput}</HStack>
+                          <HStack spacing={2}>
+                            {inboundSelect}
+                            {botSelect}
+                          </HStack>
+                        </VStack>
+                      );
+                    })()}
 
                     {/* ADD HOST BUTTON */}
                     <Button
@@ -391,6 +468,7 @@ export const HostsDialog: FC = () => {
                       fields={fields}
                       inboundTags={inboundTags}
                       inboundFilter={inboundFilter}
+                      botFilter={botFilter}
                       search={search}
                       bots={bots}
                       nodes={nodes}
@@ -403,10 +481,13 @@ export const HostsDialog: FC = () => {
                 </>
               )}
 
-              <HStack
+              <Stack
+                direction={{ base: "column", md: "row" }}
                 justifyContent="flex-end"
+                align={{ base: "stretch", md: "center" }}
                 py={3}
                 px={0}
+                spacing={2}
                 flexShrink={0}
                 bg="white"
                 _dark={{
@@ -414,18 +495,31 @@ export const HostsDialog: FC = () => {
                 }}
               >
                 <Button
+                  variant="outline"
+                  type="button"
+                  colorScheme="primary"
+                  size="sm"
+                  px={5}
+                  whiteSpace="nowrap"
+                  _hover={{ bg: "primary.500", color: "white" }}
+                  disabled={isPostLoading}
+                  onClick={form.handleSubmit(handleFormSubmitAndContinue)}
+                >
+                  {t("hostsDialog.applyAndContinue")}
+                </Button>
+
+                <Button
                   variant="solid"
-                  mt="2"
                   type="submit"
                   colorScheme="primary"
                   size="sm"
                   px={5}
-                  isLoading={isPostLoading}
+                  whiteSpace="nowrap"
                   disabled={isPostLoading}
                 >
                   {t("hostsDialog.apply")}
                 </Button>
-              </HStack>
+              </Stack>
             </form>
           </FormProvider>
         </ModalBody>
