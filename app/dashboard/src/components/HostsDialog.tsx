@@ -352,7 +352,7 @@ export const HostsDialog: FC = () => {
                         </Select>
                       );
 
-                      if (bots.length === 0) {
+                      if (bots.length < 2) {
                         return (
                           <HStack mt={3} spacing={2}>
                             {searchInput}
