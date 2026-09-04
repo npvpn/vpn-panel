@@ -55,6 +55,7 @@
   "hostsDialog.useSniAsHost": "استفاده از sni به عنوان هاست",
   "hostsDialog.alpn": "ALPN",
   "hostsDialog.apply": "اعمال",
+  "hostsDialog.applyAndContinue": "اعمال و ادامه",
   "hostsDialog.currentServer": "IP کنونی سرور",
   "hostsDialog.currentServerv6": "IPv6 کنونی سرور",
   "hostsDialog.dataLimit": "حد مصرف کاربر",

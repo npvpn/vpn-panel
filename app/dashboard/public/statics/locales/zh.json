@@ -50,6 +50,7 @@
   "hostsDialog.useSniAsHost": "Use sni as host",
   "hostsDialog.alpn": "ALPN",
   "hostsDialog.apply": "保存",
+  "hostsDialog.applyAndContinue": "保存并继续",
   "hostsDialog.currentServer": "当前服务器的 IP 地址",
   "hostsDialog.currentServerv6": "当前服务器的 IPv6 地址",
   "hostsDialog.dataLimit": "用户的流量限制",

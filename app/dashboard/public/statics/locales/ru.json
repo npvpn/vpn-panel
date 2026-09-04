@@ -52,6 +52,7 @@
   "hostsDialog.useSniAsHost": "Use sni as host",
   "hostsDialog.alpn": "ALPN",
   "hostsDialog.apply": "Применить",
+  "hostsDialog.applyAndContinue": "Применить и продолжить",
   "hostsDialog.currentServer": "IP текущего сервера",
   "hostsDialog.currentServerv6": "IPv6 текущего сервера",
   "hostsDialog.dataLimit": "Лимит трафика пользователя",

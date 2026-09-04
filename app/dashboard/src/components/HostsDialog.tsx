@@ -13,6 +13,7 @@ import {
   ModalHeader,
   ModalOverlay,
   Select,
+  Stack,
   Text,
   useToast,
   VStack,
@@ -173,11 +174,14 @@ export const HostsDialog: FC = () => {
     onEditingHosts(false);
   }, [onEditingHosts]);
 
-  const handleFormSubmit = useCallback(
-    (hostsData: z.infer<typeof hostsFormSchema>) => {
+  const submitHosts = useCallback(
+    (
+      hostsData: z.infer<typeof hostsFormSchema>,
+      { closeAfter }: { closeAfter: boolean }
+    ) => {
       const payload = groupHosts(hostsData.hosts, inboundTags);
 
-      setHosts(payload)
+      return setHosts(payload)
         .then(() => {
           toast({
             title: t("hostsDialog.savedSuccess"),
@@ -188,7 +192,10 @@ export const HostsDialog: FC = () => {
           });
 
           refetchUsers();
-          onClose();
+
+          if (closeAfter) {
+            onClose();
+          }
         })
         .catch((err) => {
           if (err?.response?.status === 409 || err?.response?.status === 400) {
@@ -215,6 +222,24 @@ export const HostsDialog: FC = () => {
         });
     },
     [setHosts, toast, t, refetchUsers, onClose, inboundTags]
+  );
+
+  const [isContinueSubmitting, setIsContinueSubmitting] = useState(false);
+
+  const handleFormSubmit = useCallback(
+    (hostsData: z.infer<typeof hostsFormSchema>) =>
+      submitHosts(hostsData, { closeAfter: true }),
+    [submitHosts]
+  );
+
+  const handleFormSubmitAndContinue = useCallback(
+    (hostsData: z.infer<typeof hostsFormSchema>) => {
+      setIsContinueSubmitting(true);
+      return submitHosts(hostsData, { closeAfter: false }).finally(() =>
+        setIsContinueSubmitting(false)
+      );
+    },
+    [submitHosts]
   );
 
   const handleHostAdded = useCallback(
@@ -462,10 +487,13 @@ export const HostsDialog: FC = () => {
                 </>
               )}
 
-              <HStack
+              <Stack
+                direction={{ base: "column", md: "row" }}
                 justifyContent="flex-end"
+                align={{ base: "stretch", md: "center" }}
                 py={3}
                 px={0}
+                spacing={2}
                 flexShrink={0}
                 bg="white"
                 _dark={{
@@ -473,18 +501,35 @@ export const HostsDialog: FC = () => {
                 }}
               >
                 <Button
+                  variant="outline"
+                  type="button"
+                  colorScheme="primary"
+                  size="sm"
+                  px={5}
+                  whiteSpace="nowrap"
+                  _hover={{ bg: "primary.500", color: "white" }}
+                  isLoading={isContinueSubmitting}
+                  loadingText={t("hostsDialog.applyAndContinue")}
+                  disabled={isPostLoading}
+                  onClick={form.handleSubmit(handleFormSubmitAndContinue)}
+                >
+                  {t("hostsDialog.applyAndContinue")}
+                </Button>
+
+                <Button
                   variant="solid"
-                  mt="2"
                   type="submit"
                   colorScheme="primary"
                   size="sm"
                   px={5}
-                  isLoading={isPostLoading}
+                  whiteSpace="nowrap"
+                  isLoading={isPostLoading && !isContinueSubmitting}
+                  loadingText={t("hostsDialog.apply")}
                   disabled={isPostLoading}
                 >
                   {t("hostsDialog.apply")}
                 </Button>
-              </HStack>
+              </Stack>
             </form>
           </FormProvider>
         </ModalBody>
