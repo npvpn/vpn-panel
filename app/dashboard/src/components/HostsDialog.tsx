@@ -224,8 +224,6 @@ export const HostsDialog: FC = () => {
     [setHosts, toast, t, refetchUsers, onClose, inboundTags]
   );
 
-  const [isContinueSubmitting, setIsContinueSubmitting] = useState(false);
-
   const handleFormSubmit = useCallback(
     (hostsData: z.infer<typeof hostsFormSchema>) =>
       submitHosts(hostsData, { closeAfter: true }),
@@ -233,12 +231,8 @@ export const HostsDialog: FC = () => {
   );
 
   const handleFormSubmitAndContinue = useCallback(
-    (hostsData: z.infer<typeof hostsFormSchema>) => {
-      setIsContinueSubmitting(true);
-      return submitHosts(hostsData, { closeAfter: false }).finally(() =>
-        setIsContinueSubmitting(false)
-      );
-    },
+    (hostsData: z.infer<typeof hostsFormSchema>) =>
+      submitHosts(hostsData, { closeAfter: false }),
     [submitHosts]
   );
 
@@ -508,8 +502,6 @@ export const HostsDialog: FC = () => {
                   px={5}
                   whiteSpace="nowrap"
                   _hover={{ bg: "primary.500", color: "white" }}
-                  isLoading={isContinueSubmitting}
-                  loadingText={t("hostsDialog.applyAndContinue")}
                   disabled={isPostLoading}
                   onClick={form.handleSubmit(handleFormSubmitAndContinue)}
                 >
@@ -523,8 +515,6 @@ export const HostsDialog: FC = () => {
                   size="sm"
                   px={5}
                   whiteSpace="nowrap"
-                  isLoading={isPostLoading && !isContinueSubmitting}
-                  loadingText={t("hostsDialog.apply")}
                   disabled={isPostLoading}
                 >
                   {t("hostsDialog.apply")}

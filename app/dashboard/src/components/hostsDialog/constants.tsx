@@ -7,6 +7,7 @@ import {
 import {
   ArrowDownIcon,
   ArrowUpIcon,
+  Cog6ToothIcon,
   DocumentDuplicateIcon,
   LinkIcon,
   InformationCircleIcon,
@@ -72,6 +73,13 @@ export const Error = chakra(FormErrorMessage, {
 });
 
 export const ModalIcon = chakra(LinkIcon, {
+  baseStyle: {
+    w: 5,
+    h: 5,
+  },
+});
+
+export const GearIcon = chakra(Cog6ToothIcon, {
   baseStyle: {
     w: 5,
     h: 5,
