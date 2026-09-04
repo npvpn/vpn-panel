@@ -15,6 +15,7 @@ import {
   Select,
   Text,
   useToast,
+  VStack,
 } from "@chakra-ui/react";
 import { PlusIcon as HeroIconPlusIcon } from "@heroicons/react/24/outline";
 import {
@@ -95,6 +96,7 @@ export const HostsDialog: FC = () => {
 
   const [search, setSearch] = useState("");
   const [inboundFilter, setInboundFilter] = useState("");
+  const [botFilter, setBotFilter] = useState("");
 
   const [isAddingHost, setIsAddingHost] = useState(false);
 
@@ -158,12 +160,14 @@ export const HostsDialog: FC = () => {
 
       setSearch("");
       setInboundFilter("");
+      setBotFilter("");
     }
   }, [hosts, isEditingHosts, form]);
 
   const onClose = useCallback(() => {
     setSearch("");
     setInboundFilter("");
+    setBotFilter("");
     setIsAddingHost(false);
 
     onEditingHosts(false);
@@ -281,44 +285,98 @@ export const HostsDialog: FC = () => {
               ) : (
                 <>
                   <Box flexShrink={0}>
-                    {/* SEARCH + FILTER */}
-                    <HStack mt={3} spacing={2}>
-                      <InputGroup flex="1" minW={0}>
-                        <InputLeftElement pointerEvents="none">
-                          <MagnifyingGlassIcon width="16px" color="gray" />
-                        </InputLeftElement>
+                    {/* SEARCH + FILTERS */}
+                    {(() => {
+                      const searchInput = (
+                        <InputGroup flex="1" minW={0}>
+                          <InputLeftElement pointerEvents="none">
+                            <MagnifyingGlassIcon width="16px" color="gray" />
+                          </InputLeftElement>
 
-                        <Input
-                          placeholder={
-                            t("hostsDialog.search") ?? "Search by remark..."
-                          }
+                          <Input
+                            placeholder={
+                              t("hostsDialog.search") ??
+                              "Search by remark or address..."
+                            }
+                            size="md"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                          />
+                        </InputGroup>
+                      );
+
+                      const inboundSelect = (
+                        <Select
                           size="md"
-                          value={search}
-                          onChange={(e) => setSearch(e.target.value)}
-                        />
-                      </InputGroup>
-
-                      <Select
-                        size="md"
-                        flex="1"
-                        minW={0}
-                        value={inboundFilter}
-                        onChange={(e) => setInboundFilter(e.target.value)}
-                        sx={{
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <option value="">{t("hostsDialog.allInbounds")}</option>
-
-                        {inboundTags.map((tag) => (
-                          <option key={tag} value={tag}>
-                            {tag}
+                          flex="1"
+                          minW={0}
+                          aria-label={
+                            t("hostsDialog.filterInbound") ?? undefined
+                          }
+                          value={inboundFilter}
+                          onChange={(e) => setInboundFilter(e.target.value)}
+                          sx={{
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <option value="">
+                            {t("hostsDialog.allInbounds")}
                           </option>
-                        ))}
-                      </Select>
-                    </HStack>
+
+                          {inboundTags.map((tag) => (
+                            <option key={tag} value={tag}>
+                              {tag}
+                            </option>
+                          ))}
+                        </Select>
+                      );
+
+                      if (bots.length === 0) {
+                        return (
+                          <HStack mt={3} spacing={2}>
+                            {searchInput}
+                            {inboundSelect}
+                          </HStack>
+                        );
+                      }
+
+                      const botSelect = (
+                        <Select
+                          size="md"
+                          flex="1"
+                          minW={0}
+                          aria-label={t("hostsDialog.filterBot") ?? undefined}
+                          value={botFilter}
+                          onChange={(e) => setBotFilter(e.target.value)}
+                          sx={{
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <option value="">{t("hostsDialog.allBots")}</option>
+
+                          {bots.map((bot) => (
+                            <option key={bot.username} value={bot.username}>
+                              @{bot.username}
+                              {bot.title ? ` (${bot.title})` : ""}
+                            </option>
+                          ))}
+                        </Select>
+                      );
+
+                      return (
+                        <VStack mt={3} spacing={2} align="stretch">
+                          <HStack spacing={2}>{searchInput}</HStack>
+                          <HStack spacing={2}>
+                            {inboundSelect}
+                            {botSelect}
+                          </HStack>
+                        </VStack>
+                      );
+                    })()}
 
                     {/* ADD HOST BUTTON */}
                     <Button
@@ -391,6 +449,7 @@ export const HostsDialog: FC = () => {
                       fields={fields}
                       inboundTags={inboundTags}
                       inboundFilter={inboundFilter}
+                      botFilter={botFilter}
                       search={search}
                       bots={bots}
                       nodes={nodes}

@@ -35,6 +35,7 @@ type Props = {
   fields: HostField[];
   inboundTags: string[];
   inboundFilter: string;
+  botFilter: string;
   search: string;
   bots: Bot[];
   nodes: NodeType[];
@@ -48,6 +49,7 @@ export const HostsList: FC<Props> = ({
   fields,
   inboundTags,
   inboundFilter,
+  botFilter,
   search,
   bots,
   nodes,
@@ -100,14 +102,25 @@ export const HostsList: FC<Props> = ({
           return false;
         }
 
-        if (query && !(host.remark || "").toLowerCase().includes(query)) {
-          return false;
+        if (botFilter) {
+          const botUsernames: string[] = host.bot_usernames || [];
+          if (botUsernames.length > 0 && !botUsernames.includes(botFilter)) {
+            return false;
+          }
+        }
+
+        if (query) {
+          const remark = (host.remark || "").toLowerCase();
+          const address = (host.address || "").toLowerCase();
+          if (!remark.includes(query) && !address.includes(query)) {
+            return false;
+          }
         }
 
         return true;
       })
       .map(({ index }) => index);
-  }, [fields, watchedHosts, inboundFilter, search, focusedIndex]);
+  }, [fields, watchedHosts, inboundFilter, botFilter, search, focusedIndex]);
 
   const duplicateHost = useCallback(
     (index: number) => {
