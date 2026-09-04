@@ -5,6 +5,7 @@ import {
   ModalContent,
   ModalHeader,
   ModalOverlay,
+  Text,
 } from "@chakra-ui/react";
 import { FC } from "react";
 import {
@@ -37,7 +38,19 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
       <ModalContent maxH="90vh">
         <ModalHeader pr={12}>
           {t("hostsDialog.advancedOptions")}
-          {remark ? ` — ${remark}` : ""}
+          {remark && (
+            <Text
+              as="span"
+              display="block"
+              fontSize="sm"
+              fontWeight="normal"
+              opacity={0.6}
+              mt={1}
+              isTruncated
+            >
+              {remark}
+            </Text>
+          )}
         </ModalHeader>
         <ModalCloseButton />
         <ModalBody pb={6} sx={{ overscrollBehavior: "contain" }}>
