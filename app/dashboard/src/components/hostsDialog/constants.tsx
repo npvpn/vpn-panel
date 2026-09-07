@@ -11,6 +11,7 @@ import {
   DocumentDuplicateIcon,
   LinkIcon,
   InformationCircleIcon,
+  PencilSquareIcon,
 } from "@heroicons/react/24/outline";
 
 import { Input as CustomInput } from "../Input";
@@ -83,5 +84,12 @@ export const GearIcon = chakra(Cog6ToothIcon, {
   baseStyle: {
     w: 5,
     h: 5,
+  },
+});
+
+export const PencilIcon = chakra(PencilSquareIcon, {
+  baseStyle: {
+    w: 4,
+    h: 4,
   },
 });

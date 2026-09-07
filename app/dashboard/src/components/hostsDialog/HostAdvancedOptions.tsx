@@ -17,14 +17,15 @@ import {
 } from "@chakra-ui/react";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { NodeType } from "contexts/NodesContext";
-import { ChangeEvent, memo, useEffect } from "react";
+import { ChangeEvent, memo, useEffect, useState } from "react";
 import { Control, Controller, UseFormRegister } from "react-hook-form";
 import { Bot } from "types/Bot";
-import { InfoIcon, Error } from "./constants";
+import { InfoIcon, PencilIcon, Error } from "./constants";
 import { Trans } from "react-i18next";
 import { RHFInput } from "./RHFInput";
 import { RHFCheckbox } from "./RHFCheckbox";
 import { RHFSelect } from "./RHFSelect";
+import { XhttpExtraModal } from "./XhttpExtraModal";
 
 export type HostAdvancedOptionsProps = {
   hostKey: string;
@@ -57,6 +58,7 @@ export const HostAdvancedOptions = memo(
     proxyFingerprint,
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
+    const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
 
     return (
       <SimpleGrid
@@ -397,14 +399,61 @@ export const HostAdvancedOptions = memo(
         />
 
         {["splithttp", "xhttp"].includes(inbound?.network) && (
-          <RHFInput
-            label={t("hostsDialog.xhttpExtra")}
-            registerProps={register(`${hostKey}.${index}.xhttp_extra`)}
-            error={accordionErrors?.xhttp_extra}
-            placeholder='{"xPaddingMethod": "tokenish"}'
-            inputProps={{ size: "sm", borderRadius: "4px" }}
-            formControlProps={{ gridColumn: { md: "1 / -1" } }}
-          />
+          <FormControl
+            isInvalid={!!accordionErrors?.xhttp_extra}
+            gridColumn={{ md: "1 / -1" }}
+          >
+            <FormLabel>{t("hostsDialog.xhttpExtra")}</FormLabel>
+            <Controller
+              control={control}
+              name={`${hostKey}.${index}.xhttp_extra`}
+              render={({ field }) => {
+                const preview = (() => {
+                  if (!field.value) return null;
+                  try {
+                    return JSON.stringify(JSON.parse(field.value));
+                  } catch {
+                    return field.value;
+                  }
+                })();
+
+                return (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    w="full"
+                    justifyContent="space-between"
+                    onClick={() => setIsXhttpExtraOpen(true)}
+                  >
+                    <Text
+                      as="span"
+                      noOfLines={1}
+                      fontFamily={preview ? "mono" : "body"}
+                      fontSize={preview ? "xs" : "sm"}
+                    >
+                      {preview || t("hostsDialog.xhttpExtra.edit")}
+                    </Text>
+                    <PencilIcon />
+                  </Button>
+
+                  <XhttpExtraModal
+                    isOpen={isXhttpExtraOpen}
+                    onClose={() => setIsXhttpExtraOpen(false)}
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={accordionErrors?.xhttp_extra?.message}
+                    t={t}
+                  />
+                </>
+                );
+              }}
+            />
+            {accordionErrors?.xhttp_extra && (
+              <Error>{accordionErrors.xhttp_extra.message}</Error>
+            )}
+          </FormControl>
         )}
 
         <RHFCheckbox
