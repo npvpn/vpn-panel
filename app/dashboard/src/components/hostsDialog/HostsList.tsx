@@ -173,7 +173,7 @@ export const HostsList: FC<Props> = ({
     <VStack
       w="full"
       align="stretch"
-      spacing={3}
+      spacing={2}
       onFocusCapture={handleFocusCapture}
       onBlurCapture={handleBlurCapture}
     >

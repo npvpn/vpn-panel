@@ -75,7 +75,7 @@
   "hostsDialog.host.wildcard": "Используйте <badge>*</badge>, чтобы сгенерировать случайную строку (работает для wildcard доменов)",
   "hostsDialog.jalaliExpireDate": "Дата истечения срока по солнечному календарю",
   "hostsDialog.loading": "загрузка...",
-  "hostsDialog.search": "Поиск по названию или адресу хоста...",
+  "hostsDialog.search": "Поиск по названию или адресу хоста",
   "hostsDialog.allInbounds": "Все инбаунды",
   "hostsDialog.allBots": "Все боты",
   "hostsDialog.notFound": "Хосты не найдены",

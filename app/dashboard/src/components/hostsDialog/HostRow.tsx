@@ -93,16 +93,46 @@ export const HostRow = memo(function HostRow({
 
   const remark = useWatch({ control, name: `${HOST_KEY}.${index}.remark` });
 
+  const botUsernames = useWatch({
+    control,
+    name: `${HOST_KEY}.${index}.bot_usernames`,
+  }) as string[] | undefined;
+
+  const botNames = (botUsernames || []).map((username) => {
+    const bot = bots.find((b) => b.username === username);
+    return bot?.title ? `${bot.title} (@${username})` : `@${username}`;
+  });
+
+  const isAvailableToAllBots = botNames.length === 0;
+
+  const botBadgeLabel = isAvailableToAllBots
+    ? bots.length > 1
+      ? t("hostsDialog.availableBots.all")
+      : null
+    : botNames.length === 1
+    ? botNames[0]
+    : `${botNames[0]} +${botNames.length - 1}`;
+
+  const allBotNames = bots.map((bot) =>
+    bot.title ? `${bot.title} (@${bot.username})` : `@${bot.username}`
+  );
+
+  const botBadgeTooltip = isAvailableToAllBots
+    ? allBotNames.join(", ") || null
+    : botNames.length > 1
+    ? botNames.join(", ")
+    : null;
+
   const hasAdvancedErrors = ADVANCED_FIELD_KEYS.some(
     (key) => !!accordionErrors?.[key]
   );
 
   const advancedOptionsButton = (
-    <Tooltip label={t("hostsDialog.advancedOptions")} placement="top">
+    <Tooltip label={t("hostsDialog.advancedOptions")} placement="left">
       <Box position="relative" display="inline-block">
         <IconButton
           aria-label={t("hostsDialog.advancedOptions")}
-          size="sm"
+          size="xs"
           variant="ghost"
           onClick={() => setIsAdvancedOpen(true)}
         >
@@ -130,7 +160,7 @@ export const HostRow = memo(function HostRow({
 
   return (
     <>
-      {!isFirst && !isCreate && <Divider my={1.5} />}
+      {!isFirst && !isCreate && <Divider my={0} />}
 
       <motion.div
         initial={false}
@@ -158,23 +188,57 @@ export const HostRow = memo(function HostRow({
             },
           }}
         >
-          <VStack p={3} w="full" spacing={3}>
-            {!isCreate && (
-              <HStack w="100%" justify="space-between" alignItems="center">
-                <Badge
-                  colorScheme="gray"
-                  fontSize="0.7rem"
-                  maxW="100%"
-                  isTruncated
-                >
-                  {inboundTag}
-                </Badge>
+          <HStack w="full" spacing={0} align="stretch">
+            <VStack flex="1" minW={0} p={3} spacing={2} align="stretch">
+              <HStack
+                justify={isCreate ? "flex-end" : "space-between"}
+                align="center"
+              >
+                {!isCreate && (
+                  <HStack spacing={2} wrap="wrap">
+                    <Badge
+                      colorScheme="gray"
+                      fontSize="0.7rem"
+                      maxW="100%"
+                      isTruncated
+                    >
+                      {inboundTag}
+                    </Badge>
 
-                {advancedOptionsButton}
+                    {botBadgeLabel && (
+                      <Tooltip
+                        label={botBadgeTooltip}
+                        placement="top"
+                        isDisabled={!botBadgeTooltip}
+                      >
+                        <Badge
+                          colorScheme="blue"
+                          variant={isAvailableToAllBots ? "outline" : "solid"}
+                          textTransform="none"
+                          fontSize="0.7rem"
+                          maxW="100%"
+                          isTruncated
+                        >
+                          {botBadgeLabel}
+                        </Badge>
+                      </Tooltip>
+                    )}
+                  </HStack>
+                )}
+
+                <Controller
+                  control={control}
+                  name={`${HOST_KEY}.${index}.is_disabled`}
+                  render={({ field }) => (
+                    <Switch
+                      colorScheme="primary"
+                      isChecked={!field.value}
+                      onChange={(e) => field.onChange(!e.target.checked)}
+                    />
+                  )}
+                />
               </HStack>
-            )}
 
-            <HStack w="100%" alignItems="flex-start">
               <RHFInput
                 label="Remark"
                 registerProps={register(`${HOST_KEY}.${index}.remark`)}
@@ -184,60 +248,50 @@ export const HostRow = memo(function HostRow({
                   position: "relative",
                   zIndex: 10,
                 }}
+                formLabelProps={{ mb: 1 }}
                 inputProps={{
                   size: "sm",
                   borderRadius: "4px",
                 }}
               />
-            </HStack>
 
-            <RHFInput
-              label="Address"
-              registerProps={register(`${HOST_KEY}.${index}.address`)}
-              error={accordionErrors?.address}
-              placeholder="example.com"
-              rightElement={<HostInfoPopover t={t} />}
-              formControlProps={{
-                isInvalid: !!accordionErrors?.address,
-              }}
-            />
+              <RHFInput
+                label="Address"
+                registerProps={register(`${HOST_KEY}.${index}.address`)}
+                error={accordionErrors?.address}
+                placeholder="example.com"
+                rightElement={<HostInfoPopover t={t} />}
+                formControlProps={{
+                  isInvalid: !!accordionErrors?.address,
+                }}
+                formLabelProps={{ mb: 1 }}
+                inputProps={{
+                  size: "sm",
+                  borderRadius: "4px",
+                }}
+              />
+            </VStack>
 
-            <HStack w="100%" justify="space-between" alignItems="center">
-              <HStack spacing={1}>
-                <Controller
-                  control={control}
-                  name={`${HOST_KEY}.${index}.is_disabled`}
-                  render={({ field }) => (
-                    <Switch
-                      mx="1.5"
-                      colorScheme="primary"
-                      isChecked={!field.value}
-                      onChange={(e) => field.onChange(!e.target.checked)}
-                    />
-                  )}
-                />
-
-                {!isCreate && (
-                  <Tooltip label="Delete" placement="top">
-                    <IconButton
-                      aria-label="Delete"
-                      size="sm"
-                      colorScheme="red"
-                      variant="ghost"
-                      onClick={() => removeHost(index)}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </Tooltip>
-                )}
-              </HStack>
+            <VStack
+              spacing={2}
+              py={3}
+              px={3}
+              w="52px"
+              flexShrink={0}
+              justify="flex-start"
+              align="center"
+              borderLeft="1px solid"
+              borderColor="gray.100"
+              _dark={{ borderColor: "gray.600" }}
+            >
+              {advancedOptionsButton}
 
               {!isCreate && (
-                <HStack spacing={1}>
-                  <Tooltip label="Duplicate" placement="top">
+                <>
+                  <Tooltip label="Duplicate" placement="left">
                     <IconButton
                       aria-label="Duplicate"
-                      size="sm"
+                      size="xs"
                       colorScheme="white"
                       variant="ghost"
                       onClick={() => duplicateHost(index)}
@@ -247,10 +301,10 @@ export const HostRow = memo(function HostRow({
                   </Tooltip>
 
                   {canMoveDown && (
-                    <Tooltip label="Move Down" placement="top">
+                    <Tooltip label="Move Down" placement="left">
                       <IconButton
                         aria-label="Move Down"
-                        size="sm"
+                        size="xs"
                         colorScheme="white"
                         variant="ghost"
                         onClick={() => moveHostPosition(index, "down")}
@@ -261,10 +315,10 @@ export const HostRow = memo(function HostRow({
                   )}
 
                   {canMoveUp && (
-                    <Tooltip label="Move Up" placement="top">
+                    <Tooltip label="Move Up" placement="left">
                       <IconButton
                         aria-label="Move Up"
-                        size="sm"
+                        size="xs"
                         colorScheme="white"
                         variant="ghost"
                         onClick={() => moveHostPosition(index, "up")}
@@ -273,12 +327,26 @@ export const HostRow = memo(function HostRow({
                       </IconButton>
                     </Tooltip>
                   )}
-                </HStack>
+                </>
               )}
 
-              {isCreate && advancedOptionsButton}
-            </HStack>
-          </VStack>
+              {!isCreate && <Box flex="1" />}
+
+              {!isCreate && (
+                <Tooltip label="Delete" placement="left">
+                  <IconButton
+                    aria-label="Delete"
+                    size="xs"
+                    colorScheme="red"
+                    variant="ghost"
+                    onClick={() => removeHost(index)}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </VStack>
+          </HStack>
         </Box>
       </motion.div>
 

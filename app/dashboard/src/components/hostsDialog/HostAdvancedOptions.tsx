@@ -8,6 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   Portal,
+  SimpleGrid,
   VStack,
   Badge,
   Button,
@@ -58,7 +59,14 @@ export const HostAdvancedOptions = memo(
     const portPlaceholder = inbound?.port ?? "8080";
 
     return (
-      <VStack key={index} w="full" borderRadius="4px">
+      <SimpleGrid
+        key={index}
+        columns={{ base: 1, md: 2 }}
+        spacingX={3}
+        spacingY={3}
+        w="full"
+        borderRadius="4px"
+      >
         <RHFInput
           label={t("hostsDialog.port")}
           registerProps={register(`${hostKey}.${index}.port`)}
@@ -183,6 +191,12 @@ export const HostAdvancedOptions = memo(
             size: "sm",
             borderRadius: "4px",
           }}
+          formLabelProps={{
+            pb: 1,
+            m: 0,
+            alignItems: "center",
+            gap: 1,
+          }}
         />
 
         <RHFInput
@@ -209,6 +223,12 @@ export const HostAdvancedOptions = memo(
           inputProps={{
             size: "sm",
             borderRadius: "4px",
+          }}
+          formLabelProps={{
+            pb: 1,
+            m: 0,
+            alignItems: "center",
+            gap: 1,
           }}
         />
 
@@ -271,6 +291,7 @@ export const HostAdvancedOptions = memo(
           registerProps={register(`${hostKey}.${index}.fingerprint`)}
           formControlProps={{
             height: "66px",
+            gridColumn: { md: "1 / -1" },
           }}
           selectProps={{
             size: "sm",
@@ -322,6 +343,12 @@ export const HostAdvancedOptions = memo(
             size: "sm",
             borderRadius: "4px",
           }}
+          formLabelProps={{
+            pb: 1,
+            m: 0,
+            alignItems: "center",
+            gap: 1,
+          }}
         />
 
         <RHFInput
@@ -361,6 +388,12 @@ export const HostAdvancedOptions = memo(
             size: "sm",
             borderRadius: "4px",
           }}
+          formLabelProps={{
+            pb: 1,
+            m: 0,
+            alignItems: "center",
+            gap: 1,
+          }}
         />
 
         {["splithttp", "xhttp"].includes(inbound?.network) && (
@@ -370,6 +403,7 @@ export const HostAdvancedOptions = memo(
             error={accordionErrors?.xhttp_extra}
             placeholder='{"xPaddingMethod": "tokenish"}'
             inputProps={{ size: "sm", borderRadius: "4px" }}
+            formControlProps={{ gridColumn: { md: "1 / -1" } }}
           />
         )}
 
@@ -398,7 +432,10 @@ export const HostAdvancedOptions = memo(
         />
 
         {bots.length > 0 && (
-          <FormControl isInvalid={!!accordionErrors?.bot_usernames}>
+          <FormControl
+            isInvalid={!!accordionErrors?.bot_usernames}
+            gridColumn={{ md: "1 / -1" }}
+          >
             <FormLabel>{t("hostsDialog.availableBots")}</FormLabel>
             <Text
               fontSize="xs"
@@ -448,9 +485,17 @@ export const HostAdvancedOptions = memo(
                         zIndex={1500}
                       >
                         <PopoverArrow />
-                        <PopoverCloseButton />
-                        <PopoverBody pt={8}>
+                        <PopoverBody>
                           <VStack align="start" spacing={2}>
+                            {selectedBotUsernames.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => field.onChange([])}
+                              >
+                                {t("hostsDialog.availableBots.clear")}
+                              </Button>
+                            )}
                             {bots.map((bot: Bot) => (
                               <Checkbox
                                 key={bot.username}
@@ -481,15 +526,6 @@ export const HostAdvancedOptions = memo(
                                 </Text>
                               </Checkbox>
                             ))}
-                            {selectedBotUsernames.length > 0 && (
-                              <Button
-                                variant="ghost"
-                                size="xs"
-                                onClick={() => field.onChange([])}
-                              >
-                                {t("hostsDialog.availableBots.clear")}
-                              </Button>
-                            )}
                           </VStack>
                         </PopoverBody>
                       </PopoverContent>
@@ -504,7 +540,7 @@ export const HostAdvancedOptions = memo(
           </FormControl>
         )}
         {nodes.filter((n) => n.id != null).length > 0 && (
-          <FormControl>
+          <FormControl gridColumn={{ md: "1 / -1" }}>
             <FormLabel>{t("hostsDialog.linkedNodes")}</FormLabel>
             <Text
               fontSize="xs"
@@ -548,9 +584,17 @@ export const HostAdvancedOptions = memo(
                         zIndex={1500}
                       >
                         <PopoverArrow />
-                        <PopoverCloseButton />
-                        <PopoverBody pt={8}>
+                        <PopoverBody>
                           <VStack align="start" spacing={2}>
+                            {selectedIds.length > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => field.onChange([])}
+                              >
+                                {t("hostsDialog.linkedNodes.clear")}
+                              </Button>
+                            )}
                             {nodes
                               .filter((n) => n.id != null)
                               .map((node: NodeType) => {
@@ -582,15 +626,6 @@ export const HostAdvancedOptions = memo(
                                   </Checkbox>
                                 );
                               })}
-                            {selectedIds.length > 0 && (
-                              <Button
-                                variant="ghost"
-                                size="xs"
-                                onClick={() => field.onChange([])}
-                              >
-                                {t("hostsDialog.linkedNodes.clear")}
-                              </Button>
-                            )}
                           </VStack>
                         </PopoverBody>
                       </PopoverContent>
@@ -601,7 +636,7 @@ export const HostAdvancedOptions = memo(
             />
           </FormControl>
         )}
-      </VStack>
+      </SimpleGrid>
     );
   }
 );

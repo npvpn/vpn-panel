@@ -252,7 +252,15 @@ export const HostsDialog: FC = () => {
     <Modal isOpen={isEditingHosts} onClose={onClose}>
       <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
 
-      <ModalContent mx="3" w="full" maxW="2xl" h="90vh" maxH="90vh">
+      <ModalContent
+        mx="3"
+        mt="3vh"
+        mb="3vh"
+        w="full"
+        maxW="2xl"
+        h="94vh"
+        maxH="94vh"
+      >
         <ModalHeader pt={6}>
           <HStack spacing={4} align="center">
             <Icon color="primary">
@@ -281,7 +289,7 @@ export const HostsDialog: FC = () => {
 
         <ModalBody
           pb={0}
-          pt={3}
+          pt={1}
           px={6}
           display="flex"
           flexDirection="column"
@@ -307,7 +315,7 @@ export const HostsDialog: FC = () => {
                     {/* SEARCH + FILTERS */}
                     {(() => {
                       const searchInput = (
-                        <InputGroup flex="1" minW={0}>
+                        <InputGroup flex="1" minW={0} size="sm">
                           <InputLeftElement pointerEvents="none">
                             <MagnifyingGlassIcon width="16px" color="gray" />
                           </InputLeftElement>
@@ -317,7 +325,7 @@ export const HostsDialog: FC = () => {
                               t("hostsDialog.search") ??
                               "Search by remark or address..."
                             }
-                            size="md"
+                            borderRadius="6px"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                           />
@@ -326,7 +334,7 @@ export const HostsDialog: FC = () => {
 
                       const inboundSelect = (
                         <Select
-                          size="md"
+                          size="sm"
                           flex="1"
                           minW={0}
                           aria-label={
@@ -354,7 +362,7 @@ export const HostsDialog: FC = () => {
 
                       if (bots.length < 2) {
                         return (
-                          <HStack mt={3} spacing={2}>
+                          <HStack mt={1} spacing={2}>
                             {searchInput}
                             {inboundSelect}
                           </HStack>
@@ -363,7 +371,7 @@ export const HostsDialog: FC = () => {
 
                       const botSelect = (
                         <Select
-                          size="md"
+                          size="sm"
                           flex="1"
                           minW={0}
                           aria-label={t("hostsDialog.filterBot") ?? undefined}
@@ -387,7 +395,7 @@ export const HostsDialog: FC = () => {
                       );
 
                       return (
-                        <VStack mt={3} spacing={2} align="stretch">
+                        <VStack mt={1} spacing={2} align="stretch">
                           <HStack spacing={2}>{searchInput}</HStack>
                           <HStack spacing={2}>
                             {inboundSelect}
@@ -401,6 +409,7 @@ export const HostsDialog: FC = () => {
                     <Button
                       mt={3}
                       w="full"
+                      size="sm"
                       variant="outline"
                       leftIcon={
                         <HeroIconPlusIcon width="20px" strokeWidth={2} />

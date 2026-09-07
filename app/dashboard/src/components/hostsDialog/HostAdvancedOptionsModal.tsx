@@ -31,7 +31,7 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      size={{ base: "full", md: "lg" }}
+      size={{ base: "full", md: "2xl" }}
       scrollBehavior="inside"
     >
       <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
