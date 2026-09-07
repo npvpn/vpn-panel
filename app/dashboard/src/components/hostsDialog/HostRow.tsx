@@ -127,6 +127,20 @@ export const HostRow = memo(function HostRow({
     (key) => !!accordionErrors?.[key]
   );
 
+  const enableSwitch = (
+    <Controller
+      control={control}
+      name={`${HOST_KEY}.${index}.is_disabled`}
+      render={({ field }) => (
+        <Switch
+          colorScheme="primary"
+          isChecked={!field.value}
+          onChange={(e) => field.onChange(!e.target.checked)}
+        />
+      )}
+    />
+  );
+
   const advancedOptionsButton = (
     <Tooltip label={t("hostsDialog.advancedOptions")} placement="left">
       <Box position="relative" display="inline-block">
@@ -190,11 +204,8 @@ export const HostRow = memo(function HostRow({
         >
           <HStack w="full" spacing={0} align="stretch">
             <VStack flex="1" minW={0} p={3} spacing={2} align="stretch">
-              <HStack
-                justify={isCreate ? "flex-end" : "space-between"}
-                align="center"
-              >
-                {!isCreate && (
+              {!isCreate && (
+                <HStack justify="space-between" align="center">
                   <HStack spacing={2} wrap="wrap">
                     <Badge
                       colorScheme="gray"
@@ -224,20 +235,10 @@ export const HostRow = memo(function HostRow({
                       </Tooltip>
                     )}
                   </HStack>
-                )}
 
-                <Controller
-                  control={control}
-                  name={`${HOST_KEY}.${index}.is_disabled`}
-                  render={({ field }) => (
-                    <Switch
-                      colorScheme="primary"
-                      isChecked={!field.value}
-                      onChange={(e) => field.onChange(!e.target.checked)}
-                    />
-                  )}
-                />
-              </HStack>
+                  {enableSwitch}
+                </HStack>
+              )}
 
               <RHFInput
                 label="Remark"
@@ -284,6 +285,8 @@ export const HostRow = memo(function HostRow({
               borderColor="gray.100"
               _dark={{ borderColor: "gray.600" }}
             >
+              {isCreate && enableSwitch}
+
               {advancedOptionsButton}
 
               {!isCreate && (
