@@ -56,7 +56,7 @@ def test_soft_deferred_does_not_mark_connected():
         return True
 
     with (
-        patch.object(operations, "_acquire_connect_slot", return_value=True),
+        patch.object(operations, "_acquire_connect_slot", return_value=1),
         patch.object(operations, "_release_connect_slot"),
         patch.object(operations, "_connect_semaphore") as sem,
         patch.object(operations, "GetDB") as get_db,
@@ -96,7 +96,7 @@ def test_soft_retry_skips_status_rewrite_when_already_connecting():
     node.try_restore.side_effect = Exception("timeout")
 
     with (
-        patch.object(operations, "_acquire_connect_slot", return_value=True),
+        patch.object(operations, "_acquire_connect_slot", return_value=1),
         patch.object(operations, "_release_connect_slot"),
         patch.object(operations, "_connect_semaphore") as sem,
         patch.object(operations, "GetDB") as get_db,
@@ -130,7 +130,7 @@ def _run_soft_deferred(dbnode, node, status_calls):
         return True
 
     with (
-        patch.object(operations, "_acquire_connect_slot", return_value=True),
+        patch.object(operations, "_acquire_connect_slot", return_value=1),
         patch.object(operations, "_release_connect_slot"),
         patch.object(operations, "_connect_semaphore") as sem,
         patch.object(operations, "GetDB") as get_db,

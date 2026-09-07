@@ -170,6 +170,9 @@ def reconnect_node(
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Trigger a reconnection for the specified node. Only accessible to sudo admins."""
+    # Explicit nuclear reconnect: drop any in-flight soft/HARD ownership so force connect
+    # is not silently skipped while another thread holds the slot.
+    xray.operations.invalidate_connect_slot(dbnode.id)
     bg.add_task(xray.operations.connect_node, node_id=dbnode.id, force=True)
     return {"detail": "Reconnection task scheduled"}
 

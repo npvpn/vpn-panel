@@ -492,6 +492,9 @@ def _cascade_kwargs(db, dbnode) -> dict:
 
 
 def remove_node(node_id: int):
+    # Allow a follow-up connect (Edit/Reconnect) to acquire immediately; in-flight
+    # connect's finally must not clear the new owner's slot (generation bump).
+    invalidate_connect_slot(node_id)
     if node_id in xray.nodes:
         try:
             xray.nodes[node_id].disconnect()
@@ -557,8 +560,12 @@ def connecting_age_seconds(node_id: int) -> float | None:
 
 
 global _connecting_nodes
-_connecting_nodes = set()
-_connecting_started_at = {}
+_connecting_nodes: set[int] = set()
+_connecting_started_at: dict[int, float] = {}
+# Monotonic owner token per node_id: release only clears the slot if the token still matches.
+# invalidate_connect_slot / stale reclaim bump the token so an old thread's finally cannot
+# drop a newer connect's lock (e.g. Edit → remove_node while a previous connect is in flight).
+_connecting_generation: dict[int, int] = {}
 _connecting_nodes_lock = threading.Lock()
 _connect_semaphore = threading.Semaphore(max(1, XRAY_NODE_CONNECT_CONCURRENCY))
 
@@ -596,39 +603,63 @@ def _cleanup_node_connection(node) -> None:
             pass
 
 
-def _acquire_connect_slot(node_id: int, force: bool = False) -> bool:
+def invalidate_connect_slot(node_id: int) -> None:
+    """Drop in-flight connect ownership so a new connect can acquire immediately.
+
+    Used from remove_node (Edit/Delete): the old thread may still run, but its finally
+    must not clear the slot of a newer connect (generation check on release).
+    """
+    with _connecting_nodes_lock:
+        _connecting_generation[node_id] = _connecting_generation.get(node_id, 0) + 1
+        _connecting_nodes.discard(node_id)
+        _connecting_started_at.pop(node_id, None)
+
+
+def _acquire_connect_slot(node_id: int, force: bool = False) -> int | None:
+    """Acquire exclusive connect ownership. Returns generation token, or None if busy.
+
+    Never starts a second connect in parallel (force included). A hung lock older than
+    XRAY_NODE_CONNECT_STALE_TIMEOUT may be reclaimed. ``force`` is kept for call-site
+    clarity only — it does not steal a live lock.
+    """
     now = time.time()
     with _connecting_nodes_lock:
         if node_id in _connecting_nodes:
-            if force:
-                logger.warning(f"[connect_node] force-acquire for node_id={node_id}")
+            started_at = _connecting_started_at.get(node_id, now)
+            age = now - started_at
+            if age >= XRAY_NODE_CONNECT_STALE_TIMEOUT:
+                logger.warning(f"[connect_node] reclaim stale lock node_id={node_id}, age={age:.1f}s (force={force})")
+                _connecting_generation[node_id] = _connecting_generation.get(node_id, 0) + 1
                 _connecting_nodes.discard(node_id)
                 _connecting_started_at.pop(node_id, None)
             else:
-                started_at = _connecting_started_at.get(node_id, now)
-                age = now - started_at
+                logger.debug(
+                    f"[connect_node] skipped, already connecting node_id={node_id}, age={age:.1f}s force={force}"
+                )
+                return None
 
-                if age >= XRAY_NODE_CONNECT_STALE_TIMEOUT:
-                    logger.warning(f"[connect_node] force-acquire for stale lock, node_id={node_id}, age={age:.1f}s")
-                    _connecting_nodes.discard(node_id)
-                    _connecting_started_at.pop(node_id, None)
-                else:
-                    logger.debug(f"[connect_node] skipped, already connecting node_id={node_id}, age={age:.1f}s")
-                    return False
-
+        gen = _connecting_generation.get(node_id, 0) + 1
+        _connecting_generation[node_id] = gen
         _connecting_nodes.add(node_id)
         _connecting_started_at[node_id] = now
-        return True
+        return gen
 
 
-def _release_connect_slot(node_id: int):
+def _release_connect_slot(node_id: int, generation: int | None = None):
     with _connecting_nodes_lock:
+        if generation is not None and _connecting_generation.get(node_id) != generation:
+            logger.debug(
+                f"[connect_node] skip release for node_id={node_id}: "
+                f"stale generation={generation} current={_connecting_generation.get(node_id)}"
+            )
+            return
         _connecting_nodes.discard(node_id)
         _connecting_started_at.pop(node_id, None)
 
 
 def _connect_node_impl(node_id, config=None, force: bool = False):
-    if not _acquire_connect_slot(node_id, force=force):
+    slot_gen = _acquire_connect_slot(node_id, force=force)
+    if slot_gen is None:
         return
 
     dbnode = None
@@ -679,21 +710,31 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
             try:
                 config_json = node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids)
                 path = "HARD" if force else "SOFT"
+                has_session = bool(getattr(node, "_session_id", None))
                 logger.debug(
                     f'[connect_node] {path} path start node_id={node_id} ("{dbnode.name}") '
                     f"attempt={attempt}/{retries} local_session="
-                    f"{'yes' if getattr(node, '_session_id', None) else 'no'}"
+                    f"{'yes' if has_session else 'no'}"
                 )
 
                 if force:
-                    # Hard path: new REST session (/connect stops Xray by node contract) + restart.
-                    logger.debug(
-                        f'[connect_node] HARD decision node_id={node_id} ("{dbnode.name}"): '
-                        f"cleanup local session → /connect → /restart (Xray will stop)"
-                    )
-                    _cleanup_node_connection(node)
-                    node.connect()
-                    node.restart(config_json=config_json)
+                    # HARD: first attempt (or no local session) → new REST session + /restart.
+                    # Later retries keep session and only /restart — avoids takeover storm when
+                    # /connect succeeded but /restart timed out on a large config upload.
+                    if has_session and attempt > 1:
+                        logger.debug(
+                            f'[connect_node] HARD decision node_id={node_id} ("{dbnode.name}"): '
+                            f"reuse session → /restart only (no /connect)"
+                        )
+                        node.restart(config_json=config_json)
+                    else:
+                        logger.debug(
+                            f'[connect_node] HARD decision node_id={node_id} ("{dbnode.name}"): '
+                            f"cleanup local session → /connect → /restart (Xray will stop)"
+                        )
+                        _cleanup_node_connection(node)
+                        node.connect()
+                        node.restart(config_json=config_json)
                     logger.debug(
                         f'[connect_node] HARD done node_id={node_id} ("{dbnode.name}"): '
                         f"Xray restarted under new session"
@@ -775,7 +816,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
         else:
             logger.warning(f"Unable to connect node_id={node_id}: {type(exc).__name__}: {exc}")
     finally:
-        _release_connect_slot(node_id)
+        _release_connect_slot(node_id, slot_gen)
         if dbnode:
             try:
                 logger.debug(f"[connect_node] released lock for node_id={node_id} ({dbnode.name})")
@@ -856,5 +897,6 @@ __all__ = [
     "restart_node",
     "is_connect_in_progress",
     "is_connect_stale",
+    "invalidate_connect_slot",
     "connecting_age_seconds",
 ]
