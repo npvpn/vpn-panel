@@ -253,11 +253,15 @@ class ReSTXRayNode:
 
     def make_request(self, path: str, timeout: int, **params):
         try:
+            # urllib3 1.x applies the *connect* half of timeout=(connect, read) to the
+            # socket while *writing* the request body, and switches to read only after
+            # the body is fully sent. Cap connect at 10s → write timeouts on large
+            # /restart|/start payloads even when REST_*_TIMEOUT is 90–120s.
+            # Use one value so REST_*_TIMEOUT covers upload + waiting for response.
             req_timeout = max(1, int(timeout))
-            connect_timeout = min(10, req_timeout)
             res = self.session.post(
                 self._rest_api_url + path,
-                timeout=(connect_timeout, req_timeout),
+                timeout=req_timeout,
                 json={"session_id": self._session_id, **params},
             )
             data = res.json()

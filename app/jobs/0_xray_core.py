@@ -64,6 +64,8 @@ def core_health_check():
                 # across a transient ping failure (avoids node takeover + Xray stop).
                 if reconnects_scheduled >= max_reconnects:
                     continue
+                if xray.operations.is_connect_in_progress(node_id):
+                    continue
                 if not config:
                     config = xray.config.include_db_users()
                 logger.debug(
@@ -90,11 +92,6 @@ def core_health_check():
                 xray.operations.restart_node(node_id, config)
             continue
 
-        if dbnode.status == NodeStatus.connecting:
-            if xray.operations.is_connect_in_progress(node_id):
-                continue
-            # No active connect task — fall through and schedule reconnect below.
-
         if dbnode.status not in (NodeStatus.error, NodeStatus.connecting):
             continue
 
@@ -105,8 +102,13 @@ def core_health_check():
             config = xray.config.include_db_users()
 
         force = _should_force_reconnect(node_id, dbnode.status, now)
-        if xray.operations.is_connect_in_progress(node_id) and not force:
-            continue
+
+        # Do not stack a second live connect (soft or HARD) — that caused /connect takeover
+        # storms. Exception: lock is stale AND we need HARD → reclaim hung owner.
+        if xray.operations.is_connect_in_progress(node_id):
+            if not (force and xray.operations.is_connect_stale(node_id)):
+                continue
+            logger.warning(f"[health] node_id={node_id} ({dbnode.name}): stale connect lock → schedule HARD reclaim")
 
         logger.debug(
             f"[health] node_id={node_id} ({dbnode.name}): status={dbnode.status.value} → "

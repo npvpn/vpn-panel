@@ -138,3 +138,19 @@ def test_ensure_control_session_connects_on_mismatch():
     ):
         node._ensure_control_session()
         connect.assert_called_once()
+
+
+def test_make_request_uses_full_timeout_for_body_upload():
+    """urllib3 1.x applies connect-half while writing the body — do not cap at 10s."""
+    node = _make_node()
+    node._rest_api_url = "https://10.0.0.1:62050"
+    node._session_id = "sess"
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = {"ok": True}
+    node.session = MagicMock()
+    node.session.post.return_value = mock_res
+
+    assert node.make_request("/restart", timeout=90, config="{}") == {"ok": True}
+    _, kwargs = node.session.post.call_args
+    assert kwargs["timeout"] == 90

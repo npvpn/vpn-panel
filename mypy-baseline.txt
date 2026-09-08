@@ -594,8 +594,6 @@ app/xray/operations.py:0: error: Argument "protocol" to "XRayNode" has incompati
 app/xray/operations.py:0: error: Argument "usage_coefficient" to "XRayNode" has incompatible type "Column[float]"; expected "float"  [arg-type]
 app/xray/operations.py:0: error: Invalid index type "Column[int]" for "dict[int, XRayNode]"; expected type "int"  [index]
 app/xray/operations.py:0: error: Argument 1 to "remove_node" has incompatible type "Column[int]"; expected "int"  [arg-type]
-app/xray/operations.py:0: error: Need type annotation for "_connecting_nodes" (hint: "_connecting_nodes: set[<type>] = ...")  [var-annotated]
-app/xray/operations.py:0: error: Need type annotation for "_connecting_started_at" (hint: "_connecting_started_at: dict[<type>, <type>] = ...")  [var-annotated]
 app/xray/operations.py:0: error: Argument 1 to "remove_node" has incompatible type "Column[int]"; expected "int"  [arg-type]
 app/xray/operations.py:0: error: Invalid index type "Column[int]" for "dict[int, XRayNode]"; expected type "int"  [index]
 app/routers/subscription.py:0: error: Argument 2 to "get_user_usages" has incompatible type "UserResponse"; expected "User"  [arg-type]
