@@ -696,6 +696,13 @@
     align-items: center;
 }
 
+.button-wrapper .light-btn {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
 .button-wrapper_revoke{
     position: fixed;
     left: 50%;
@@ -1184,6 +1191,10 @@
     }
 
     .button-wrapper .dark-btn {
+        width: auto;
+    }
+
+    .button-wrapper .light-btn {
         width: auto;
     }
 }

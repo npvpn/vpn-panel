@@ -24,10 +24,13 @@ from app.db import Session, crud
 from app.models.bot import apply_bot_settings_fallback
 from app.templates import render_template
 from app.utils.jwt import get_subscription_payload
-
-NOT_FOUND_TEMPLATE = "sub/not_found.html"
+from config import subscription_statics_url
 
 _ALLOWED_HOME_URL_SCHEMES = ("http://", "https://")
+
+
+def _not_found_base_context() -> dict[str, Any]:
+    return {"home_url": "", "show_ads": True, "sub_statics": subscription_statics_url()}
 
 
 def render_not_found(request: Request, db: Session, token: str) -> Response:
@@ -35,21 +38,24 @@ def render_not_found(request: Request, db: Session, token: str) -> Response:
     if "text/html" not in request.headers.get("Accept", ""):
         return Response(status_code=404)
     context = build_not_found_page_context(db, token)
-    return HTMLResponse(render_template(NOT_FOUND_TEMPLATE, context), status_code=404)
+    return HTMLResponse(render_template("not_found.html", context), status_code=404)
 
 
 def build_not_found_page_context(db: Session, token: str) -> dict[str, Any]:
     """Контекст jinja-шаблона 404: куда ведёт кнопка и показывать ли футер с рекламой."""
     settings = _resolve_bot_settings_for_token(db, token)
     if settings is None:
-        return {"home_url": "", "show_ads": True}
+        return _not_found_base_context()
     home_url = (settings.get("web_url") or "").strip() or (settings.get("bot_url") or "").strip()
     if not home_url.lower().startswith(_ALLOWED_HOME_URL_SCHEMES):
         # Значение приходит из настроек бота, которые пишет sudo-админ; шаблон
         # подставляет home_url в href без экранирования (autoescape выключен на
         # уровне общего jinja-Environment) — отсекаем всё, что не http(s)-ссылка.
         home_url = ""
-    return {"home_url": home_url, "show_ads": bool(settings.get("show_ads", True))}
+    context = _not_found_base_context()
+    context["home_url"] = home_url
+    context["show_ads"] = bool(settings.get("show_ads", True))
+    return context
 
 
 def _resolve_bot_settings_for_token(db: Session, token: str) -> dict[str, Any] | None:
