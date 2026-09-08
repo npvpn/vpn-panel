@@ -6,26 +6,24 @@ from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
 from app import app
-from config import CUSTOM_TEMPLATES_DIRECTORY, DASHBOARD_PATH, DEBUG, VITE_BASE_API
+from config import (
+    DASHBOARD_PATH,
+    DEBUG,
+    VITE_BASE_API,
+    resolved_subscription_templates_dir,
+    subscription_statics_url,
+)
 
 base_dir = Path(__file__).parent
 build_dir = base_dir / "build"
 statics_dir = build_dir / "statics"
 
 
-def _sub_templates_dir() -> Path | None:
-    if CUSTOM_TEMPLATES_DIRECTORY:
-        path = Path(CUSTOM_TEMPLATES_DIRECTORY) / "sub"
-    else:
-        path = Path(__file__).resolve().parent.parent.parent / "templates" / "sub"
-    return path if path.is_dir() else None
-
-
 def mount_sub_statics() -> None:
-    sub_dir = _sub_templates_dir()
+    sub_dir = resolved_subscription_templates_dir()
     if sub_dir:
         app.mount(
-            "/statics/sub/",
+            subscription_statics_url(),
             StaticFiles(directory=sub_dir),
             name="sub-statics",
         )
