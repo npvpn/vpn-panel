@@ -55,7 +55,8 @@ def record_user_stats(params: list, node_id: int | None, consumption_factor: int
     if not params:
         return
 
-    created_at = datetime.fromisoformat(datetime.utcnow().strftime("%Y-%m-%dT%H:00:00"))
+    now = datetime.utcnow()
+    created_at = datetime.fromisoformat(now.strftime("%Y-%m-%dT%H:00:00"))
 
     with GetDB() as db:
         # make user usage row if doesn't exist
@@ -73,14 +74,22 @@ def record_user_stats(params: list, node_id: int | None, consumption_factor: int
 
         if uids_to_insert:
             stmt = insert(NodeUserUsage).values(
-                user_id=bindparam("uid"), created_at=created_at, node_id=node_id, used_traffic=0
+                user_id=bindparam("uid"),
+                created_at=created_at,
+                node_id=node_id,
+                used_traffic=0,
+                last_seen_at=now,
             )
             safe_execute(db, stmt, [{"uid": uid} for uid in uids_to_insert])
 
         # record
         stmt = (
             update(NodeUserUsage)
-            .values(used_traffic=NodeUserUsage.used_traffic + bindparam("value") * consumption_factor)
+            .values(
+                used_traffic=NodeUserUsage.used_traffic + bindparam("value") * consumption_factor,
+                # Тот же UPDATE, что уже идёт каждый тик — дополнительных запросов к БД нет.
+                last_seen_at=now,
+            )
             .where(
                 and_(
                     NodeUserUsage.user_id == bindparam("uid"),
