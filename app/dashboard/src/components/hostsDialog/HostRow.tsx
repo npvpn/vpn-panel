@@ -7,13 +7,21 @@ import {
   Box,
   Badge,
   VStack,
+  Text,
+  Tr,
+  Td,
 } from "@chakra-ui/react";
 import { NodeType } from "contexts/NodesContext";
-import { motion } from "framer-motion";
 import { memo, useState } from "react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 import { Bot } from "types/Bot";
-import { DuplicateIcon, DownIcon, UpIcon, GearIcon } from "./constants";
+import {
+  DuplicateIcon,
+  DownIcon,
+  UpIcon,
+  GearIcon,
+  hasAdvancedFieldErrors,
+} from "./constants";
 import { DeleteIcon } from "components/DeleteUserModal";
 import { RHFInput } from "./RHFInput";
 import { HostInfoPopover } from "./HostInfoPopover";
@@ -23,7 +31,6 @@ import { z } from "zod";
 
 type HostRowProps = {
   index: number;
-  hostId: string;
   inboundTag: string;
   bots: Bot[];
   nodes: NodeType[];
@@ -39,34 +46,13 @@ type HostRowProps = {
   proxyALPN: any[];
   proxyFingerprint: any[];
   isFirst?: boolean;
-  mode?: "list" | "create";
+  isTableView?: boolean;
 };
 
 const HOST_KEY = "hosts";
 
-// Fields that live in the advanced-options modal rather than inline on the row.
-const ADVANCED_FIELD_KEYS = [
-  "port",
-  "path",
-  "sni",
-  "host",
-  "mux_enable",
-  "allowinsecure",
-  "fragment_setting",
-  "noise_setting",
-  "random_user_agent",
-  "security",
-  "alpn",
-  "fingerprint",
-  "use_sni_as_host",
-  "xhttp_extra",
-  "bot_usernames",
-  "node_ids",
-] as const;
-
 export const HostRow = memo(function HostRow({
   index,
-  hostId,
   inboundTag,
   bots,
   nodes,
@@ -82,16 +68,15 @@ export const HostRow = memo(function HostRow({
   proxyALPN,
   proxyFingerprint,
   isFirst,
-  mode = "list",
+  isTableView = false,
 }: HostRowProps) {
   const { register, control } =
     useFormContext<z.infer<typeof hostsFormSchema>>();
 
-  const isCreate = mode === "create";
-
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
   const remark = useWatch({ control, name: `${HOST_KEY}.${index}.remark` });
+  const address = useWatch({ control, name: `${HOST_KEY}.${index}.address` });
 
   const botUsernames = useWatch({
     control,
@@ -123,8 +108,9 @@ export const HostRow = memo(function HostRow({
     ? botNames.join(", ")
     : null;
 
-  const hasAdvancedErrors = ADVANCED_FIELD_KEYS.some(
-    (key) => !!accordionErrors?.[key]
+  const hasAdvancedErrors = hasAdvancedFieldErrors(
+    accordionErrors,
+    !isTableView
   );
 
   const enableSwitch = (
@@ -172,191 +158,285 @@ export const HostRow = memo(function HostRow({
     </Tooltip>
   );
 
-  return (
+  const cardLayout = (
     <>
-      {!isFirst && !isCreate && <Divider my={0} />}
+      {!isFirst && <Divider my={0} />}
 
-      <motion.div
-        initial={false}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{
-          opacity: { duration: 0.1 },
+      <Box
+        data-row-index={index}
+        bg="white"
+        _dark={{ bg: "gray.700" }}
+        borderRadius="12px"
+        boxShadow="0 2px 8px rgba(0,0,0,0.08)"
+        border="1px solid"
+        borderColor="gray.100"
+        transition="all 0.2s ease"
+        _hover={{
+          boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+          _dark: {
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+          },
         }}
-        id={hostId}
-        style={{ width: "100%" }}
       >
-        <Box
-          data-row-index={isCreate ? undefined : index}
-          bg="white"
-          _dark={{ bg: "gray.700" }}
-          borderRadius="12px"
-          boxShadow="0 2px 8px rgba(0,0,0,0.08)"
-          border="1px solid"
-          borderColor="gray.100"
-          transition="all 0.2s ease"
-          _hover={{
-            boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-            _dark: {
-              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-            },
-          }}
-        >
-          <HStack w="full" spacing={0} align="stretch">
-            <VStack flex="1" minW={0} p={3} spacing={2} align="stretch">
-              {!isCreate && (
-                <HStack justify="space-between" align="center">
-                  <HStack spacing={2} wrap="wrap">
+        <HStack w="full" spacing={0} align="stretch">
+          <VStack flex="1" minW={0} p={3} spacing={2} align="stretch">
+            <HStack justify="space-between" align="center">
+              <HStack spacing={2} wrap="wrap">
+                <Badge
+                  colorScheme="gray"
+                  fontSize="0.7rem"
+                  maxW="100%"
+                  isTruncated
+                >
+                  {inboundTag}
+                </Badge>
+
+                {botBadgeLabel && (
+                  <Tooltip
+                    label={botBadgeTooltip}
+                    placement="top"
+                    isDisabled={!botBadgeTooltip}
+                  >
                     <Badge
-                      colorScheme="gray"
+                      colorScheme="blue"
+                      variant={isAvailableToAllBots ? "outline" : "solid"}
+                      textTransform="none"
                       fontSize="0.7rem"
                       maxW="100%"
                       isTruncated
                     >
-                      {inboundTag}
+                      {botBadgeLabel}
                     </Badge>
-
-                    {botBadgeLabel && (
-                      <Tooltip
-                        label={botBadgeTooltip}
-                        placement="top"
-                        isDisabled={!botBadgeTooltip}
-                      >
-                        <Badge
-                          colorScheme="blue"
-                          variant={isAvailableToAllBots ? "outline" : "solid"}
-                          textTransform="none"
-                          fontSize="0.7rem"
-                          maxW="100%"
-                          isTruncated
-                        >
-                          {botBadgeLabel}
-                        </Badge>
-                      </Tooltip>
-                    )}
-                  </HStack>
-
-                  {enableSwitch}
-                </HStack>
-              )}
-
-              <RHFInput
-                label="Remark"
-                registerProps={register(`${HOST_KEY}.${index}.remark`)}
-                error={accordionErrors?.remark}
-                rightElement={<HostInfoPopover t={t} />}
-                formControlProps={{
-                  position: "relative",
-                  zIndex: 10,
-                }}
-                formLabelProps={{ mb: 1 }}
-                inputProps={{
-                  size: "sm",
-                  borderRadius: "4px",
-                }}
-              />
-
-              <RHFInput
-                label="Address"
-                registerProps={register(`${HOST_KEY}.${index}.address`)}
-                error={accordionErrors?.address}
-                placeholder="example.com"
-                rightElement={<HostInfoPopover t={t} />}
-                formControlProps={{
-                  isInvalid: !!accordionErrors?.address,
-                }}
-                formLabelProps={{ mb: 1 }}
-                inputProps={{
-                  size: "sm",
-                  borderRadius: "4px",
-                }}
-              />
-            </VStack>
-
-            <VStack
-              spacing={2}
-              py={3}
-              px={3}
-              w="52px"
-              flexShrink={0}
-              justify="flex-start"
-              align="center"
-              borderLeft="1px solid"
-              borderColor="gray.100"
-              _dark={{ borderColor: "gray.600" }}
-            >
-              {isCreate && enableSwitch}
-
-              {advancedOptionsButton}
-
-              {!isCreate && (
-                <>
-                  <Tooltip label="Duplicate" placement="left">
-                    <IconButton
-                      aria-label="Duplicate"
-                      size="xs"
-                      colorScheme="white"
-                      variant="ghost"
-                      onClick={() => duplicateHost(index)}
-                    >
-                      <DuplicateIcon />
-                    </IconButton>
                   </Tooltip>
+                )}
+              </HStack>
 
-                  {canMoveDown && (
-                    <Tooltip label="Move Down" placement="left">
-                      <IconButton
-                        aria-label="Move Down"
-                        size="xs"
-                        colorScheme="white"
-                        variant="ghost"
-                        onClick={() => moveHostPosition(index, "down")}
-                      >
-                        <DownIcon />
-                      </IconButton>
-                    </Tooltip>
-                  )}
+              {enableSwitch}
+            </HStack>
 
-                  {canMoveUp && (
-                    <Tooltip label="Move Up" placement="left">
-                      <IconButton
-                        aria-label="Move Up"
-                        size="xs"
-                        colorScheme="white"
-                        variant="ghost"
-                        onClick={() => moveHostPosition(index, "up")}
-                      >
-                        <UpIcon />
-                      </IconButton>
-                    </Tooltip>
-                  )}
-                </>
-              )}
+            <RHFInput
+              label="Remark"
+              registerProps={register(`${HOST_KEY}.${index}.remark`)}
+              error={accordionErrors?.remark}
+              rightElement={<HostInfoPopover t={t} />}
+              formControlProps={{
+                position: "relative",
+                zIndex: 10,
+              }}
+              formLabelProps={{ mb: 1 }}
+              inputProps={{
+                size: "sm",
+                borderRadius: "4px",
+              }}
+            />
 
-              {!isCreate && <Box flex="1" />}
+            <RHFInput
+              label="Address"
+              registerProps={register(`${HOST_KEY}.${index}.address`)}
+              error={accordionErrors?.address}
+              placeholder="{SERVER_IP}"
+              rightElement={<HostInfoPopover t={t} />}
+              formControlProps={{
+                isInvalid: !!accordionErrors?.address,
+              }}
+              formLabelProps={{ mb: 1 }}
+              inputProps={{
+                size: "sm",
+                borderRadius: "4px",
+              }}
+            />
+          </VStack>
 
-              {!isCreate && (
-                <Tooltip label="Delete" placement="left">
-                  <IconButton
-                    aria-label="Delete"
-                    size="xs"
-                    colorScheme="red"
-                    variant="ghost"
-                    onClick={() => removeHost(index)}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </Tooltip>
-              )}
-            </VStack>
-          </HStack>
-        </Box>
-      </motion.div>
+          <VStack
+            spacing={2}
+            py={3}
+            px={3}
+            w="52px"
+            flexShrink={0}
+            justify="flex-start"
+            align="center"
+            borderLeft="1px solid"
+            borderColor="gray.100"
+            _dark={{ borderColor: "gray.600" }}
+          >
+            {advancedOptionsButton}
+
+            <Tooltip label="Duplicate" placement="left">
+              <IconButton
+                aria-label="Duplicate"
+                size="xs"
+                colorScheme="white"
+                variant="ghost"
+                onClick={() => duplicateHost(index)}
+              >
+                <DuplicateIcon />
+              </IconButton>
+            </Tooltip>
+
+            {canMoveDown && (
+              <Tooltip label="Move Down" placement="left">
+                <IconButton
+                  aria-label="Move Down"
+                  size="xs"
+                  colorScheme="white"
+                  variant="ghost"
+                  onClick={() => moveHostPosition(index, "down")}
+                >
+                  <DownIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+
+            {canMoveUp && (
+              <Tooltip label="Move Up" placement="left">
+                <IconButton
+                  aria-label="Move Up"
+                  size="xs"
+                  colorScheme="white"
+                  variant="ghost"
+                  onClick={() => moveHostPosition(index, "up")}
+                >
+                  <UpIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+
+            <Box flex="1" />
+
+            <Tooltip label="Delete" placement="left">
+              <IconButton
+                aria-label="Delete"
+                size="xs"
+                colorScheme="red"
+                variant="ghost"
+                onClick={() => removeHost(index)}
+              >
+                <DeleteIcon />
+              </IconButton>
+            </Tooltip>
+          </VStack>
+        </HStack>
+      </Box>
+    </>
+  );
+
+  const tdBorder = {
+    borderBottom: "1px solid",
+    borderColor: "gray.100",
+    _dark: { borderColor: "gray.600" },
+  };
+
+  const tableLayout = (
+    <Tr
+      data-row-index={index}
+      _hover={{
+        bg: "gray.50",
+        _dark: { bg: "gray.750" },
+      }}
+      transition="background 0.15s ease"
+    >
+      <Td {...tdBorder} px={2} py={2} whiteSpace="nowrap">
+        <Badge colorScheme="gray" fontSize="0.7rem" maxW="200px" isTruncated>
+          {inboundTag}
+        </Badge>
+      </Td>
+
+      <Td {...tdBorder} px={2} py={2} whiteSpace="nowrap">
+        {botBadgeLabel && (
+          <Tooltip
+            label={botBadgeTooltip}
+            placement="top"
+            isDisabled={!botBadgeTooltip}
+          >
+            <Text fontSize="sm" opacity={0.7} maxW="160px" isTruncated>
+              {botBadgeLabel}
+            </Text>
+          </Tooltip>
+        )}
+      </Td>
+
+      <Td {...tdBorder} px={2} py={2}>
+        <Tooltip label={remark} placement="top" isDisabled={!remark}>
+          <Text fontSize="sm" maxW="360px" isTruncated>
+            {remark || "—"}
+          </Text>
+        </Tooltip>
+      </Td>
+
+      <Td {...tdBorder} px={2} py={2}>
+        <Tooltip label={address} placement="top" isDisabled={!address}>
+          <Text fontSize="sm" opacity={0.7} maxW="280px" isTruncated>
+            {address || "—"}
+          </Text>
+        </Tooltip>
+      </Td>
+
+      <Td {...tdBorder} px={2} py={2} textAlign="center">
+        {enableSwitch}
+      </Td>
+
+      <Td {...tdBorder} px={2} py={2} whiteSpace="nowrap">
+        <HStack spacing={1} justify="flex-end">
+          {advancedOptionsButton}
+
+          <Tooltip label="Duplicate" placement="top">
+            <IconButton
+              aria-label="Duplicate"
+              size="xs"
+              variant="ghost"
+              onClick={() => duplicateHost(index)}
+            >
+              <DuplicateIcon />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip label="Move Down" placement="top">
+            <IconButton
+              aria-label="Move Down"
+              size="xs"
+              variant="ghost"
+              isDisabled={!canMoveDown}
+              onClick={() => moveHostPosition(index, "down")}
+            >
+              <DownIcon />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip label="Move Up" placement="top">
+            <IconButton
+              aria-label="Move Up"
+              size="xs"
+              variant="ghost"
+              isDisabled={!canMoveUp}
+              onClick={() => moveHostPosition(index, "up")}
+            >
+              <UpIcon />
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip label="Delete" placement="top">
+            <IconButton
+              aria-label="Delete"
+              size="xs"
+              colorScheme="red"
+              variant="ghost"
+              onClick={() => removeHost(index)}
+            >
+              <DeleteIcon />
+            </IconButton>
+          </Tooltip>
+        </HStack>
+      </Td>
+    </Tr>
+  );
+
+  return (
+    <>
+      {isTableView ? tableLayout : cardLayout}
 
       <HostAdvancedOptionsModal
         isOpen={isAdvancedOpen}
         onClose={() => setIsAdvancedOpen(false)}
-        remark={remark}
         hostKey={HOST_KEY}
         index={index}
         inbound={inbound}
@@ -369,6 +449,8 @@ export const HostRow = memo(function HostRow({
         proxyHostSecurity={proxyHostSecurity}
         proxyALPN={proxyALPN}
         proxyFingerprint={proxyFingerprint}
+        hideRemarkAddress={!isTableView}
+        remark={remark}
       />
     </>
   );

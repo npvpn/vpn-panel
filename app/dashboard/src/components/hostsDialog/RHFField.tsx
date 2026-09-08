@@ -6,6 +6,7 @@ type RHFFieldProps = {
   error?: any;
   isInvalid?: boolean;
   rightElement?: React.ReactNode;
+  hideLabel?: boolean;
   formControlProps?: any;
   formLabelProps?: any;
   children: React.ReactNode;
@@ -16,20 +17,23 @@ export const RHFField = ({
   error,
   isInvalid,
   rightElement,
+  hideLabel,
   formControlProps,
   formLabelProps,
   children,
 }: RHFFieldProps) => (
   <FormControl isInvalid={isInvalid ?? !!error} {...formControlProps}>
-    <FormLabel
-      display="flex"
-      justifyContent="space-between"
-      alignItems="center"
-      {...formLabelProps}
-    >
-      <span>{label}</span>
-      {rightElement}
-    </FormLabel>
+    {!hideLabel && (
+      <FormLabel
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        {...formLabelProps}
+      >
+        <span>{label}</span>
+        {rightElement}
+      </FormLabel>
+    )}
 
     {children}
 

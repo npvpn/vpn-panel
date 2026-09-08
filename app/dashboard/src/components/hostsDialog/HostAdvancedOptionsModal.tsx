@@ -25,7 +25,7 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
   remark,
   ...advancedOptionsProps
 }) => {
-  const { t } = advancedOptionsProps;
+  const { t, hideRemarkAddress } = advancedOptionsProps;
 
   return (
     <Modal
@@ -38,7 +38,7 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
       <ModalContent maxH="90vh">
         <ModalHeader pr={12}>
           {t("hostsDialog.advancedOptions")}
-          {remark && (
+          {hideRemarkAddress && remark && (
             <Text
               as="span"
               display="block"

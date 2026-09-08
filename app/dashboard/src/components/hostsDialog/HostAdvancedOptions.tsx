@@ -26,6 +26,7 @@ import { RHFInput } from "./RHFInput";
 import { RHFCheckbox } from "./RHFCheckbox";
 import { RHFSelect } from "./RHFSelect";
 import { XhttpExtraModal } from "./XhttpExtraModal";
+import { HostInfoPopover } from "./HostInfoPopover";
 
 export type HostAdvancedOptionsProps = {
   hostKey: string;
@@ -40,6 +41,9 @@ export type HostAdvancedOptionsProps = {
   proxyHostSecurity: any[];
   proxyALPN: any[];
   proxyFingerprint: any[];
+  // Remark/address are already editable inline wherever this modal is opened
+  // from a mobile card or the create-host row, so skip the duplicates there.
+  hideRemarkAddress?: boolean;
 };
 
 export const HostAdvancedOptions = memo(
@@ -56,6 +60,7 @@ export const HostAdvancedOptions = memo(
     proxyHostSecurity,
     proxyALPN,
     proxyFingerprint,
+    hideRemarkAddress,
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
@@ -69,6 +74,53 @@ export const HostAdvancedOptions = memo(
         w="full"
         borderRadius="4px"
       >
+        {!hideRemarkAddress && (
+          <>
+            <RHFInput
+              label="Remark"
+              registerProps={register(`${hostKey}.${index}.remark`)}
+              error={accordionErrors?.remark}
+              rightElement={<HostInfoPopover t={t} />}
+              formControlProps={{
+                gridColumn: { md: "1 / -1" },
+                position: "relative",
+                zIndex: 10,
+              }}
+              inputProps={{
+                size: "sm",
+                borderRadius: "4px",
+              }}
+              formLabelProps={{
+                pb: 1,
+                m: 0,
+                alignItems: "center",
+                gap: 1,
+              }}
+            />
+
+            <RHFInput
+              label="Address"
+              registerProps={register(`${hostKey}.${index}.address`)}
+              error={accordionErrors?.address}
+              placeholder="{SERVER_IP}"
+              rightElement={<HostInfoPopover t={t} />}
+              formControlProps={{
+                gridColumn: { md: "1 / -1" },
+              }}
+              inputProps={{
+                size: "sm",
+                borderRadius: "4px",
+              }}
+              formLabelProps={{
+                pb: 1,
+                m: 0,
+                alignItems: "center",
+                gap: 1,
+              }}
+            />
+          </>
+        )}
+
         <RHFInput
           label={t("hostsDialog.port")}
           registerProps={register(`${hostKey}.${index}.port`)}

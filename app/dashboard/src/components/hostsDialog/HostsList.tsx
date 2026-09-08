@@ -1,4 +1,14 @@
-import { VStack, Text } from "@chakra-ui/react";
+import {
+  VStack,
+  Text,
+  Box,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  useBreakpointValue,
+} from "@chakra-ui/react";
 import {
   FC,
   FocusEvent,
@@ -59,6 +69,10 @@ export const HostsList: FC<Props> = ({
   remove,
 }) => {
   const { t } = useTranslation();
+
+  // Computed once here (not per-row) so a freshly-inserted row (e.g. via
+  // duplicate) already knows its layout instead of flashing card -> table.
+  const isTableView = useBreakpointValue({ base: false, sm: true });
 
   const form = useFormContext<z.infer<typeof hostsFormSchema>>();
 
@@ -169,11 +183,46 @@ export const HostsList: FC<Props> = ({
     );
   }
 
+  const thBorder = {
+    px: 2,
+    pb: 1.5,
+    borderBottom: "1px solid",
+    borderColor: "gray.200",
+    _dark: { borderColor: "gray.600" },
+  };
+
+  const rows = visibleIndexes.map((index, visiblePos) => {
+    const field = fields[index];
+
+    if (!field) return null;
+
+    return (
+      <HostRow
+        key={field.id}
+        index={index}
+        inboundTag={watchedHosts?.[index]?.inbound_tag ?? ""}
+        canMoveUp={visiblePos > 0}
+        canMoveDown={visiblePos < visibleIndexes.length - 1}
+        duplicateHost={duplicateHost}
+        moveHostPosition={moveHostPosition}
+        removeHost={removeHost}
+        bots={bots}
+        nodes={nodes}
+        inbound={inboundMap.get(watchedHosts?.[index]?.inbound_tag)}
+        accordionErrors={accordionErrors?.[index]}
+        proxyHostSecurity={proxyHostSecurity}
+        proxyALPN={proxyALPN}
+        proxyFingerprint={proxyFingerprint}
+        t={t}
+        isFirst={visiblePos === 0}
+        isTableView={isTableView}
+      />
+    );
+  });
+
   return (
-    <VStack
+    <Box
       w="full"
-      align="stretch"
-      spacing={2}
       onFocusCapture={handleFocusCapture}
       onBlurCapture={handleBlurCapture}
     >
@@ -181,36 +230,29 @@ export const HostsList: FC<Props> = ({
         <Text opacity={0.7} fontSize="sm" py={4} textAlign="center">
           {t("hostsDialog.notFound")}
         </Text>
+      ) : isTableView ? (
+        <Table size="sm" variant="unstyled">
+          <Thead>
+            <Tr>
+              <Th {...thBorder}>{t("hostsDialog.columnInbound")}</Th>
+              <Th {...thBorder}>{t("hostsDialog.columnBot")}</Th>
+              <Th {...thBorder}>Remark</Th>
+              <Th {...thBorder}>Address</Th>
+              <Th {...thBorder} textAlign="center">
+                {t("hostsDialog.columnEnabled")}
+              </Th>
+              <Th {...thBorder} textAlign="right">
+                {t("hostsDialog.columnActions")}
+              </Th>
+            </Tr>
+          </Thead>
+          <Tbody>{rows}</Tbody>
+        </Table>
       ) : (
-        visibleIndexes.map((index, visiblePos) => {
-          const field = fields[index];
-
-          if (!field) return null;
-
-          return (
-            <HostRow
-              key={field.id}
-              hostId={field.id}
-              index={index}
-              inboundTag={watchedHosts?.[index]?.inbound_tag ?? ""}
-              canMoveUp={visiblePos > 0}
-              canMoveDown={visiblePos < visibleIndexes.length - 1}
-              duplicateHost={duplicateHost}
-              moveHostPosition={moveHostPosition}
-              removeHost={removeHost}
-              bots={bots}
-              nodes={nodes}
-              inbound={inboundMap.get(watchedHosts?.[index]?.inbound_tag)}
-              accordionErrors={accordionErrors?.[index]}
-              proxyHostSecurity={proxyHostSecurity}
-              proxyALPN={proxyALPN}
-              proxyFingerprint={proxyFingerprint}
-              t={t}
-              isFirst={visiblePos === 0}
-            />
-          );
-        })
+        <VStack align="stretch" spacing={2}>
+          {rows}
+        </VStack>
       )}
-    </VStack>
+    </Box>
   );
 };

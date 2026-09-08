@@ -11,6 +11,7 @@ type RHFInputProps = {
   type?: string;
 
   rightElement?: React.ReactNode;
+  hideLabel?: boolean;
 
   formControlProps?: any;
   formLabelProps?: any;
@@ -22,15 +23,22 @@ export const RHFInput = ({
   placeholder,
   type,
   inputProps,
+  hideLabel,
+  rightElement,
   ...props
 }: RHFInputProps) => (
-  <RHFField {...props}>
+  <RHFField
+    {...props}
+    hideLabel={hideLabel}
+    rightElement={hideLabel ? undefined : rightElement}
+  >
     <InputGroup>
       <HostsInput
         {...registerProps}
         {...inputProps}
         placeholder={placeholder}
         type={type}
+        endAdornment={hideLabel ? rightElement : inputProps?.endAdornment}
       />
     </InputGroup>
   </RHFField>
