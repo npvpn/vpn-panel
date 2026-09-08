@@ -51,8 +51,9 @@ export const XhttpExtraModal: FC<XhttpExtraModalProps> = ({
             as="span"
             display="block"
             fontSize="sm"
-            fontWeight="normal"
-            opacity={0.6}
+            fontWeight="medium"
+            color="orange.600"
+            _dark={{ color: "orange.300" }}
             mt={1}
           >
             {t("hostsDialog.xhttpExtra.warning")}
