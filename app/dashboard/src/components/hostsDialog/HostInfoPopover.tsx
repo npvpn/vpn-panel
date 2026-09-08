@@ -15,7 +15,7 @@ import { InfoIcon } from "./constants";
 export const HostInfoPopover = ({ t }: { t: any }) => (
   <Popover isLazy placement="right">
     <PopoverTrigger>
-      <Box mt="-8px">
+      <Box>
         <InfoIcon />
       </Box>
     </PopoverTrigger>
