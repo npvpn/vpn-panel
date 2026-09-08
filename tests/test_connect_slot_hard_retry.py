@@ -69,6 +69,34 @@ def test_invalidate_connect_slot_allows_new_owner():
     operations._release_connect_slot(149, gen2)
 
 
+def test_add_node_does_not_invalidate_connect_slot():
+    """Regression: Edit → connect → add_node must not clear the in-flight HARD lock."""
+    _reset_slots()
+    gen = operations._acquire_connect_slot(6, force=True)
+    assert operations.is_connect_in_progress(6)
+
+    dbnode = MagicMock()
+    dbnode.id = 6
+    dbnode.address = "10.0.0.1"
+    dbnode.port = 62050
+    dbnode.api_port = 62051
+    dbnode.protocol = "rest"
+    dbnode.usage_coefficient = 1.0
+
+    fake_node = MagicMock()
+    with (
+        patch.object(operations, "get_tls", return_value={"key": "k", "certificate": "c"}),
+        patch.object(operations, "XRayNode", return_value=fake_node),
+        patch.object(operations, "xray") as xray_mod,
+    ):
+        xray_mod.nodes = {6: MagicMock()}
+        operations.add_node(dbnode)
+
+    assert operations.is_connect_in_progress(6)
+    operations._release_connect_slot(6, gen)
+    assert not operations.is_connect_in_progress(6)
+
+
 def test_hard_retry_reuses_session_without_second_connect():
     """After /connect ok + /restart write timeout, attempt 2 must only /restart."""
     dbnode = MagicMock()

@@ -491,10 +491,17 @@ def _cascade_kwargs(db, dbnode) -> dict:
     return {"role": "direct"}
 
 
-def remove_node(node_id: int):
-    # Allow a follow-up connect (Edit/Reconnect) to acquire immediately; in-flight
-    # connect's finally must not clear the new owner's slot (generation bump).
-    invalidate_connect_slot(node_id)
+def remove_node(node_id: int, *, invalidate_slot: bool = True):
+    """Drop in-memory node object (and optionally the connect slot).
+
+    ``invalidate_slot=True`` (default) for Edit/Delete/disable so a new connect can
+    acquire immediately and an old thread's finally will not clear the new owner's lock.
+
+    ``invalidate_slot=False`` when called from ``add_node`` during an in-flight connect:
+    otherwise we would clear our own slot and let health start a parallel HARD.
+    """
+    if invalidate_slot:
+        invalidate_connect_slot(node_id)
     if node_id in xray.nodes:
         try:
             xray.nodes[node_id].disconnect()
@@ -508,7 +515,9 @@ def remove_node(node_id: int):
 
 
 def add_node(dbnode: "DBNode"):
-    remove_node(dbnode.id)
+    # Replace local object only — do not invalidate the connect slot of the caller
+    # (connect_node may already hold it after Edit wiped xray.nodes).
+    remove_node(dbnode.id, invalidate_slot=False)
 
     tls = get_tls()
     node = XRayNode(
