@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from decouple import config
 from dotenv import load_dotenv
 
@@ -65,6 +67,50 @@ SUBSCRIPTION_LEGACY_SECRET_KEYS = config(
 CUSTOM_TEMPLATES_DIRECTORY = config("CUSTOM_TEMPLATES_DIRECTORY", default=None)
 SUBSCRIPTION_PAGE_TEMPLATE = config("SUBSCRIPTION_PAGE_TEMPLATE", default="subscription/index.html")
 HOME_PAGE_TEMPLATE = config("HOME_PAGE_TEMPLATE", default="home/index.html")
+
+_BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parent / "app" / "templates"
+_SUBSCRIPTION_PAGE = Path(SUBSCRIPTION_PAGE_TEMPLATE)
+# Имя файла индекса (`index.html`); каталог кладётся в Jinja searchpath.
+SUBSCRIPTION_PAGE_FILENAME = _SUBSCRIPTION_PAGE.name
+# Старый env SUBSCRIPTION_PAGE_TEMPLATE=sub/index.html — файлы теперь в subscription/.
+_LEGACY_SUBSCRIPTION_DIR_ALIASES = {"sub": "subscription"}
+
+
+def resolved_custom_templates_directory() -> str | None:
+    """CUSTOM_TEMPLATES_DIRECTORY, только если каталог реально есть на диске."""
+    if not CUSTOM_TEMPLATES_DIRECTORY:
+        return None
+    path = Path(CUSTOM_TEMPLATES_DIRECTORY)
+    return str(path) if path.is_dir() else None
+
+
+def resolved_subscription_templates_dir() -> Path | None:
+    """Каталог html/css страниц подписки: CUSTOM/{dir}, иначе builtin app/templates/{dir}."""
+    folder = _SUBSCRIPTION_PAGE.parent.as_posix()
+    if folder in (".", ""):
+        return None
+    names = [folder]
+    alias = _LEGACY_SUBSCRIPTION_DIR_ALIASES.get(folder)
+    if alias:
+        names.append(alias)
+    custom_root = resolved_custom_templates_directory()
+    if custom_root:
+        for name in names:
+            custom = Path(custom_root) / name
+            if custom.is_dir():
+                return custom
+    for name in names:
+        builtin = _BUILTIN_TEMPLATES_DIR / name
+        if builtin.is_dir():
+            return builtin
+    return None
+
+
+def subscription_statics_url() -> str:
+    """URL-префикс статики страниц подписки (`/statics/subscription/`)."""
+    folder = _SUBSCRIPTION_PAGE.parent.as_posix()
+    return f"/statics/{folder}/" if folder not in (".", "") else "/statics/"
+
 
 CLASH_SUBSCRIPTION_TEMPLATE = config("CLASH_SUBSCRIPTION_TEMPLATE", default="clash/default.yml")
 CLASH_SETTINGS_TEMPLATE = config("CLASH_SETTINGS_TEMPLATE", default="clash/settings.yml")

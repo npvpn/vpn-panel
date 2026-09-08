@@ -56,7 +56,6 @@ _HAPP_APPSTORE_GLOBAL = "https://apps.apple.com/us/app/happ-proxy-utility/id6504
 _INCY_APPSTORE_RU = "https://apps.apple.com/ru/app/incy/id6756943388"
 _INCY_APPSTORE_GLOBAL = "https://apps.apple.com/us/app/incy/id6756943388"
 
-# Дефолты повторяют то, что до NPVPN-1657 было захардкожено в templates/sub/index.html.
 # У Happ пустая ru-ссылка: приложения в российском App Store нет.
 DEFAULT_CLIENT_APPS: dict[str, Any] = {
     "apps": [

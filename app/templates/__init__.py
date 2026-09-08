@@ -2,14 +2,19 @@ from datetime import datetime
 
 import jinja2
 
-from config import CUSTOM_TEMPLATES_DIRECTORY
+from config import resolved_custom_templates_directory, resolved_subscription_templates_dir
 
 from .filters import CUSTOM_FILTERS
 
 template_directories = ["app/templates"]
-if CUSTOM_TEMPLATES_DIRECTORY:
+custom_templates_directory = resolved_custom_templates_directory()
+if custom_templates_directory:
     # User's templates have priority over default templates
-    template_directories.insert(0, CUSTOM_TEMPLATES_DIRECTORY)
+    template_directories.insert(0, custom_templates_directory)
+# Каталог страниц подписки — чтобы рендерить `limited.html`, а не `subscription/limited.html`.
+subscription_templates_dir = resolved_subscription_templates_dir()
+if subscription_templates_dir:
+    template_directories.insert(0, str(subscription_templates_dir))
 
 env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_directories))
 env.filters.update(CUSTOM_FILTERS)
