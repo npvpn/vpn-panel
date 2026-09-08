@@ -76,7 +76,7 @@ p {
     margin: 0;
 }
 
-/* Local Tailwind-style utilities used by templates/sub/index.html. */
+/* Local Tailwind-style utilities used by app/templates/subscription/index.html. */
 [x-cloak] {
     display: none !important;
 }

@@ -183,7 +183,7 @@ def test_db_error_does_not_break_page(not_found, monkeypatch):
 
     ctx = not_found.build_not_found_page_context(db=object(), token="whatever-long-token")
 
-    assert ctx == {"home_url": "", "show_ads": True}
+    assert ctx == {"home_url": "", "show_ads": True, "sub_statics": not_found.subscription_statics_url()}
 
 
 def test_unparsable_token_skips_user_lookup(not_found, monkeypatch):
@@ -229,12 +229,21 @@ def test_browser_gets_html_404(not_found, monkeypatch):
     assert b"https://cab.example" in response.body
 
 
+def test_not_found_context_includes_sub_statics(not_found, monkeypatch):
+    monkeypatch.setattr(not_found.crud, "get_user", lambda db, username: _user(_bot(web_url="https://cab.example")))
+
+    ctx = not_found.build_not_found_page_context(db=object(), token="whatever-long-token")
+
+    assert ctx["sub_statics"] == not_found.subscription_statics_url()
+
+
 def _render_real_template(context: dict) -> str:
-    """Рендер боевого templates/sub/not_found.html через тот же jinja-env, что и панель."""
+    """Рендер боевого app/templates/subscription/not_found.html через тот же jinja-env, что и панель."""
     import jinja2
 
-    env = jinja2.Environment(loader=jinja2.FileSystemLoader([str(_ROOT / "templates"), str(_ROOT / "app/templates")]))
-    return env.get_template("sub/not_found.html").render(context)
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(_ROOT / "app/templates/subscription")))
+    full = {"sub_statics": "/statics/subscription/", **context}
+    return env.get_template("not_found.html").render(full)
 
 
 def test_template_renders_link_when_home_url_set():

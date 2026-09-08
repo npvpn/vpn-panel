@@ -6,7 +6,7 @@ from app.models.user import UserResponse
 from app.subscription.bot_settings import resolve_bot_settings
 from app.subscription.client_apps import build_client_apps_view
 from app.subscription.user_info import devices_json
-from config import XRAY_SUBSCRIPTION_PATH
+from config import XRAY_SUBSCRIPTION_PATH, subscription_statics_url
 
 _ALLOWED_PAY_URL_SCHEMES = ("http://", "https://")
 
@@ -40,4 +40,5 @@ def build_subscription_page_context(db: Session, dbuser, token: str) -> dict:
         "show_ads": bool(bot_settings.get("show_ads", True)),
         "pay_url": resolve_pay_url(bot_settings),
         "client_apps": build_client_apps_view(crud.get_global_setting(db, CLIENT_APPS_KEY)),
+        "sub_statics": subscription_statics_url(),
     }

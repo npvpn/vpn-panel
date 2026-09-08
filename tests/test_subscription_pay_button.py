@@ -31,6 +31,7 @@ def _page_context(*, pay_url: str, token: str, web_url: str = "") -> dict:
         "web_url": web_url,
         "bot_url": "",
         "show_ads": True,
+        "sub_statics": "/statics/subscription/",
     }
 
 
@@ -103,31 +104,32 @@ def test_sub_pay_url_is_a_managed_json_field():
 
 
 def _render(template: str, **ctx) -> str:
-    """Рендер настоящего шаблона обоими каталогами — как это делает app/templates/__init__.py."""
+    """Рендер из каталога страниц подписки — как Jinja после добавления его в searchpath."""
     import jinja2
 
     env = jinja2.Environment(
-        loader=jinja2.FileSystemLoader([str(_ROOT / "app" / "templates"), str(_ROOT / "templates")]),
+        loader=jinja2.FileSystemLoader(str(_ROOT / "app" / "templates" / "subscription")),
         undefined=jinja2.ChainableUndefined,
     )
     return env.get_template(template).render(_page_context(**ctx))
 
 
 def test_expired_page_shows_pay_button():
-    """Просроченным отдаётся sub/expired.html, а НЕ subscription/index.html.
+    """Просроченным отдаётся expired.html, а НЕ index.html.
 
     Кнопка, поставленная только в index.html, не показывалась вообще никому:
     активные не просрочены, а просроченные видят другой шаблон (NPVPN-1848).
     """
-    html = _render("sub/expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="")
+    html = _render("expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="")
 
     assert f'href="{_PAY_URL}/{_TOKEN}"' in html
     assert "Продлить подписку" in html
+    assert 'href="/statics/subscription/styles/index.css"' in html
 
 
 def test_expired_page_shows_pay_button_alongside_cabinet():
     """Веб-кабинет кнопку не отменяет: он ведёт в оплату за несколько шагов, а кнопка — сразу."""
-    html = _render("sub/expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
+    html = _render("expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
 
     assert f'href="{_PAY_URL}/{_TOKEN}"' in html
     assert "Войти в личный кабинет" in html
@@ -136,20 +138,20 @@ def test_expired_page_shows_pay_button_alongside_cabinet():
 def test_expired_page_keeps_both_buttons_in_one_wrapper():
     """.button-wrapper_revoke — position: fixed: две обёртки легли бы друг на друга,
     и в браузере была бы видна только нижняя кнопка (в HTML при этом обе)."""
-    html = _render("sub/expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
+    html = _render("expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
 
     assert html.count("button-wrapper_revoke") == 1
 
 
 def test_expired_page_without_pay_url_has_no_button():
-    html = _render("sub/expired.html", pay_url="", token=_TOKEN, web_url="")
+    html = _render("expired.html", pay_url="", token=_TOKEN, web_url="")
 
     assert "Продлить подписку" not in html
 
 
 def test_active_page_has_no_pay_button():
     """Кнопка — только для просроченных: на index.html подписка ещё жива, продлевать нечего."""
-    html = _render("subscription/index.html", pay_url=_PAY_URL, token=_TOKEN, web_url="")
+    html = _render("index.html", pay_url=_PAY_URL, token=_TOKEN, web_url="")
 
     assert _PAY_URL not in html
     assert "Продлить подписку" not in html

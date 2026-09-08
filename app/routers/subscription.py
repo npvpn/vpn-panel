@@ -35,7 +35,7 @@ from app.subscription.user_info import (
 from app.templates import render_template
 from app.utils.jwt import get_subscription_payload
 from config import (
-    SUBSCRIPTION_PAGE_TEMPLATE,
+    SUBSCRIPTION_PAGE_FILENAME,
     USE_CUSTOM_JSON_DEFAULT,
     USE_CUSTOM_JSON_FOR_HAPP,
     USE_CUSTOM_JSON_FOR_STREISAND,
@@ -236,12 +236,12 @@ def user_subscription(
         # HTML-ветка (страница подписки) обрабатывается отдельно от генерации конфигов.
         html_context = build_subscription_page_context(db, dbuser, token)
         if is_revoked:
-            return HTMLResponse(render_template("sub/revoked.html", html_context))
+            return HTMLResponse(render_template("revoked.html", html_context))
         if is_expired:
-            return HTMLResponse(render_template("sub/expired.html", html_context))
+            return HTMLResponse(render_template("expired.html", html_context))
         if is_limited:
-            return HTMLResponse(render_template("sub/limited.html", html_context))
-        return HTMLResponse(render_template(SUBSCRIPTION_PAGE_TEMPLATE, html_context))
+            return HTMLResponse(render_template("limited.html", html_context))
+        return HTMLResponse(render_template(SUBSCRIPTION_PAGE_FILENAME, html_context))
 
     # 2) Общий контекст рендера (лимиты устройств, БС-контекст, заголовки).
     ctx = build_render_context(
