@@ -79,10 +79,20 @@
             return value.includes('happ');
           },
 
+          isIncyApp(app) {
+            if (!app) return false;
+            const value = `${app.id || ''} ${app.name || ''}`.toLowerCase();
+            return value.includes('incy');
+          },
+
           getAppIcon(app) {
-            return this.isHappApp(app)
-              ? '{{ sub_statics }}assets/Happ.png'
-              : null;
+            if (this.isHappApp(app)) {
+              return '{{ sub_statics }}assets/Happ.png';
+            }
+            if (this.isIncyApp(app)) {
+              return '{{ sub_statics }}assets/incy.webp';
+            }
+            return null;
           },
 
           openRevokeModal(device) {
@@ -454,7 +464,7 @@ get alternativeApps() {
                           >
                             <div class="download-app-card__left">
 
-                              <template x-if="isHappApp(app)">
+                              <template x-if="isHappApp(app) || isIncyApp(app)">
                                 <div class="download-app-card__icon">
                                   <img
                                     :src="getAppIcon(app)"
