@@ -27,7 +27,7 @@
 - `main.py` — uvicorn entrypoint (`main:app`), просто запускает приложение,
   собранное в `app/__init__.py`.
 - `app/` — FastAPI-приложение:
-  - `routers/` — HTTP-хендлеры (admin, bot, core, node, settings,
+  - `routers/` — HTTP-хендлеры (admin, bot, core, home, node, settings,
     subscription, system, user, user_template, managed, memory);
   - `services/` — бизнес-логика (панельные настройки, managed-настройки,
     client apps, дайджест пользователей);
@@ -35,7 +35,8 @@
     (`db/migrations/`);
   - `dashboard/` — фронтенд админки (отдельная сборка, node_modules/dist);
   - `jobs/` — периодические задачи (учёт трафика, ревью пользователей и
-    BS-нод, снятие просроченных, уведомления, пуш xray-конфига);
+    BS-нод, снятие просроченных, сброс счётчика трафика пользователей
+    (`reset_user_data_usage`), уведомления, пуш xray-конфига);
   - `xray/` — работа с нодами и xray-конфигом (`config.py`, `node.py`,
     `node_config.py`, `operations.py`, каскад ролей, BS-роутинг/лимиты);
   - `telegram/` — уведомления через Telegram (не путать с ботом NPVPN —

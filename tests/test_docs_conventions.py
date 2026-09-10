@@ -91,7 +91,8 @@ def test_source_files_exist_if_bot_repo_available():
     # Вычисляем путь: от панели (REPO_ROOT = parents[1] от теста = сама панель)
     # поднимаемся на один уровень (parents[0] = /home/kruptor/stuff/npvpn),
     # потом telegram_bot
-    bot_conventions = REPO_ROOT.parents[0] / "telegram_bot" / "docs" / "conventions"
+    bot_root = REPO_ROOT.parents[0] / "telegram_bot"
+    bot_conventions = bot_root / "docs" / "conventions"
 
     if not bot_conventions.exists():
         pytest.skip(f"репозиторий бота недоступен ({bot_conventions}), пропускаем проверку существования источников")
@@ -101,5 +102,11 @@ def test_source_files_exist_if_bot_repo_available():
         source_file = bot_conventions / f"{name}.md"
         if not source_file.is_file():
             missing_sources.append(name)
+
+    # .coderabbit.yaml ссылается кросс-репно и на docs/git-flow.md бота
+    # (не через указатель в docs/conventions/) — проверяем той же проверкой,
+    # чтобы протухание этого источника тоже ловилось.
+    if not (bot_root / "docs" / "git-flow.md").is_file():
+        missing_sources.append("git-flow.md")
 
     assert not missing_sources, f"файлы-источники в боте не найдены: {missing_sources}"
