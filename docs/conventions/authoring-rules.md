@@ -4,7 +4,8 @@
 
 Кратко:
 
-- Полнотекст живёт в `docs/conventions/<topic>.md`, обёртки ссылаются на него.
+- Полнотекст живёт в репозитории `npvpn/telegram_bot` по пути
+  `docs/conventions/<topic>.md`; здесь, в панели, — только обёртки-указатели.
 - Обёртка для Claude — `.claude/skills/<topic>/SKILL.md` с описанием-триггером.
 - Обёртка для Cursor — `.cursor/rules/<topic>.mdc` с `description`, `globs`, `alwaysApply`.
 - Always-on правило дублируется в `CLAUDE.md` и `.cursor/rules/00-project.mdc`.
