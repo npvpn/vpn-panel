@@ -22,6 +22,8 @@ reviews:
   path_filters:
     - "!uv.lock"
     - "!docs/superpowers/**"
+    - "!package-lock.json"
+    - "!app/dashboard/package-lock.json"
 
   path_instructions:
     - path: "app/db/migrations/**"
@@ -44,6 +46,9 @@ reviews:
       instructions: |
         Применяй разделение слоёв из `docs/architecture.md` § «Слои и
         зависимости»: логике место в сервисах, из роутера её выносят.
+        Синхронную работу с нодами не планировать через `bg.add_task` —
+        только через `@threaded_function` / `get_xray_executor()`, см.
+        `docs/architecture.md` § «Ноды и xray».
     - path: "app/**"
       instructions: |
         Новая логика приходит с тестом в `tests/`
@@ -98,3 +103,7 @@ knowledge_base:
         applyTo: "**"
       - files: "npvpn/telegram_bot:docs/conventions/iterative-typing.md"
         applyTo: "app/**"
+      - files: "npvpn/telegram_bot:docs/conventions/authoring-rules.md"
+        applyTo: ".claude/**,.cursor/**,docs/**"
+      # fixing-ci, yougile-updates, releases сознательно не подключены:
+      # это процедуры для человека, а не критерии ревью кода.
