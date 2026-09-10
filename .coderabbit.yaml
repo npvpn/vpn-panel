@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+#
+# Общие конвенции НЕ копируются в панель: они читаются напрямую из репозитория
+# бота через кросс-репные записи filePatterns (owner/repo:path, читается с его
+# дефолтной ветки). Требует, чтобы приложение CodeRabbit было установлено на оба
+# репозитория. Спека: telegram_bot/docs/superpowers/specs/2026-09-10-npvpn-2029-ai-code-review-design.md
+language: "ru"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  auto_assign_reviewers: false
+  high_level_summary: true
+  poem: false
+  in_progress_fortune: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+
+  path_filters:
+    - "!uv.lock"
+    - "!docs/superpowers/**"
+
+  path_instructions:
+    - path: "app/db/migrations/**"
+      instructions: |
+        Миграции создаются через `alembic revision` в собственной цепочке
+        панели — не смешивать с миграциями бота. Проверяй по
+        `docs/architecture.md` § «Сквозные инварианты» требование collation
+        `utf8mb4_bin` для FK на `inbounds.tag`.
+    - path: "app/db/models.py"
+      instructions: |
+        Применяй инварианты MySQL из `docs/architecture.md` § «Сквозные
+        инварианты», включая потолок `INT32` у `users.expire`.
+        Если изменение меняет инвариант, описанный в `docs/architecture.md`,
+        требуй обновить этот документ в том же PR.
+    - path: "app/xray/**"
+      instructions: |
+        Проверяй по `docs/architecture.md` § «Ноды и xray», что блокирующая
+        работа не выполняется в общем threadpool.
+    - path: "app/routers/**"
+      instructions: |
+        Применяй разделение слоёв из `docs/architecture.md` § «Слои и
+        зависимости»: логике место в сервисах, из роутера её выносят.
+    - path: "app/**"
+      instructions: |
+        Новая логика приходит с тестом в `tests/`
+        (`npvpn/telegram_bot:docs/conventions/writing-tests.md`).
+        Новая переменная окружения обязана попасть в `.env.example`.
+
+  pre_merge_checks:
+    title:
+      mode: "warning"
+      requirements: |
+        Заголовок обязан иметь вид `NPVPN-XXXX: краткая суть на русском`,
+        где NPVPN-XXXX — код задачи. Номер PR вида `(#N)` вручную не ставится.
+    description:
+      mode: "warning"
+
+  tools:
+    ruff:
+      enabled: false
+
+  finishing_touches:
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+
+knowledge_base:
+  learnings:
+    scope: "local"
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      # Своё — специфика панели.
+      - "CLAUDE.md"
+      - "docs/architecture.md"
+      - "docs/cascade-node-roles.md"
+      - "docs/logging.md"
+      # Общее — читается из репозитория бота, копий здесь не держим.
+      - "npvpn/telegram_bot:docs/git-flow.md"
+      - files: "npvpn/telegram_bot:docs/conventions/writing-tests.md"
+        applyTo: "app/**,tests/**"
+      - files: "npvpn/telegram_bot:docs/conventions/structural-fixes.md"
+        applyTo: "app/**"
+      - files: "npvpn/telegram_bot:docs/conventions/commit-messages.md,npvpn/telegram_bot:docs/conventions/pull-requests.md"
+        applyTo: "**"
+      - files: "npvpn/telegram_bot:docs/conventions/iterative-typing.md"
+        applyTo: "app/**"
