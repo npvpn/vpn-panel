@@ -14,9 +14,11 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    Text,
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql.expression import select, text
@@ -118,6 +120,52 @@ class ManagedSetting(Base):
     source = Column(String(255), nullable=False, default="")
     version = Column(String(64), nullable=False, default="")
     applied_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+TEMPLATE_KIND = "template"
+PROFILE_KIND = "routing_profile"
+TEMPLATE_SLUG = "v2ray_json"
+DEFAULT_PROFILE_SLUG = "default"
+BS_PROFILE_SLUG = "bs"
+
+
+class XrayTemplate(Base):
+    """Редактируемый документ клиентского конфига: общий v2ray-json шаблон или routing-профиль."""
+
+    __tablename__ = "xray_templates"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(32), nullable=False)
+    slug = Column(String(64), nullable=False, unique=True)
+    title = Column(String(128), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    versions = relationship(
+        "XrayTemplateVersion",
+        back_populates="template",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="XrayTemplateVersion.version",
+    )
+
+
+class XrayTemplateVersion(Base):
+    """Одна сохранённая редакция документа. Append-only: активна версия с максимальным version."""
+
+    __tablename__ = "xray_template_versions"
+    __table_args__ = (UniqueConstraint("template_id", "version"),)
+
+    id = Column(Integer, primary_key=True)
+    template_id = Column(Integer, ForeignKey("xray_templates.id", ondelete="CASCADE"), nullable=False, index=True)
+    template = relationship("XrayTemplate", back_populates="versions", passive_deletes=True)
+    version = Column(Integer, nullable=False)
+    body = Column(LONGTEXT().with_variant(Text, "sqlite"), nullable=False, default="")
+    comment = Column(String(255), nullable=True)
+    author_admin_id = Column(Integer, ForeignKey("admins.id", ondelete="SET NULL"), nullable=True)
+    # Снимок имени: переживает удаление админа, история остаётся читаемой.
+    author_username = Column(String(34), nullable=False, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class User(Base):
@@ -532,6 +580,11 @@ class Node(Base):
         server_default=NodeBalancerStrategy.random.value,
     )
     is_bs = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    # Профиль клиентского routing. NULL — профиль `default`. is_bs остаётся
+    # исключительно про БС-лимит трафика и блокировку (NPVPN-2024).
+    routing_profile_id = Column(
+        Integer, ForeignKey("xray_templates.id", ondelete="SET NULL"), nullable=True, default=None
+    )
     # Лимит трафика у хостера на этот сервер (SI-байты). NULL — лимита нет.
     hosting_traffic_limit_bytes = Column(BigInteger, nullable=True)
 
