@@ -9,8 +9,9 @@ from __future__ import annotations
 import sys
 import types
 
+import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 _share_stub = types.ModuleType("app.subscription.share")
@@ -18,7 +19,17 @@ _share_stub.generate_v2ray_links = lambda *args, **kwargs: []
 sys.modules.setdefault("app.subscription.share", _share_stub)
 
 from app.db.base import Base  # noqa: E402
-from app.db.models import PROFILE_KIND, TEMPLATE_KIND, XrayTemplate, XrayTemplateVersion  # noqa: E402
+from app.db.models import (  # noqa: E402
+    BS_PROFILE_SLUG,
+    DEFAULT_PROFILE_SLUG,
+    PROFILE_KIND,
+    TEMPLATE_KIND,
+    TEMPLATE_SLUG,
+    Node,
+    XrayTemplate,
+    XrayTemplateVersion,
+)
+from app.services import xray_templates as svc  # noqa: E402
 from app.services.xray_templates import get_active_bodies  # noqa: E402
 
 
@@ -129,3 +140,133 @@ def test_repeat_call_in_same_session_does_not_query_again():
 
         assert second is first  # тот же закэшированный объект
         assert query_calls == []  # к БД не обращались вовсе
+
+
+class _Admin:
+    """Заглушка sudo-админа для сервисных тестов (id + username, как в моделях)."""
+
+    id = 1
+    username = "sudo"
+
+
+@pytest.fixture()
+def db():
+    """Отдельная in-memory БД с полной схемой (Node нужен для теста удаления профиля)."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    for slug, kind, title in (
+        (TEMPLATE_SLUG, TEMPLATE_KIND, "v2ray-json шаблон"),
+        (DEFAULT_PROFILE_SLUG, PROFILE_KIND, "Обычные ноды"),
+        (BS_PROFILE_SLUG, PROFILE_KIND, "БС-ноды"),
+    ):
+        template = XrayTemplate(kind=kind, slug=slug, title=title)
+        session.add(template)
+        session.flush()
+        session.add(XrayTemplateVersion(template_id=template.id, version=1, body="", author_username="migration"))
+    session.commit()
+    yield session
+    session.close()
+
+
+def _template_id(db, slug):
+    return db.query(XrayTemplate).filter(XrayTemplate.slug == slug).one().id
+
+
+def test_save_appends_new_version(db):
+    tid = _template_id(db, TEMPLATE_SLUG)
+    svc.save_version(db, tid, '{"outbounds": []}', "первая правка", _Admin())
+    versions = svc.list_versions(db, tid, limit=10, offset=0)
+    assert [v["version"] for v in versions] == [2, 1]
+    assert versions[0]["author_username"] == "sudo"
+    assert versions[0]["comment"] == "первая правка"
+
+
+def test_active_body_is_the_highest_version(db):
+    tid = _template_id(db, TEMPLATE_SLUG)
+    svc.save_version(db, tid, '{"a": 1}', None, _Admin())
+    svc.save_version(db, tid, '{"a": 2}', None, _Admin())
+    assert svc.get_active_bodies(db)["template"] == '{"a": 2}'
+
+
+def test_revert_creates_new_version_and_keeps_history(db):
+    tid = _template_id(db, TEMPLATE_SLUG)
+    svc.save_version(db, tid, '{"a": 1}', None, _Admin())
+    svc.save_version(db, tid, '{"a": 2}', None, _Admin())
+    svc.revert(db, tid, 2, _Admin())
+    versions = svc.list_versions(db, tid, limit=10, offset=0)
+    assert [v["version"] for v in versions] == [4, 3, 2, 1]
+    assert svc.get_active_bodies(db)["template"] == '{"a": 1}'
+    # История append-only: старые версии на месте, тела не переписаны.
+    assert svc.get_version(db, tid, 3).body == '{"a": 2}'
+
+
+def test_invalid_json_is_rejected_and_no_version_written(db):
+    tid = _template_id(db, TEMPLATE_SLUG)
+    with pytest.raises(svc.InvalidTemplateBody):
+        svc.save_version(db, tid, "{not json", None, _Admin())
+    assert [v["version"] for v in svc.list_versions(db, tid, limit=10, offset=0)] == [1]
+
+
+def test_empty_body_is_allowed(db):
+    tid = _template_id(db, DEFAULT_PROFILE_SLUG)
+    svc.save_version(db, tid, "   ", None, _Admin())
+    assert svc.get_active_bodies(db)["profiles"].get(tid) in (None, "   ")
+
+
+def test_profiles_map_skips_blank_bodies(db):
+    bs_id = _template_id(db, BS_PROFILE_SLUG)
+    svc.save_version(db, bs_id, '{"rules": []}', None, _Admin())
+    bodies = svc.get_active_bodies(db)
+    assert bodies["profiles"][bs_id] == '{"rules": []}'
+    assert _template_id(db, DEFAULT_PROFILE_SLUG) not in bodies["profiles"]
+
+
+def test_deleting_profile_resets_bound_nodes(db):
+    bs_id = _template_id(db, BS_PROFILE_SLUG)
+    db.add(Node(name="n1", address="192.0.2.1", port=62050, api_port=62051, routing_profile_id=bs_id))
+    db.commit()
+    svc.delete_profile(db, bs_id)
+    assert db.query(Node).one().routing_profile_id is None
+
+
+def test_template_and_default_profile_cannot_be_deleted(db):
+    with pytest.raises(svc.XrayTemplateError):
+        svc.delete_profile(db, _template_id(db, TEMPLATE_SLUG))
+    with pytest.raises(svc.XrayTemplateError):
+        svc.delete_profile(db, _template_id(db, DEFAULT_PROFILE_SLUG))
+
+
+def test_created_profile_starts_with_empty_version_one(db):
+    created = svc.create_profile(db, "mobile", "Мобильные", _Admin())
+    versions = svc.list_versions(db, created["id"], limit=10, offset=0)
+    assert [v["version"] for v in versions] == [1]
+    assert svc.get_version(db, created["id"], 1).body == ""
+
+
+def test_duplicate_slug_is_rejected(db):
+    svc.create_profile(db, "mobile", "Мобильные", _Admin())
+    with pytest.raises(svc.XrayTemplateError):
+        svc.create_profile(db, "mobile", "Дубль", _Admin())
+
+
+def test_invalidate_called_on_save_refreshes_process_cache(db, monkeypatch):
+    """Требование корректности: запись версии обязана сбрасывать get_cached_active_bodies,
+    иначе подписка продолжит отдавать старое тело до перезапуска процесса (см. брифинг Task 3).
+
+    get_cached_active_bodies() в проде открывает свою сессию через GetDB() — здесь
+    подменяем её на сессию фикстуры, чтобы процессный кэш читал то же состояние, что и
+    save_version() пишет.
+    """
+    import contextlib
+
+    monkeypatch.setattr(svc, "GetDB", lambda: contextlib.nullcontext(db))
+    tid = _template_id(db, TEMPLATE_SLUG)
+    svc.get_cached_active_bodies.cache_clear()
+    svc.save_version(db, tid, '{"a": "before"}', None, _Admin())
+    # Прогреваем кэш текущим состоянием БД (как это делает /sub/ на горячем пути).
+    assert svc.get_cached_active_bodies()["template"] == '{"a": "before"}'
+    svc.save_version(db, tid, '{"a": "after"}', None, _Admin())
+    # Без invalidate() внутри save_version здесь осталось бы старое закэшированное значение.
+    assert svc.get_cached_active_bodies()["template"] == '{"a": "after"}'
+    svc.get_cached_active_bodies.cache_clear()

@@ -15,6 +15,7 @@ from . import (
     system,
     user,
     user_template,
+    xray_templates,
 )
 
 api_router = APIRouter()
@@ -31,6 +32,7 @@ routers: list[APIRouter] = [
     user_template.router,
     user.router,
     home.router,
+    xray_templates.router,  # type: ignore[has-type]
 ]
 
 if MEMORY_PROFILING_ENABLED:
