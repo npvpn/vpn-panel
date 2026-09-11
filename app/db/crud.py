@@ -1836,6 +1836,7 @@ def create_node(db: Session, node: NodeCreate) -> Node:
     dbnode.is_bs = node.is_bs
     dbnode.cascade_balancer_strategy = node.cascade_balancer_strategy
     cast(Any, dbnode).hosting_traffic_limit_bytes = node.hosting_traffic_limit_bytes
+    cast(Any, dbnode).routing_profile_id = node.routing_profile_id
     if node.cascade_routes is not None:
         _sync_cascade_routes(db, dbnode, node.cascade_routes)
 
@@ -1915,6 +1916,9 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
 
     if "hosting_traffic_limit_bytes" in modify.model_fields_set:
         cast(Any, dbnode).hosting_traffic_limit_bytes = modify.hosting_traffic_limit_bytes
+
+    if "routing_profile_id" in modify.model_fields_set:
+        cast(Any, dbnode).routing_profile_id = modify.routing_profile_id
 
     db.commit()
     db.refresh(dbnode)
