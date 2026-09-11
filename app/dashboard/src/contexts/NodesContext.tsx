@@ -76,6 +76,7 @@ export const NodeSchema = z.object({
     )
     .optional(),
   is_bs: z.boolean().optional(),
+  routing_profile_id: z.number().nullable().optional(),
   cascade_balancer_strategy: z
     .enum(["random", "roundRobin", "leastPing", "leastLoad"])
     .optional(),
@@ -97,6 +98,7 @@ export const getNodeDefaultValues = (): NodeType => ({
   role: "direct",
   cascade_routes: [],
   is_bs: false,
+  routing_profile_id: null,
   cascade_balancer_strategy: "random",
   hosting_traffic_limit_bytes: null,
   hosting_traffic_limit_tb: "",
