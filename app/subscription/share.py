@@ -147,14 +147,16 @@ def generate_subscription(
     resolved_settings = apply_bot_settings_fallback(settings or DEFAULT_BOT_SETTINGS)
 
     # Тела шаблона/профилей routing теперь живут в app.services.xray_templates (документы
-    # с историей, NPVPN-2024), а не в panel_settings. db передаётся только там, где он уже
-    # открыт per-request (роутер /sub/); без него v2ray-json рендерится дефолтным шаблоном
-    # без пер-серверных профилей — тот же фолбэк, что и раньше для пустых настроек.
+    # с историей, NPVPN-2024), а не в panel_settings. Тела читаются через процессный кэш
+    # get_cached_active_bodies (без запроса к БД на каждую подписку); db передаётся только
+    # там, где он уже открыт per-request (роутер /sub/) — нужен для node_profiles. Без db
+    # v2ray-json рендерится дефолтным шаблоном без пер-серверных профилей — тот же фолбэк,
+    # что и раньше для пустых настроек.
     v2ray_template_override = None
     profiles: dict[int, dict] = {}
     if db is not None:
         from app.db import crud
-        from app.services.xray_templates import get_active_bodies
+        from app.services.xray_templates import get_cached_active_bodies
         from app.xray.routing_profiles import parse_json_object
 
         def _safe_json(raw, name):
@@ -165,7 +167,11 @@ def generate_subscription(
                 return None
 
         node_profiles = node_profiles if node_profiles is not None else crud.get_node_routing_profiles(db)
-        bodies = get_active_bodies(db)
+        # Процессный кэш (не db.info): /sub/ — горячий путь, обычный запрос БД на КАЖДУЮ
+        # подписку недопустим (раньше шаблон/routing читались из уже загруженного
+        # panel_settings, без лишнего JOIN). Инвалидируется через
+        # app.services.xray_templates.invalidate при любой записи версии (Task 3).
+        bodies = get_cached_active_bodies()
         v2ray_template_override = _safe_json(bodies.get("template"), "v2ray_json template")
         profiles = {
             template_id: parsed
