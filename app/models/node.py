@@ -75,6 +75,7 @@ class Node(BaseModel):
     is_bs: bool = False
     cascade_balancer_strategy: NodeBalancerStrategy = NodeBalancerStrategy.random
     hosting_traffic_limit_bytes: int | None = None
+    routing_profile_id: int | None = None
 
     @field_validator("hosting_traffic_limit_bytes")
     @classmethod

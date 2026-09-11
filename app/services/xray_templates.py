@@ -192,6 +192,15 @@ def create_profile(db: Session, slug: str, title: str, admin) -> dict[str, Any]:
     return {"id": template.id, "slug": template.slug, "title": template.title}
 
 
+def assert_profile_exists(db: Session, template_id: int | None) -> None:
+    """None (профиль default) допустим; иначе id обязан быть существующим routing-профилем."""
+    if template_id is None:
+        return
+    template = db.query(XrayTemplate).filter(XrayTemplate.id == template_id).first()
+    if template is None or template.kind != PROFILE_KIND:
+        raise XrayTemplateError("unknown routing profile")
+
+
 def delete_profile(db: Session, template_id: int) -> None:
     template = _get_template(db, template_id)
     if template.kind != PROFILE_KIND:

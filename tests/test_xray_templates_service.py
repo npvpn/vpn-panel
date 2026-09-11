@@ -269,4 +269,38 @@ def test_invalidate_called_on_save_refreshes_process_cache(db, monkeypatch):
     svc.save_version(db, tid, '{"a": "after"}', None, _Admin())
     # Без invalidate() внутри save_version здесь осталось бы старое закэшированное значение.
     assert svc.get_cached_active_bodies()["template"] == '{"a": "after"}'
+
+
+def test_delete_profile_invalidates_process_cache(db, monkeypatch):
+    """Тот же инвариант, что выше, но для пути удаления профиля (Task 3 доказывала его
+    только для записи версии через _append_version). delete_profile тоже обязан звать
+    invalidate(), иначе /sub/ продолжит отдавать тело уже удалённого профиля из процессного
+    кэша до перезапуска.
+    """
+    import contextlib
+
+    monkeypatch.setattr(svc, "GetDB", lambda: contextlib.nullcontext(db))
+    bs_id = _template_id(db, BS_PROFILE_SLUG)
+    svc.save_version(db, bs_id, '{"rules": ["bs"]}', None, _Admin())
+    svc.get_cached_active_bodies.cache_clear()
+    # Прогреваем процессный кэш непустым телом удаляемого профиля.
+    assert svc.get_cached_active_bodies()["profiles"][bs_id] == '{"rules": ["bs"]}'
+
+    svc.delete_profile(db, bs_id)
+
+    # Именно процессный кэш — не get_active_bodies(db) — должен перестать отдавать тело.
+    assert bs_id not in svc.get_cached_active_bodies()["profiles"]
+
+
+def test_assert_profile_exists_rejects_template_and_unknown(db):
+    svc.assert_profile_exists(db, _template_id(db, BS_PROFILE_SLUG))  # не бросает
+    with pytest.raises(svc.XrayTemplateError):
+        svc.assert_profile_exists(db, _template_id(db, TEMPLATE_SLUG))
+    with pytest.raises(svc.XrayTemplateError):
+        svc.assert_profile_exists(db, 99999)
+
+
+def test_assert_profile_exists_allows_none(db):
+    """None — валидное значение (профиль default), а не «профиль не найден»."""
+    svc.assert_profile_exists(db, None)  # не бросает
     svc.get_cached_active_bodies.cache_clear()
