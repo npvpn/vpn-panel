@@ -68,6 +68,35 @@ def _write_panel_data(conn, data: dict) -> None:
         conn.execute(sa.insert(gs).values(key="panel", data=payload, created_at=now, updated_at=now))
 
 
+NODES_FK_NAME = "fk_nodes_routing_profile_id_xray_templates"
+
+
+def _add_routing_profile_column(op_like) -> None:
+    """Колонка + ИМЕНОВАННЫЙ FK.
+
+    Безымянный sa.ForeignKey внутри add_column MySQL называет сам (nodes_ibfk_N), и
+    downgrade потом не может его снять: drop_column упирается в ERROR 1828 «Cannot drop
+    column ... needed in a foreign key constraint». Имя задаём явно — как в
+    f0b1c2d3e4f5_add_bots_and_user_bot_link.py.
+    """
+    with op_like.batch_alter_table("nodes") as batch_op:
+        batch_op.add_column(sa.Column("routing_profile_id", sa.Integer(), nullable=True))
+        batch_op.create_foreign_key(
+            NODES_FK_NAME,
+            "xray_templates",
+            ["routing_profile_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
+
+
+def _drop_routing_profile_column(op_like) -> None:
+    """Снятие FK строго ДО удаления колонки (иначе MySQL отдаёт ERROR 1828)."""
+    with op_like.batch_alter_table("nodes") as batch_op:
+        batch_op.drop_constraint(NODES_FK_NAME, type_="foreignkey")
+        batch_op.drop_column("routing_profile_id")
+
+
 def _migrate_data(op_like) -> None:
     """Перенос: ключи → документы + версия 1; is_bs=1 → профиль bs; ключи вычищаются."""
     conn = op_like.get_bind()
@@ -151,20 +180,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=True),
         sa.UniqueConstraint("template_id", "version"),
     )
-    op.add_column(
-        "nodes",
-        sa.Column(
-            "routing_profile_id",
-            sa.Integer(),
-            sa.ForeignKey("xray_templates.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
-    )
+    _add_routing_profile_column(op)
     _migrate_data(op)
 
 
 def downgrade() -> None:
     _rollback_data(op)
-    op.drop_column("nodes", "routing_profile_id")
+    _drop_routing_profile_column(op)
     op.drop_table("xray_template_versions")
     op.drop_table("xray_templates")

@@ -196,6 +196,42 @@ def test_mysql_sql_quotes_reserved_key_column():
     assert 'WHERE "key"' not in update_compiled
 
 
+def _compiled_mysql_ddl(fn) -> str:
+    """Скомпилировать DDL-шаг миграции под MySQL, не подключаясь к серверу.
+
+    Alembic в offline-режиме (as_sql) пишет готовый SQL в буфер — так проверяется
+    ровно тот код, который поедет на прод, а не его пересказ в тесте.
+    """
+    import io
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy.dialects import mysql
+
+    buffer = io.StringIO()
+    context = MigrationContext.configure(dialect=mysql.dialect(), opts={"as_sql": True, "output_buffer": buffer})
+    fn(Operations(context))
+    return buffer.getvalue()
+
+
+def test_mysql_nodes_fk_is_named_and_dropped_before_column():
+    """Регресс: безымянный FK получает от MySQL автоимя nodes_ibfk_N, и downgrade,
+    дропающий колонку без снятия констрейнта, падает с ERROR 1828 «Cannot drop column ...
+    needed in a foreign key constraint» (следом не проходит и drop_table xray_templates).
+    На sqlite это не воспроизводится — отсюда компиляция под диалект MySQL."""
+    migration = _load_migration()
+
+    upgrade_sql = _compiled_mysql_ddl(migration._add_routing_profile_column)
+    assert migration.NODES_FK_NAME in upgrade_sql  # имя задано явно, не отдано MySQL
+    assert "ADD COLUMN routing_profile_id" in upgrade_sql
+    assert "ON DELETE SET NULL" in upgrade_sql
+
+    downgrade_sql = _compiled_mysql_ddl(migration._drop_routing_profile_column)
+    drop_fk = downgrade_sql.index(f"DROP FOREIGN KEY {migration.NODES_FK_NAME}")
+    drop_column = downgrade_sql.index("DROP COLUMN routing_profile_id")
+    assert drop_fk < drop_column  # снятие констрейнта строго до удаления колонки
+
+
 def test_migrate_data_without_panel_row_does_not_fail_and_creates_row():
     """Свежая установка: строки key='panel' ещё нет (сеется только client_apps)."""
     migration = _load_migration()
