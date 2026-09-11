@@ -3,7 +3,7 @@ import logging
 import random
 import secrets
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime as dt
 from datetime import timedelta
 from typing import TYPE_CHECKING, Literal, cast
@@ -13,10 +13,12 @@ from jdatetime import date as jd
 from app import xray
 from app.subscription.bs_context import ZERO_STUB, BsContext, StubEndpoint
 from app.utils.system import get_public_ip, get_public_ipv6, readable_size
+from app.xray.routing_profiles import resolve_routing_profile
 
 from . import *
 
 if TYPE_CHECKING:
+    from app.db import Session
     from app.models.user import UserResponse
 
 from config import (
@@ -77,11 +79,12 @@ def _render(
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
     conf: SubscriptionConf | None = None,
+    node_profiles: Mapping[int, int] | None = None,
 ) -> list | str:
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
-    conf передаётся готовым только для v2ray-json (его конструктор принимает
-    шаблон и routing-оверрайды из настроек панели).
+    conf передаётся готовым только для v2ray-json (его конструктор принимает шаблон и
+    карту routing-профилей из app.services.xray_templates).
     """
     if conf is None:
         factory = CONF_FACTORIES.get(render_format)
@@ -96,6 +99,7 @@ def _render(
         reverse=reverse,
         bs=bs,
         stub=stub,
+        node_profiles=node_profiles,
     )
 
 
@@ -132,29 +136,44 @@ def generate_subscription(
     device_limited_hard: bool = False,
     unsupported_client: bool = False,
     settings: dict | None = None,
-    panel_settings: dict | None = None,
     bs: BsContext | None = None,
+    db: "Session | None" = None,
+    node_profiles: Mapping[int, int] | None = None,
 ) -> str:
     bs = bs or BsContext.empty()
     from app.models.bot import DEFAULT_BOT_SETTINGS, apply_bot_settings_fallback
-    from app.models.settings import apply_panel_settings_fallback
     from config import USE_CUSTOM_JSON_DEFAULT
 
     resolved_settings = apply_bot_settings_fallback(settings or DEFAULT_BOT_SETTINGS)
-    resolved_panel = apply_panel_settings_fallback(panel_settings)
 
-    from app.xray.bs_routing import parse_json_object
+    # Тела шаблона/профилей routing теперь живут в app.services.xray_templates (документы
+    # с историей, NPVPN-2024), а не в panel_settings. db передаётся только там, где он уже
+    # открыт per-request (роутер /sub/); без него v2ray-json рендерится дефолтным шаблоном
+    # без пер-серверных профилей — тот же фолбэк, что и раньше для пустых настроек.
+    v2ray_template_override = None
+    profiles: dict[int, dict] = {}
+    if db is not None:
+        from app.db import crud
+        from app.services.xray_templates import get_active_bodies
+        from app.xray.routing_profiles import parse_json_object
 
-    def _safe_json(raw, name):
-        try:
-            return parse_json_object(raw)
-        except ValueError as exc:
-            logger.warning("[sub] ignoring invalid %s: %s", name, exc)
-            return None
+        def _safe_json(raw, name):
+            try:
+                return parse_json_object(raw)
+            except ValueError as exc:
+                logger.warning("[sub] ignoring invalid %s: %s", name, exc)
+                return None
 
-    v2ray_template_override = _safe_json(resolved_panel.get("sub_v2ray_json_template"), "sub_v2ray_json_template")
-    routing_default_override = _safe_json(resolved_panel.get("sub_routing_json_default"), "sub_routing_json_default")
-    routing_bs_override = _safe_json(resolved_panel.get("sub_routing_json_bs"), "sub_routing_json_bs")
+        node_profiles = node_profiles if node_profiles is not None else crud.get_node_routing_profiles(db)
+        bodies = get_active_bodies(db)
+        v2ray_template_override = _safe_json(bodies.get("template"), "v2ray_json template")
+        profiles = {
+            template_id: parsed
+            for template_id, raw in bodies.get("profiles", {}).items()
+            if (parsed := _safe_json(raw, f"routing profile {template_id}")) is not None
+        }
+
+    node_profiles = node_profiles or {}
 
     render_format = config_format
     if config_format == "incy":
@@ -261,8 +280,7 @@ def generate_subscription(
 
         conf = V2rayJsonConfig(
             template_override=v2ray_template_override,
-            routing_default=routing_default_override,
-            routing_bs=routing_bs_override,
+            profiles=profiles,
         )
         if device_limit_text:
             stub_inbound = {
@@ -295,6 +313,7 @@ def generate_subscription(
                 bs=bs,
                 stub=stub,
                 conf=conf,
+                node_profiles=node_profiles,
             ),
         )
     else:
@@ -418,9 +437,11 @@ def process_inbounds_and_tags(
     reverse=False,
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
+    node_profiles: Mapping[int, int] | None = None,
 ) -> list | str:
     bs = bs or BsContext.empty()
     stub = stub or ZERO_STUB
+    node_profiles = node_profiles or {}
     _inbounds = []
     for protocol, tags in inbounds.items():
         for tag in tags:
@@ -513,11 +534,13 @@ def process_inbounds_and_tags(
                     )
                     continue
 
-                # Пер-серверный routing только для v2ray-json: БС-хост получает
-                # routing_bs, остальные — default. Другие форматы про is_bs не знают.
+                # Пер-серверный routing только для v2ray-json: профиль берётся по
+                # привязанным нодам хоста. Другие форматы про профили не знают.
                 add_kwargs = {}
-                if isinstance(conf, V2rayJsonConfig) and bs.is_bs(host):
-                    add_kwargs["is_bs"] = True
+                if isinstance(conf, V2rayJsonConfig):
+                    profile_id = resolve_routing_profile(host, node_profiles)
+                    if profile_id is not None:
+                        add_kwargs["routing_profile_id"] = profile_id
 
                 candidate = {
                     "order": host.get("order", 0),

@@ -14,7 +14,7 @@ xray даёт только так.
 Проба идёт ЧЕРЕЗ ноду до probeUrl: у живой ноды (VPN-выход) google/generate_204 доступен →
 низкий пинг; мёртвая → проба падает → выпадает из пула.
 
-Без импортов БД/шаблонов — покрывается pytest без окружения (как cascade_config/bs_routing).
+Без импортов БД/шаблонов — покрывается pytest без окружения (как cascade_config/routing_profiles).
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def apply_host_balancer(config: dict) -> dict:
     Вызывается только когда proxy-outbound'ов >1 (см. V2rayJsonConfig.add_balanced).
 
     ВАЖНО: не мутирует config["routing"] на месте — select_routing()
-    (app/xray/bs_routing.py) может отдавать ОДИН И ТОТ ЖЕ routing-объект (без копии)
+    (app/xray/routing_profiles.py) может отдавать ОДИН И ТОТ ЖЕ routing-объект (без копии)
     во все серверные конфиги подписки (_assemble_config в app/subscription/v2ray.py).
     Мутация на месте протекла бы между конфигами: одноадресные хосты получали бы
     чужой balancer, а при 2+ multi-address хостах — по несколько одинаковых

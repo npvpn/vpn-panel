@@ -2123,10 +2123,10 @@ def get_blocked_bs_node_ids(db: Session, user_id: int) -> set[int]:
     return {node_id for (node_id,) in rows}
 
 
-def get_bs_node_ids(db: Session) -> set[int]:
-    """ID всех БС-нод (Node.is_bs=True) — для пер-серверного выбора клиентского routing."""
-    rows = db.query(Node.id).filter(Node.is_bs.is_(True)).all()
-    return {node_id for (node_id,) in rows}
+def get_node_routing_profiles(db: Session) -> dict[int, int]:
+    """node_id → id профиля клиентского routing. Ноды без профиля не попадают в карту."""
+    rows = db.query(Node.id, Node.routing_profile_id).filter(Node.routing_profile_id.isnot(None)).all()
+    return {node_id: profile_id for node_id, profile_id in rows}
 
 
 def create_notification_reminder(

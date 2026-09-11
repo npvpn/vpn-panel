@@ -80,6 +80,7 @@ from app.subscription.sub_stub import (  # noqa: E402
     JSON_STUB_PORT,
 )
 from app.subscription.v2ray import V2rayJsonConfig, V2rayShareLink  # noqa: E402
+from app.xray.routing_profiles import resolve_routing_profile  # noqa: E402
 
 # share.py делает `from . import *`; в песочнице app/subscription/__init__.py не выполняется
 # (conftest подменяет пакет), поэтому кладём классы конфигов в модуль пакета руками.
@@ -194,7 +195,7 @@ def xray_stub(monkeypatch):
     return _apply
 
 
-def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB):
+def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB, node_profiles: dict[int, int] | None = None):
     # setup_format_variables тянет app.models.user → app.db; подставляем готовые переменные.
     format_variables = defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": None})
     protocol = _Protocol()
@@ -205,19 +206,19 @@ def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB):
         conf=conf,
         bs=bs,
         stub=stub,
+        node_profiles=node_profiles,
     )
 
 
 def _blocked_ctx() -> BsContext:
     return BsContext(
-        bs_node_ids=frozenset({BS_NODE_ID}),
         blocked_node_ids=frozenset({BS_NODE_ID}),
         stub_text=STUB_TEXT,
     )
 
 
 def _bs_ctx() -> BsContext:
-    return BsContext(bs_node_ids=frozenset({BS_NODE_ID}), blocked_node_ids=frozenset(), stub_text="")
+    return BsContext(blocked_node_ids=frozenset(), stub_text="")
 
 
 def test_blocked_domain_host_renders_stub_with_text_address_and_port(xray_stub):
@@ -291,6 +292,14 @@ def test_hosts_emitted_sorted_by_global_order(monkeypatch):
     assert [call["remark"] for call in conf.calls] == ["A2", "B1", "A1"]
 
 
+# Профили клиентского routing для v2ray-json-тестов: два id, назначаемых нодам через
+# node_profiles (node_id → profile_id) — карта, которую раньше заменял булев is_bs.
+DEFAULT_PROFILE_ID = 1
+BS_PROFILE_ID = 2
+OTHER_NODE_ID = 42
+NODE_PROFILES = {OTHER_NODE_ID: DEFAULT_PROFILE_ID, BS_NODE_ID: BS_PROFILE_ID}
+
+
 def _v2ray_json_conf() -> V2rayJsonConfig:
     template = {
         "remarks": "",
@@ -302,8 +311,10 @@ def _v2ray_json_conf() -> V2rayJsonConfig:
     }
     return V2rayJsonConfig(
         template_override=template,
-        routing_default={"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]},
-        routing_bs={"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]},
+        profiles={
+            DEFAULT_PROFILE_ID: {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]},
+            BS_PROFILE_ID: {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]},
+        },
     )
 
 
@@ -312,22 +323,22 @@ def _routing_domains(conf: V2rayJsonConfig) -> list[str]:
 
 
 def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
-    """is_bs=True доходит до V2rayJsonConfig.add → выбирается routing_bs."""
+    """Профиль БС-ноды доходит до V2rayJsonConfig.add → выбирается его routing."""
     xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
 
     assert len(conf.config) == 1
     assert _routing_domains(conf) == ["bs"]
 
 
 def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
-    """Мульти-адресный (балансируемый) БС-хост → add_balanced(is_bs=True)."""
+    """Мульти-адресный (балансируемый) БС-хост → add_balanced(routing_profile_id=...)."""
     xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID])])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
 
     cfg = conf.config[-1]
     proxy_tags = [o["tag"] for o in cfg["outbounds"] if o["tag"].startswith("proxy")]
@@ -336,30 +347,30 @@ def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
 
 
 def test_v2ray_json_non_bs_host_gets_default_routing(xray_stub):
-    xray_stub([_host("plain.example.com", node_ids=[42])])
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID])])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
 
     assert _routing_domains(conf) == ["default"]
 
 
 def test_is_bs_never_leaks_into_other_formats(xray_stub):
-    """Другие форматы про is_bs не знают — их conf.add вызывается без него."""
+    """Другие форматы про профили routing не знают — их conf.add вызывается без них."""
     xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
     conf = _FakeConf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
 
     assert conf.calls[0]["kwargs"] == {}
     assert conf.calls[0]["remark"] == "BS server"
 
 
-# _FakeConf.add(**kwargs) молча проглотит лишний is_bs, если isinstance-гвард
+# _FakeConf.add(**kwargs) молча проглотит лишний routing_profile_id, если isinstance-гвард
 # (`isinstance(conf, V2rayJsonConfig)` в share.py) снять — assert kwargs == {} выше
 # страхует только сам факт "kwargs пустой", но не докажет, что ДРУГИЕ форматы вообще
-# не умеют принять is_bs. Настоящие ClashConfiguration/ClashMetaConfiguration/
-# SingBoxConfiguration/OutlineConfiguration.add() параметра is_bs не имеют — при снятии
+# не умеют принять routing_profile_id. Настоящие ClashConfiguration/ClashMetaConfiguration/
+# SingBoxConfiguration/OutlineConfiguration.add() такого параметра не имеют — при снятии
 # гварда process_inbounds_and_tags упал бы TypeError'ом (500 на подписке). Прогоняем
 # process_inbounds_and_tags с настоящими классами, чтобы рендер БС-хоста в этих форматах
 # доказуемо не падал (а при регрессии гварда — падал бы).
@@ -372,7 +383,7 @@ def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, c
     xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
     conf = conf_factory()
 
-    rendered = _render(conf, _bs_ctx())
+    rendered = _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
 
     assert rendered  # рендер прошёл до конца, а не упал TypeError'ом на лишнем kwarg
 
@@ -382,7 +393,7 @@ def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, c
 # подменяем модулем с фейковым crud (Session/User нужны только как аннотации).
 _fake_crud = types.SimpleNamespace(
     get_blocked_bs_node_ids=lambda db, user_id: set(db["blocked"]),
-    get_bs_node_ids=lambda db: set(db["bs"]),
+    get_node_routing_profiles=lambda db: {nid: BS_PROFILE_ID for nid in db["bs"]},
 )
 _stub_module("app.db", {"Session": dict, "crud": _fake_crud})
 _stub_module("app.db.models", {"User": types.SimpleNamespace})
@@ -404,19 +415,22 @@ def fake_crud(monkeypatch):
 def test_build_bs_context_sets_stub_text_for_blocked_domain_host(fake_crud):
     """Баг: раньше stub_text брался от адресного множества → у доменного БС-хоста
     заглушка получала ПУСТОЕ имя. Теперь текст зависит от блоков по node_ids."""
+    db = {"bs": {BS_NODE_ID}, "blocked": {BS_NODE_ID}}
     bs = build_bs_context(
-        {"bs": {BS_NODE_ID}, "blocked": {BS_NODE_ID}},
+        db,
         types.SimpleNamespace(id=1),
         is_revoked=False,
         is_expired=False,
         bot_settings=BS_SETTINGS,
     )
-    assert bs.bs_node_ids == frozenset({BS_NODE_ID})
     assert bs.blocked_node_ids == frozenset({BS_NODE_ID})
     assert bs.has_blocks is True
     assert bs.stub_text  # имя сервера-заглушки не пустое
-    assert bs.is_bs(_host("bs.example.com", node_ids=[BS_NODE_ID])) is True
     assert bs.is_blocked(_host("bs.example.com", node_ids=[BS_NODE_ID])) is True
+    # Признак routing (раньше bs.is_bs(host)) больше не хранится в BsContext — он
+    # считается отдельно, по карте node_id → profile_id из crud.get_node_routing_profiles.
+    node_profiles = _fake_crud.get_node_routing_profiles(db)
+    assert resolve_routing_profile(_host("bs.example.com", node_ids=[BS_NODE_ID]), node_profiles) == BS_PROFILE_ID
 
 
 def test_build_bs_context_without_blocks_has_no_stub_text(fake_crud):

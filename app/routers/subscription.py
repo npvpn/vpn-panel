@@ -186,8 +186,12 @@ def build_render_context(
     )
 
 
-def render_subscription(ctx: SubscriptionRenderContext, plan: SubscriptionRenderPlan) -> Response:
-    """Единая точка генерации ответа подписки по контексту и плану рендера."""
+def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: SubscriptionRenderPlan) -> Response:
+    """Единая точка генерации ответа подписки по контексту и плану рендера.
+
+    db передаётся генератору для чтения активных тел шаблона/routing-профилей
+    (app.services.xray_templates, NPVPN-2024) и карты node_id → profile_id.
+    """
     conf = generate_subscription(
         user=ctx.user,
         config_format=plan.config_format,
@@ -199,8 +203,8 @@ def render_subscription(ctx: SubscriptionRenderContext, plan: SubscriptionRender
         device_limited_hard=ctx.device_limited_hard,
         unsupported_client=ctx.unsupported_blocks,
         settings=ctx.bot_settings,
-        panel_settings=ctx.panel_settings,
         bs=ctx.bs,
+        db=db,
     )
     return Response(content=conf, media_type=plan.media_type, headers=ctx.response_headers)
 
@@ -273,7 +277,7 @@ def user_subscription(
         use_custom_json_for_streisand=USE_CUSTOM_JSON_FOR_STREISAND,
         use_custom_json_for_happ=USE_CUSTOM_JSON_FOR_HAPP,
     )
-    return render_subscription(ctx, plan)
+    return render_subscription(db, ctx, plan)
 
 
 @router.get("/{token}/devices/{device_id}/revoke", include_in_schema=False)
@@ -370,4 +374,4 @@ def user_subscription_with_client_type(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Unknown client type") from exc
-    return render_subscription(ctx, plan)
+    return render_subscription(db, ctx, plan)

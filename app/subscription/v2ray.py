@@ -11,8 +11,8 @@ from jinja2.exceptions import TemplateNotFound
 from app.subscription.funcs import get_grpc_gun, get_grpc_multi
 from app.templates import render_template
 from app.utils.helpers import UUIDEncoder
-from app.xray.bs_routing import select_routing
 from app.xray.host_balancer import apply_host_balancer, proxy_outbound_tag
+from app.xray.routing_profiles import select_routing
 from config import (
     EXTERNAL_CONFIG,
     GRPC_USER_AGENT_TEMPLATE,
@@ -484,18 +484,18 @@ class V2rayShareLink(str):
 
 
 class V2rayJsonConfig(str):
-    def __new__(cls, template_override=None, routing_default=None, routing_bs=None):
+    def __new__(cls, template_override=None, profiles=None):
         # str subclass: __new__ must absorb the kwargs, or str.__new__ would reject them with TypeError
         return super().__new__(cls)
 
-    def __init__(self, template_override=None, routing_default=None, routing_bs=None):
+    def __init__(self, template_override=None, profiles=None):
         self.config = []
         if template_override is not None:
             self.template = json.dumps(template_override)
         else:
             self.template = render_template(V2RAY_SUBSCRIPTION_TEMPLATE)
-        self.routing_default = routing_default
-        self.routing_bs = routing_bs
+        # {template_id: routing-объект}; пустые тела в карту не попадают.
+        self.profiles = profiles or {}
         self.mux_template = render_template(MUX_TEMPLATE)
         user_agent_data = json.loads(render_template(USER_AGENT_TEMPLATE))
 
@@ -518,22 +518,22 @@ class V2rayJsonConfig(str):
 
         del user_agent_data, grpc_user_agent_data
 
-    def _assemble_config(self, remarks, outbounds, is_bs=False):
+    def _assemble_config(self, remarks, outbounds, routing_profile_id=None):
         json_template = json.loads(self.template)
         json_template["remarks"] = remarks
         json_template["outbounds"] = outbounds + json_template["outbounds"]
         json_template["routing"] = select_routing(
             json_template.get("routing", {}),
-            self.routing_default,
-            self.routing_bs,
-            is_bs,
+            self.profiles.get(routing_profile_id),
         )
         return json_template
 
-    def add_config(self, remarks, outbounds, is_bs=False):
-        self.config.append(self._assemble_config(remarks, outbounds, is_bs))
+    def add_config(self, remarks, outbounds, routing_profile_id=None):
+        self.config.append(self._assemble_config(remarks, outbounds, routing_profile_id))
 
-    def add_balanced(self, remark: str, addresses: list, inbound: dict, settings: dict, is_bs: bool = False):
+    def add_balanced(
+        self, remark: str, addresses: list, inbound: dict, settings: dict, routing_profile_id: int | None = None
+    ):
         """Multi-address хост → один конфиг с N proxy-outbound + xray-балансировщик."""
         dialer = self.make_dialer_outbound(inbound["fragment_setting"], inbound["noise_setting"])
         dialer_proxy = dialer["tag"] if dialer else ""
@@ -543,7 +543,7 @@ class V2rayJsonConfig(str):
         ]
         if dialer:
             outbounds.append(dialer)
-        config = self._assemble_config(remark, outbounds, is_bs)
+        config = self._assemble_config(remark, outbounds, routing_profile_id)
         self.config.append(apply_host_balancer(config))
 
     def render(self, reverse=False):
@@ -1073,11 +1073,11 @@ class V2rayJsonConfig(str):
 
         return outbound
 
-    def add(self, remark: str, address: str, inbound: dict, settings: dict, is_bs: bool = False):
+    def add(self, remark: str, address: str, inbound: dict, settings: dict, routing_profile_id: int | None = None):
         dialer = self.make_dialer_outbound(inbound["fragment_setting"], inbound["noise_setting"])
         dialer_proxy = dialer["tag"] if dialer else ""
         outbound = self._build_proxy_outbound("proxy", address, inbound, settings, dialer_proxy)
         outbounds = [outbound]
         if dialer:
             outbounds.append(dialer)
-        self.add_config(remarks=remark, outbounds=outbounds, is_bs=is_bs)
+        self.add_config(remarks=remark, outbounds=outbounds, routing_profile_id=routing_profile_id)

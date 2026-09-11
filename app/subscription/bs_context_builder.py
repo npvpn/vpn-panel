@@ -21,7 +21,6 @@ def build_bs_context(
         return BsContext.empty()
     blocked_node_ids = frozenset(crud.get_blocked_bs_node_ids(db, cast(int, dbuser.id)))
     return BsContext(
-        bs_node_ids=frozenset(crud.get_bs_node_ids(db)),
         blocked_node_ids=blocked_node_ids,
         # Имя сервера-заглушки нужно только при наличии блоков (и считается от
         # node-id-пути, а не от адресов: доменный БС-хост тоже должен получить имя).
