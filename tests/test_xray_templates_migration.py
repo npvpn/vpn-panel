@@ -63,6 +63,39 @@ def _engine(panel_data: dict, nodes: list[tuple[int, int]]):
     return engine
 
 
+def _engine_without_panel_row(nodes: list[tuple[int, int]]):
+    """Песочница без строки key='panel' в global_settings — сеется только client_apps
+    на свежей установке (см. af83ddaadbe7_add_global_settings.py)."""
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE global_settings ("
+                '"key" VARCHAR(64) PRIMARY KEY, data TEXT, created_at DATETIME, updated_at DATETIME)'
+            )
+        )
+        conn.execute(text("CREATE TABLE nodes (id INTEGER PRIMARY KEY, is_bs BOOLEAN, routing_profile_id INTEGER)"))
+        conn.execute(
+            text(
+                "CREATE TABLE xray_templates (id INTEGER PRIMARY KEY, kind VARCHAR(32), slug VARCHAR(64), "
+                "title VARCHAR(128), created_at DATETIME, updated_at DATETIME)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE xray_template_versions (id INTEGER PRIMARY KEY, template_id INTEGER, "
+                "version INTEGER, body TEXT, comment VARCHAR(255), author_admin_id INTEGER, "
+                "author_username VARCHAR(34), created_at DATETIME)"
+            )
+        )
+        for node_id, is_bs in nodes:
+            conn.execute(
+                text("INSERT INTO nodes (id, is_bs, routing_profile_id) VALUES (:i, :b, NULL)"),
+                {"i": node_id, "b": is_bs},
+            )
+    return engine
+
+
 def test_migration_follows_master_head():
     assert _load_migration().down_revision == "03e94a203122"
 
@@ -141,4 +174,57 @@ def test_downgrade_restores_flat_keys():
     data = json.loads(raw)
     assert data["sub_v2ray_json_template"] == '{"outbounds": []}'
     assert data["sub_routing_json_default"] == '{"rules": []}'
+    assert data["sub_routing_json_bs"] == ""
+
+
+def test_mysql_sql_quotes_reserved_key_column():
+    """Регресс: сырой SELECT/UPDATE ... WHERE key ... падает/лжёт на MySQL (1064, KEY —
+    reserved; без ANSI_QUOTES двойные кавычки — строковый литерал, не идентификатор,
+    условие "key" = 'panel' всегда ложно)."""
+    import sqlalchemy as sa
+    from sqlalchemy.dialects import mysql
+
+    migration = _load_migration()
+    gs = migration._global_settings_table()
+
+    select_compiled = str(sa.select(gs.c.data).where(gs.c.key == "panel").compile(dialect=mysql.dialect()))
+    assert "`key`" in select_compiled
+    assert "SELECT key " not in select_compiled
+
+    update_compiled = str(sa.update(gs).where(gs.c.key == "panel").values(data="x").compile(dialect=mysql.dialect()))
+    assert "`key`" in update_compiled
+    assert 'WHERE "key"' not in update_compiled
+
+
+def test_migrate_data_without_panel_row_does_not_fail_and_creates_row():
+    """Свежая установка: строки key='panel' ещё нет (сеется только client_apps)."""
+    migration = _load_migration()
+    engine = _engine_without_panel_row(nodes=[(1, 1), (2, 0)])
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        raw = conn.execute(text('SELECT data FROM global_settings WHERE "key" = :k'), {"k": "panel"}).scalar_one()
+        bs_id = conn.execute(text("SELECT id FROM xray_templates WHERE slug = 'bs'")).scalar_one()
+        mapping = dict(conn.execute(text("SELECT id, routing_profile_id FROM nodes")).all())
+    # Строка создана (upsert = insert), плоских ключей в ней нет — их и не было.
+    assert json.loads(raw) == {}
+    assert mapping == {1: bs_id, 2: None}
+
+
+def test_rollback_data_without_panel_row_creates_row():
+    """downgrade() на установке без строки key='panel': _rollback_data должна создать
+    строку через upsert, а не молча потерять восстанавливаемые плоские ключи."""
+    migration = _load_migration()
+    engine = _engine_without_panel_row(nodes=[])
+    with engine.begin() as conn:
+        # Документы уже существуют (как будто upgrade() уже создал таблицы и версии),
+        # но саму строку global_settings кто-то удалил/её никогда не было.
+        migration._migrate_data(_Op(conn))
+        conn.execute(text('DELETE FROM global_settings WHERE "key" = :k'), {"k": "panel"})
+        assert conn.execute(text("SELECT COUNT(*) FROM global_settings")).scalar_one() == 0
+
+        migration._rollback_data(_Op(conn))
+        raw = conn.execute(text('SELECT data FROM global_settings WHERE "key" = :k'), {"k": "panel"}).scalar_one()
+    data = json.loads(raw)
+    assert data["sub_v2ray_json_template"] == ""
+    assert data["sub_routing_json_default"] == ""
     assert data["sub_routing_json_bs"] == ""

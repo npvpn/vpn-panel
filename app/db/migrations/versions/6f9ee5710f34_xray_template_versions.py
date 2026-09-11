@@ -34,18 +34,38 @@ TITLES = {
 KINDS = {"v2ray_json": "template", "default": "routing_profile", "bs": "routing_profile"}
 
 
+def _global_settings_table():
+    # `key` — зарезервированное слово в MySQL: без явного sa.table/sa.column
+    # SQLAlchemy само кавычит идентификатор под диалект (в MySQL — обратными
+    # кавычками). Сырой SQL с двойными кавычками компилируется в строковый
+    # литерал 'key' = 'panel' (без ANSI_QUOTES) и условие всегда ложно —
+    # см. app/db/migrations/versions/c9d4e2f1a8b7_legacy_jwt_keys_to_panel_settings.py.
+    return sa.table(
+        "global_settings",
+        sa.column("key"),
+        sa.column("data"),
+        sa.column("created_at"),
+        sa.column("updated_at"),
+    )
+
+
 def _panel_data(conn) -> dict:
-    raw = conn.execute(sa.text('SELECT data FROM global_settings WHERE "key" = :k'), {"k": "panel"}).scalar()
+    gs = _global_settings_table()
+    raw = conn.execute(sa.select(gs.c.data).where(gs.c.key == "panel")).scalar()
     if not raw:
         return {}
     return raw if isinstance(raw, dict) else json.loads(raw)
 
 
 def _write_panel_data(conn, data: dict) -> None:
-    conn.execute(
-        sa.text('UPDATE global_settings SET data = :d WHERE "key" = :k'),
-        {"d": json.dumps(data), "k": "panel"},
-    )
+    """Upsert: строки `key='panel'` может не быть на свежей установке (сеется
+    только `client_apps`, см. af83ddaadbe7_add_global_settings.py)."""
+    gs = _global_settings_table()
+    now = datetime.utcnow()
+    payload = json.dumps(data)
+    result = conn.execute(sa.update(gs).where(gs.c.key == "panel").values(data=payload, updated_at=now))
+    if result.rowcount == 0:
+        conn.execute(sa.insert(gs).values(key="panel", data=payload, created_at=now, updated_at=now))
 
 
 def _migrate_data(op_like) -> None:
