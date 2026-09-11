@@ -88,15 +88,27 @@ export const XrayTemplatesPanel: FC = () => {
     });
   };
 
-  const loadDocuments = (keepSelection = true) => {
+  // Перечитывает список документов и одним согласованным переходом выставляет
+  // selectedId + body + editorJson под ОДИН и тот же документ — так, чтобы не могло
+  // возникнуть состояния "выбран документ A, а в редакторе тело документа B".
+  // `desiredId` — id, который вызывающий код хочет видеть выбранным после релоада
+  // (например, только что созданный документ); если он не передан или отсутствует
+  // в свежем списке, приоритет у текущего selectedId (если он ещё существует), иначе
+  // берётся первый документ.
+  const loadDocuments = (desiredId?: number | null) => {
     setLoading(true);
     return listTemplates()
       .then((docs) => {
         setDocuments(docs);
-        const keep = keepSelection && docs.some((d) => d.id === selectedId);
-        const next = keep ? selectedId : docs[0]?.id ?? null;
-        setSelectedId(next);
+        const candidates = [desiredId, selectedId];
+        const next =
+          candidates.find(
+            (id): id is number => id != null && docs.some((d) => d.id === id)
+          ) ??
+          docs[0]?.id ??
+          null;
         const doc = docs.find((d) => d.id === next);
+        setSelectedId(next);
         setBody(doc?.body ?? "");
         setEditorJson(parseBody(doc?.body ?? ""));
         setComment("");
@@ -114,7 +126,7 @@ export const XrayTemplatesPanel: FC = () => {
   };
 
   useEffect(() => {
-    loadDocuments(false);
+    loadDocuments();
   }, []);
 
   useEffect(() => {
@@ -143,7 +155,7 @@ export const XrayTemplatesPanel: FC = () => {
           isClosable: true,
           position: "top",
         });
-        return loadDocuments();
+        return loadDocuments(selectedId);
       })
       .then(() => {
         if (selectedId != null) loadVersions(selectedId);
@@ -173,7 +185,7 @@ export const XrayTemplatesPanel: FC = () => {
           isClosable: true,
           position: "top",
         });
-        return loadDocuments();
+        return loadDocuments(selectedId);
       })
       .then(() => {
         if (selectedId != null) loadVersions(selectedId);
@@ -196,7 +208,7 @@ export const XrayTemplatesPanel: FC = () => {
         setShowCreateForm(false);
         setNewSlug("");
         setNewTitle("");
-        return loadDocuments(false).then(() => setSelectedId(created.id));
+        return loadDocuments(created.id);
       })
       .catch((err) => {
         if (err?.response?.status === 409) {
@@ -212,7 +224,7 @@ export const XrayTemplatesPanel: FC = () => {
     if (selectedId == null || !selectedDocument?.deletable) return;
     setDeleting(true);
     deleteProfile(selectedId)
-      .then(() => loadDocuments(false))
+      .then(() => loadDocuments())
       .catch((err) => {
         if (err?.response?.status === 409) {
           showErrorToast("panelSettings.xrayTemplates.deleteFailed", err);
