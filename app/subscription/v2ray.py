@@ -484,11 +484,11 @@ class V2rayShareLink(str):
 
 
 class V2rayJsonConfig(str):
-    def __new__(cls, template_override=None, profiles=None):
+    def __new__(cls, template_override=None, profiles=None, default_routing=None):
         # str subclass: __new__ must absorb the kwargs, or str.__new__ would reject them with TypeError
         return super().__new__(cls)
 
-    def __init__(self, template_override=None, profiles=None):
+    def __init__(self, template_override=None, profiles=None, default_routing=None):
         self.config = []
         if template_override is not None:
             self.template = json.dumps(template_override)
@@ -496,6 +496,9 @@ class V2rayJsonConfig(str):
             self.template = render_template(V2RAY_SUBSCRIPTION_TEMPLATE)
         # {template_id: routing-объект}; пустые тела в карту не попадают.
         self.profiles = profiles or {}
+        # Вторая ступень фолбэка: тело документа `default` для хостов без профиля
+        # (нода с routing_profile_id = NULL или хост без привязанных нод).
+        self.default_routing = default_routing
         self.mux_template = render_template(MUX_TEMPLATE)
         user_agent_data = json.loads(render_template(USER_AGENT_TEMPLATE))
 
@@ -525,6 +528,7 @@ class V2rayJsonConfig(str):
         json_template["routing"] = select_routing(
             json_template.get("routing", {}),
             self.profiles.get(routing_profile_id),
+            self.default_routing,
         )
         return json_template
 

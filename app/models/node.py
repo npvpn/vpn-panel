@@ -75,6 +75,10 @@ class Node(BaseModel):
     is_bs: bool = False
     cascade_balancer_strategy: NodeBalancerStrategy = NodeBalancerStrategy.random
     hosting_traffic_limit_bytes: int | None = None
+    # Объявлено ТОЛЬКО здесь — намеренно, как и hosting_traffic_limit_bytes: pydantic v2
+    # ведёт model_fields_set по экземпляру, поэтому NodeModify отличает «поле не прислали»
+    # от «прислали null» без дублирования поля в наследниках (в отличие от is_bs, который
+    # исторически продублирован в трёх классах — по аналогии с ним делать НЕ надо).
     routing_profile_id: int | None = None
 
     @field_validator("hosting_traffic_limit_bytes")

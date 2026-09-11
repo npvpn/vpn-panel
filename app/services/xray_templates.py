@@ -18,7 +18,12 @@ _SESSION_CACHE_KEY = "_xray_templates"
 
 
 def get_active_bodies(db: Session) -> dict[str, Any]:
-    """{"template": str, "profiles": {template_id: body}} — только непустые тела профилей.
+    """{"template": str, "profiles": {template_id: body}, "default_profile_id": int | None}.
+
+    В "profiles" попадают только НЕпустые тела: пустое тело означает «фолбэк дальше
+    по цепочке», а не «пустой routing». "default_profile_id" — id документа со slug
+    `default`; он вторая ступень фолбэка в select_routing для хостов без профиля, и
+    отдаётся отдельно именно потому, что при пустом теле в "profiles" его нет.
 
     Кэш на сессию БД: /sub/ — горячий путь, лишних запросов на подписку быть не должно.
     """
@@ -34,7 +39,7 @@ def get_active_bodies(db: Session) -> dict[str, Any]:
         .subquery()
     )
     rows = (
-        db.query(XrayTemplate.id, XrayTemplate.kind, XrayTemplateVersion.body)
+        db.query(XrayTemplate.id, XrayTemplate.kind, XrayTemplate.slug, XrayTemplateVersion.body)
         .join(XrayTemplateVersion, XrayTemplateVersion.template_id == XrayTemplate.id)
         .join(
             latest,
@@ -43,11 +48,14 @@ def get_active_bodies(db: Session) -> dict[str, Any]:
         )
         .all()
     )
-    bodies: dict[str, Any] = {"template": "", "profiles": {}}
-    for template_id, kind, body in rows:
+    bodies: dict[str, Any] = {"template": "", "profiles": {}, "default_profile_id": None}
+    for template_id, kind, slug, body in rows:
         if kind == TEMPLATE_KIND:
             bodies["template"] = body or ""
-        elif (body or "").strip():
+            continue
+        if slug == DEFAULT_PROFILE_SLUG:
+            bodies["default_profile_id"] = template_id
+        if (body or "").strip():
             bodies["profiles"][template_id] = body
     db.info[_SESSION_CACHE_KEY] = bodies
     return bodies
@@ -84,7 +92,9 @@ def _validate(body: str | None) -> str:
 def _get_template(db: Session, template_id: int) -> XrayTemplate:
     template = db.query(XrayTemplate).filter(XrayTemplate.id == template_id).first()
     if template is None:
-        raise XrayTemplateError("template not found")
+        # LookupError, а не XrayTemplateError: «документа нет» — это 404, а не 409
+        # (409 остаётся за нарушением правил: дубль slug, удаление неудаляемого).
+        raise LookupError("template not found")
     return template
 
 

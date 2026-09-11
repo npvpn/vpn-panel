@@ -70,6 +70,8 @@ def save_template(
 ):
     try:
         return service.save_version(db, template_id, payload.body, payload.comment, admin)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except service.InvalidTemplateBody as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except service.XrayTemplateError as exc:
@@ -110,6 +112,8 @@ def delete_profile(
     del admin
     try:
         service.delete_profile(db, template_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except service.XrayTemplateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {}

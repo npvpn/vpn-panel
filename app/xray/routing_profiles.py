@@ -44,10 +44,24 @@ def resolve_routing_profile(host: Mapping, node_profiles: Mapping[int, int]) -> 
     return None
 
 
-def select_routing(template_routing: dict, profile_routing: dict | None) -> dict:
+def select_routing(
+    template_routing: dict,
+    profile_routing: dict | None,
+    default_routing: dict | None,
+) -> dict:
     """Секция routing для конфига одного сервера.
 
-    Профиль не задан (нода без профиля либо у профиля пустое тело) — фолбэк на
-    routing из общего шаблона, как было до разделения.
+    Двухступенчатый фолбэк: профиль хоста → профиль `default` → routing шаблона.
+
+    Профиль хоста не задан (у ноды NULL в routing_profile_id, у хоста вовсе нет
+    привязанных нод, либо у назначенного профиля пустое тело) — берётся тело
+    документа `default`. Так сохраняется дореформенное поведение, где обычный
+    хост получал sub_routing_json_default, а routing шаблона был последним
+    рубежом. Пустое тело на любой ступени означает «падать дальше по цепочке»,
+    а не «пустой routing».
     """
-    return profile_routing if profile_routing is not None else template_routing
+    if profile_routing is not None:
+        return profile_routing
+    if default_routing is not None:
+        return default_routing
+    return template_routing

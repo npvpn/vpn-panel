@@ -104,6 +104,47 @@ def test_empty_or_blank_profile_body_excluded_empty_template_kept():
         assert bodies["profiles"] == {}  # пустые/пробельные тела профилей не попадают в карту
 
 
+def test_default_profile_id_is_reported_even_when_body_is_empty():
+    """`default_profile_id` — отдельный ключ именно потому, что при пустом теле документа
+    в "profiles" его нет: share.py по этому id достаёт вторую ступень фолбэка, и её
+    отсутствие обязано означать «падать на routing шаблона», а не «профиль потерян»."""
+    engine = _engine()
+    with Session(engine) as db:
+        tpl = _template(db, kind=TEMPLATE_KIND, slug=TEMPLATE_SLUG)
+        _version(db, tpl.id, 1, '{"tpl": true}')
+        default_profile = _template(db, kind=PROFILE_KIND, slug=DEFAULT_PROFILE_SLUG)
+        _version(db, default_profile.id, 1, "   ")
+        db.commit()
+
+        bodies = get_active_bodies(db)
+
+        assert bodies["default_profile_id"] == default_profile.id
+        assert default_profile.id not in bodies["profiles"]
+
+
+def test_default_profile_id_points_at_non_empty_default_body():
+    engine = _engine()
+    with Session(engine) as db:
+        default_profile = _template(db, kind=PROFILE_KIND, slug=DEFAULT_PROFILE_SLUG)
+        _version(db, default_profile.id, 1, '{"rules": ["default"]}')
+        other = _template(db, kind=PROFILE_KIND, slug=BS_PROFILE_SLUG)
+        _version(db, other.id, 1, '{"rules": ["bs"]}')
+        db.commit()
+
+        bodies = get_active_bodies(db)
+
+        assert bodies["default_profile_id"] == default_profile.id
+        assert bodies["profiles"][default_profile.id] == '{"rules": ["default"]}'
+
+
+def test_missing_template_raises_lookup_error_not_conflict(db):
+    """404, а не 409: «документа нет» — не нарушение правил документов."""
+    with pytest.raises(LookupError):
+        svc.save_version(db, 99999, "{}", None, _Admin())
+    with pytest.raises(LookupError):
+        svc.delete_profile(db, 99999)
+
+
 def test_template_without_any_versions_does_not_break_query():
     engine = _engine()
     with Session(engine) as db:

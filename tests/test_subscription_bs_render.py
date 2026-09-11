@@ -298,6 +298,12 @@ DEFAULT_PROFILE_ID = 1
 BS_PROFILE_ID = 2
 OTHER_NODE_ID = 42
 NODE_PROFILES = {OTHER_NODE_ID: DEFAULT_PROFILE_ID, BS_NODE_ID: BS_PROFILE_ID}
+# Прод-состояние после миграции: профиль проставлен ТОЛЬКО БС-нодам, у обычных
+# routing_profile_id = NULL, поэтому их в карте нет вовсе (NPVPN-2024).
+PROD_NODE_PROFILES = {BS_NODE_ID: BS_PROFILE_ID}
+
+DEFAULT_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]}
+BS_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]}
 
 
 def _v2ray_json_conf() -> V2rayJsonConfig:
@@ -311,10 +317,8 @@ def _v2ray_json_conf() -> V2rayJsonConfig:
     }
     return V2rayJsonConfig(
         template_override=template,
-        profiles={
-            DEFAULT_PROFILE_ID: {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]},
-            BS_PROFILE_ID: {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]},
-        },
+        profiles={DEFAULT_PROFILE_ID: DEFAULT_ROUTING, BS_PROFILE_ID: BS_ROUTING},
+        default_routing=DEFAULT_ROUTING,
     )
 
 
@@ -351,6 +355,30 @@ def test_v2ray_json_non_bs_host_gets_default_routing(xray_stub):
     conf = _v2ray_json_conf()
 
     _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
+
+    assert _routing_domains(conf) == ["default"]
+
+
+def test_v2ray_json_node_without_profile_falls_back_to_default_document(xray_stub):
+    """Прод-состояние: у обычной ноды routing_profile_id = NULL (миграция проставляет
+    профиль только БС-нодам), поэтому её нет в карте node_profiles. Такой хост обязан
+    получить тело документа `default` — как до реформы получал sub_routing_json_default,
+    а не routing общего шаблона."""
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID])])
+    conf = _v2ray_json_conf()
+
+    _render(conf, _bs_ctx(), node_profiles=PROD_NODE_PROFILES)
+
+    assert _routing_domains(conf) == ["default"]
+
+
+def test_v2ray_json_host_without_nodes_falls_back_to_default_document(xray_stub):
+    """Хост без привязанных нод: профиль определить не по чему, и назначением профилей
+    нодам этот случай не чинится в принципе — только фолбэком на документ `default`."""
+    xray_stub([_host("orphan.example.com", node_ids=[])])
+    conf = _v2ray_json_conf()
+
+    _render(conf, _bs_ctx(), node_profiles=PROD_NODE_PROFILES)
 
     assert _routing_domains(conf) == ["default"]
 

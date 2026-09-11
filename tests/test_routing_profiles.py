@@ -41,5 +41,18 @@ def test_empty_profile_map_resolves_nothing():
 
 def test_select_routing_falls_back_to_template_routing():
     template = {"rules": ["from-template"]}
-    assert select_routing(template, None) == template
-    assert select_routing(template, {"rules": ["from-profile"]}) == {"rules": ["from-profile"]}
+    assert select_routing(template, None, None) == template
+    assert select_routing(template, {"rules": ["from-profile"]}, None) == {"rules": ["from-profile"]}
+
+
+def test_select_routing_two_step_fallback_through_default_document():
+    """Профиль хоста → профиль `default` → routing шаблона."""
+    template = {"rules": ["from-template"]}
+    default = {"rules": ["from-default"]}
+    profile = {"rules": ["from-profile"]}
+    # Хост без профиля (нода с NULL / хост без нод) — вторая ступень, а не шаблон.
+    assert select_routing(template, None, default) == default
+    # Профиль хоста задан — он выигрывает у `default`.
+    assert select_routing(template, profile, default) == profile
+    # Пустое тело `default` (его нет в карте профилей) — последняя ступень, шаблон.
+    assert select_routing(template, None, None) == template
