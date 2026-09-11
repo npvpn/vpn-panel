@@ -340,6 +340,8 @@
   "panelSettings.xrayTemplates.deleteProfile": "Удалить профиль",
   "panelSettings.xrayTemplates.slugExists": "Документ с таким slug уже существует",
   "panelSettings.xrayTemplates.deleteFailed": "Этот документ нельзя удалить",
+  "panelSettings.xrayTemplates.deleteGenericFailed": "Не удалось удалить документ",
+  "panelSettings.xrayTemplates.revertFailed": "Не удалось восстановить версию",
   "panelSettings.xrayTemplates.comment": "Комментарий",
   "panelSettings.xrayTemplates.save": "Сохранить",
   "panelSettings.xrayTemplates.saved": "Сохранено как новая версия",

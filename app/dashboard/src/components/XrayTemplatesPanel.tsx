@@ -54,6 +54,11 @@ export const XrayTemplatesPanel: FC = () => {
   const [documents, setDocuments] = useState<XrayTemplateDocument[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [body, setBody] = useState("");
+  // Отдельно от `body`: это "снимок", который скармливается JsonEditor как проп `json`.
+  // Обновляется только при смене документа/перезагрузке после save/revert — НИКОГДА на
+  // каждый keystroke, иначе JSONEditor.update() дёргает aceEditor.setValue() и сбрасывает
+  // курсор/незакоммиченный ввод на каждое изменение (см. jsoneditor/src/js/textmode.js).
+  const [editorJson, setEditorJson] = useState<any>({});
   const [comment, setComment] = useState("");
   const [versions, setVersions] = useState<XrayTemplateVersionMeta[]>([]);
   const [preview, setPreview] = useState<
@@ -93,6 +98,7 @@ export const XrayTemplatesPanel: FC = () => {
         setSelectedId(next);
         const doc = docs.find((d) => d.id === next);
         setBody(doc?.body ?? "");
+        setEditorJson(parseBody(doc?.body ?? ""));
         setComment("");
         setValidationError(null);
         return docs;
@@ -120,6 +126,7 @@ export const XrayTemplatesPanel: FC = () => {
     setSelectedId(id);
     const doc = documents.find((d) => d.id === id);
     setBody(doc?.body ?? "");
+    setEditorJson(parseBody(doc?.body ?? ""));
     setComment("");
     setValidationError(null);
   };
@@ -171,7 +178,7 @@ export const XrayTemplatesPanel: FC = () => {
       .then(() => {
         if (selectedId != null) loadVersions(selectedId);
       })
-      .catch((err) => showErrorToast("panelSettings.saveFailed", err));
+      .catch((err) => showErrorToast("panelSettings.xrayTemplates.revertFailed", err));
   };
 
   const handleVersionClick = (version: number) => {
@@ -210,7 +217,7 @@ export const XrayTemplatesPanel: FC = () => {
         if (err?.response?.status === 409) {
           showErrorToast("panelSettings.xrayTemplates.deleteFailed", err);
         } else {
-          showErrorToast("panelSettings.saveFailed", err);
+          showErrorToast("panelSettings.xrayTemplates.deleteGenericFailed", err);
         }
       })
       .finally(() => setDeleting(false));
@@ -282,7 +289,7 @@ export const XrayTemplatesPanel: FC = () => {
 
       <FormControl isInvalid={!!validationError}>
         <Box minH="220px">
-          <JsonEditor json={parseBody(body)} onChange={setBody} />
+          <JsonEditor json={editorJson} onChange={setBody} />
         </Box>
         {validationError && (
           <FormErrorMessage>{validationError}</FormErrorMessage>

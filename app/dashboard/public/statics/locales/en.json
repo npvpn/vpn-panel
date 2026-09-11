@@ -340,6 +340,8 @@
   "panelSettings.xrayTemplates.deleteProfile": "Delete profile",
   "panelSettings.xrayTemplates.slugExists": "A document with this slug already exists",
   "panelSettings.xrayTemplates.deleteFailed": "This document cannot be deleted",
+  "panelSettings.xrayTemplates.deleteGenericFailed": "Failed to delete the document",
+  "panelSettings.xrayTemplates.revertFailed": "Failed to restore the version",
   "panelSettings.xrayTemplates.comment": "Comment",
   "panelSettings.xrayTemplates.save": "Save",
   "panelSettings.xrayTemplates.saved": "Saved as a new version",
