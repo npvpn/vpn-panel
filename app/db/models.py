@@ -122,20 +122,22 @@ class ManagedSetting(Base):
     applied_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-TEMPLATE_KIND = "template"
-PROFILE_KIND = "routing_profile"
-TEMPLATE_SLUG = "v2ray_json"
-DEFAULT_PROFILE_SLUG = "default"
-BS_PROFILE_SLUG = "bs"
+DEFAULT_CONFIG_SLUG = "default"
+BS_CONFIG_SLUG = "bs"
 
 
 class XrayTemplate(Base):
-    """Редактируемый документ клиентского конфига: общий v2ray-json шаблон или routing-профиль."""
+    """Редактируемый документ клиентского конфига — ПОЛНЫЙ самодостаточный v2ray-json.
+
+    Видов документов больше нет (колонка kind выпилена в NPVPN-2024): общий шаблон
+    перестал быть отдельной сущностью, в которую вклеивалась чужая секция routing.
+    Любой документ целиком уезжает клиенту, `default` — тот, что достаётся хостам
+    без собственной привязки.
+    """
 
     __tablename__ = "xray_templates"
 
     id = Column(Integer, primary_key=True)
-    kind = Column(String(32), nullable=False)
     slug = Column(String(64), nullable=False, unique=True)
     title = Column(String(128), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -504,8 +506,8 @@ class ProxyHost(Base):
     def node_ids(self):
         return [node.id for node in self.nodes]
 
-    # Профиль клиентского routing этого хоста. NULL — фолбэк на профиль `default`
-    # (см. select_routing). Живёт на хосте, а не на ноде: хост — это отдельный
+    # Документ клиентского конфига этого хоста. NULL — фолбэк на документ `default`
+    # (см. select_config). Живёт на хосте, а не на ноде: хост — это отдельный
     # сервер в подписке, и одна нода может обслуживать несколько хостов с разными
     # конфигами. nodes.is_bs остаётся исключительно про БС-лимит трафика (NPVPN-2024).
     client_config_id = Column(

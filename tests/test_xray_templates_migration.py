@@ -45,7 +45,7 @@ def _engine(panel_data: dict, hosts: list[tuple[int, list[int]]], bs_node_ids: l
         conn.execute(text("CREATE TABLE host_nodes (host_id INTEGER, node_id INTEGER)"))
         conn.execute(
             text(
-                "CREATE TABLE xray_templates (id INTEGER PRIMARY KEY, kind VARCHAR(32), slug VARCHAR(64), "
+                "CREATE TABLE xray_templates (id INTEGER PRIMARY KEY, slug VARCHAR(64), "
                 "title VARCHAR(128), created_at DATETIME, updated_at DATETIME)"
             )
         )
@@ -95,7 +95,7 @@ def _engine_without_panel_row(hosts: list[tuple[int, list[int]]], bs_node_ids: l
         conn.execute(text("CREATE TABLE host_nodes (host_id INTEGER, node_id INTEGER)"))
         conn.execute(
             text(
-                "CREATE TABLE xray_templates (id INTEGER PRIMARY KEY, kind VARCHAR(32), slug VARCHAR(64), "
+                "CREATE TABLE xray_templates (id INTEGER PRIMARY KEY, slug VARCHAR(64), "
                 "title VARCHAR(128), created_at DATETIME, updated_at DATETIME)"
             )
         )
@@ -129,13 +129,78 @@ def test_migration_follows_master_head():
     assert _load_migration().down_revision == "03e94a203122"
 
 
-def test_flat_keys_become_first_versions():
+def _documents(conn) -> dict[str, tuple[int, str, str]]:
+    rows = conn.execute(
+        text(
+            "SELECT t.slug, v.version, v.body, v.author_username "
+            "FROM xray_templates t JOIN xray_template_versions v ON v.template_id = t.id"
+        )
+    ).all()
+    return {slug: (version, body, author) for slug, version, body, author in rows}
+
+
+def test_flat_keys_become_two_self_contained_documents():
+    """Документов ровно два, и каждый — ПОЛНЫЙ конфиг: шаблон со вклеенным routing
+    своей группы серверов. Отдельного документа-шаблона больше нет."""
     migration = _load_migration()
+    template = {"outbounds": [{"protocol": "freedom"}], "dns": {"servers": ["1.1.1.1"]}}
     engine = _engine(
         {
             "sub_custom_headers": "X-A: 1",
+            "sub_v2ray_json_template": json.dumps(template),
+            "sub_routing_json_default": '{"rules": ["default"]}',
+            "sub_routing_json_bs": '{"rules": ["bs"]}',
+        },
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        docs = _documents(conn)
+
+    assert set(docs) == {"default", "bs"}
+    for slug, routing in (("default", ["default"]), ("bs", ["bs"])):
+        version, body, author = docs[slug]
+        assert (version, author) == (1, "migration")
+        parsed = json.loads(body)
+        assert parsed["routing"] == {"rules": routing}
+        # Остальные секции шаблона на месте — документ самодостаточен.
+        assert parsed["outbounds"] == template["outbounds"]
+        assert parsed["dns"] == template["dns"]
+
+
+def test_empty_template_falls_back_to_file_template_as_base():
+    """Шаблон не переопределяли, а sub_routing_json_bs заполнен: до переезда такой хост
+    получал ФАЙЛОВЫЙ шаблон с вклеенным routing — им и становится база склейки."""
+    migration = _load_migration()
+    engine = _engine(
+        {
+            "sub_v2ray_json_template": "",
+            "sub_routing_json_default": "",
+            "sub_routing_json_bs": '{"rules": ["bs"]}',
+        },
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        docs = _documents(conn)
+
+    bs_body = json.loads(docs["bs"][1])
+    assert bs_body["routing"] == {"rules": ["bs"]}
+    # Секции файлового шаблона на месте, а не потеряны вместе с пустым ключом.
+    assert "dns" in bs_body
+    assert "log" in bs_body
+
+
+def test_empty_routing_key_keeps_template_body_as_is():
+    """Пустой routing-ключ означал «routing из шаблона» — тело документа и есть шаблон,
+    включая пустую строку (тогда в рантайме работает файловый фолбэк)."""
+    migration = _load_migration()
+    engine = _engine(
+        {
             "sub_v2ray_json_template": '{"outbounds": []}',
-            "sub_routing_json_default": '{"rules": []}',
+            "sub_routing_json_default": "",
             "sub_routing_json_bs": "",
         },
         hosts=[(1, [10])],
@@ -143,20 +208,30 @@ def test_flat_keys_become_first_versions():
     )
     with engine.begin() as conn:
         migration._migrate_data(_Op(conn))
-        rows = conn.execute(
-            text(
-                "SELECT t.slug, t.kind, v.version, v.body, v.author_username "
-                "FROM xray_templates t JOIN xray_template_versions v ON v.template_id = t.id"
-            )
-        ).all()
-    by_slug = {slug: (kind, version, body, author) for slug, kind, version, body, author in rows}
-    assert by_slug["v2ray_json"] == ("template", 1, '{"outbounds": []}', "migration")
-    assert by_slug["default"] == ("routing_profile", 1, '{"rules": []}', "migration")
-    # Пустое значение тоже получает версию 1 — у каждого документа есть лента.
-    assert by_slug["bs"] == ("routing_profile", 1, "", "migration")
+        docs = _documents(conn)
+
+    assert docs["default"][1] == '{"outbounds": []}'
+    assert docs["bs"][1] == '{"outbounds": []}'
 
 
-def test_hosts_of_bs_nodes_get_bs_profile_and_others_stay_null():
+def test_empty_template_and_empty_routing_key_leave_body_empty():
+    """Ничего не переопределяли — тело пустое: пустой документ уводит рантайм на файловый
+    шаблон, ровно как до переезда."""
+    migration = _load_migration()
+    engine = _engine(
+        {"sub_v2ray_json_template": "", "sub_routing_json_default": "", "sub_routing_json_bs": ""},
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        docs = _documents(conn)
+
+    assert docs["default"][1] == ""
+    assert docs["bs"][1] == ""
+
+
+def test_hosts_of_bs_nodes_get_bs_config_and_others_stay_null():
     """ANY-семантика: хватает одной БС-ноды среди привязанных к хосту."""
     migration = _load_migration()
     engine = _engine(
@@ -190,13 +265,20 @@ def test_flat_keys_are_stripped_from_panel_settings():
     assert data == {"sub_custom_headers": "X-A: 1"}
 
 
-def test_downgrade_restores_flat_keys():
+def test_downgrade_restores_flat_keys_so_that_render_matches():
+    """Раскладка обратно даёт тот же рендер, а не побайтово те же ключи.
+
+    `default` целиком становится общим шаблоном (его routing и есть routing шаблона),
+    sub_routing_json_default пустеет — пустой ключ и уводил обычный хост на routing
+    шаблона. У БС-хоста в ключ возвращается только секция routing документа `bs`.
+    """
     migration = _load_migration()
+    template = {"outbounds": [{"protocol": "freedom"}], "dns": {"servers": ["1.1.1.1"]}}
     engine = _engine(
         {
-            "sub_v2ray_json_template": '{"outbounds": []}',
-            "sub_routing_json_default": '{"rules": []}',
-            "sub_routing_json_bs": "",
+            "sub_v2ray_json_template": json.dumps(template),
+            "sub_routing_json_default": '{"rules": ["default"]}',
+            "sub_routing_json_bs": '{"rules": ["bs"]}',
         },
         hosts=[(1, [10])],
         bs_node_ids=[10],
@@ -206,9 +288,14 @@ def test_downgrade_restores_flat_keys():
         migration._rollback_data(_Op(conn))
         raw = conn.execute(text('SELECT data FROM global_settings WHERE "key" = :k'), {"k": "panel"}).scalar_one()
     data = json.loads(raw)
-    assert data["sub_v2ray_json_template"] == '{"outbounds": []}'
-    assert data["sub_routing_json_default"] == '{"rules": []}'
-    assert data["sub_routing_json_bs"] == ""
+    restored = json.loads(data["sub_v2ray_json_template"])
+    # Обычный хост: шаблон + пустой default-ключ = routing шаблона = routing документа `default`.
+    assert restored["routing"] == {"rules": ["default"]}
+    assert restored["outbounds"] == template["outbounds"]
+    assert restored["dns"] == template["dns"]
+    assert data["sub_routing_json_default"] == ""
+    # БС-хост: шаблон + свой routing-ключ = документ `bs`.
+    assert json.loads(data["sub_routing_json_bs"]) == {"rules": ["bs"]}
 
 
 def test_mysql_sql_quotes_reserved_key_column():

@@ -1,8 +1,8 @@
 """xray template versions
 
-NPVPN-2024: три плоских ключа клиентского конфига переезжают в документы с
-лентой версий; выбор routing переезжает на `hosts.client_config_id` и
-отвязывается от булева nodes.is_bs.
+NPVPN-2024: три плоских ключа клиентского конфига переезжают в ДВА самодостаточных
+документа (`default`, `bs`) с лентой версий; выбор конфига переезжает на
+`hosts.client_config_id` и отвязывается от булева nodes.is_bs.
 
 Revision ID: 6f9ee5710f34
 Revises: 03e94a203122
@@ -22,17 +22,38 @@ down_revision = "03e94a203122"
 branch_labels = None
 depends_on = None
 
-FLAT_KEYS = {
-    "v2ray_json": "sub_v2ray_json_template",
-    "default": "sub_routing_json_default",
-    "bs": "sub_routing_json_bs",
-}
-TITLES = {
-    "v2ray_json": "v2ray-json шаблон",
-    "default": "Обычные ноды",
-    "bs": "БС-ноды",
-}
-KINDS = {"v2ray_json": "template", "default": "routing_profile", "bs": "routing_profile"}
+FLAT_TEMPLATE_KEY = "sub_v2ray_json_template"
+FLAT_ROUTING_KEYS = {"default": "sub_routing_json_default", "bs": "sub_routing_json_bs"}
+FLAT_KEYS = (FLAT_TEMPLATE_KEY, *FLAT_ROUTING_KEYS.values())
+TITLES = {"default": "Обычные ноды", "bs": "БС-ноды"}
+
+
+def _file_template_body() -> str:
+    """Файловый клиентский шаблон как база склейки.
+
+    Нужен для реального случая «шаблон не переопределяли, а sub_routing_json_bs
+    заполнен»: до переезда такой хост получал ФАЙЛОВЫЙ шаблон с вклеенным routing,
+    и без этой базы самодостаточный конфиг БС-нод потерял бы всё, кроме routing.
+    """
+    from app.templates import render_template
+    from config import V2RAY_SUBSCRIPTION_TEMPLATE
+
+    return render_template(V2RAY_SUBSCRIPTION_TEMPLATE)
+
+
+def _build_body(template_raw: str, routing_raw: str) -> str:
+    """Самодостаточный конфиг = база с вклеенной секцией routing.
+
+    Пустой routing-ключ означает «этой группе серверов routing из шаблона», то есть
+    ровно шаблон, — поэтому тело берётся как есть, включая пустую строку: тогда
+    работает файловый фолбэк рантайма.
+    """
+    if not (routing_raw or "").strip():
+        return template_raw or ""
+    base_raw = template_raw if (template_raw or "").strip() else _file_template_body()
+    base = json.loads(base_raw)
+    base["routing"] = json.loads(routing_raw)
+    return json.dumps(base, ensure_ascii=False)
 
 
 def _global_settings_table():
@@ -98,18 +119,20 @@ def _drop_client_config_column(op_like) -> None:
 
 
 def _migrate_data(op_like) -> None:
-    """Перенос: ключи → документы + версия 1; is_bs=1 → профиль bs; ключи вычищаются."""
+    """Перенос: три плоских ключа → два самодостаточных документа + версия 1;
+    is_bs=1 → документ bs; ключи вычищаются."""
     conn = op_like.get_bind()
     data = _panel_data(conn)
     now = datetime.utcnow()
+    template_raw = str(data.get(FLAT_TEMPLATE_KEY) or "")
     slug_to_id: dict[str, int] = {}
-    for slug, key in FLAT_KEYS.items():
+    for slug, routing_key in FLAT_ROUTING_KEYS.items():
         conn.execute(
             sa.text(
-                "INSERT INTO xray_templates (kind, slug, title, created_at, updated_at) "
-                "VALUES (:kind, :slug, :title, :now, :now)"
+                "INSERT INTO xray_templates (slug, title, created_at, updated_at) "
+                "VALUES (:slug, :title, :now, :now)"
             ),
-            {"kind": KINDS[slug], "slug": slug, "title": TITLES[slug], "now": now},
+            {"slug": slug, "title": TITLES[slug], "now": now},
         )
         template_id = conn.execute(
             sa.text("SELECT id FROM xray_templates WHERE slug = :slug"), {"slug": slug}
@@ -123,12 +146,12 @@ def _migrate_data(op_like) -> None:
             ),
             {
                 "tid": template_id,
-                "body": str(data.get(key) or ""),
+                "body": _build_body(template_raw, str(data.get(routing_key) or "")),
                 "comment": "перенос из настроек панели",
                 "now": now,
             },
         )
-    # Профиль `bs` получают хосты, у которых через host_nodes привязана хотя бы одна
+    # Документ `bs` получают хосты, у которых через host_nodes привязана хотя бы одна
     # нода с is_bs=1 — ровно та ANY-семантика, по которой БС-признак хоста определялся
     # до переезда. Поэтому рендер подписки после миграции не меняется.
     conn.execute(
@@ -139,23 +162,42 @@ def _migrate_data(op_like) -> None:
         ),
         {"pid": slug_to_id["bs"]},
     )
-    _write_panel_data(conn, {k: v for k, v in data.items() if k not in FLAT_KEYS.values()})
+    _write_panel_data(conn, {k: v for k, v in data.items() if k not in FLAT_KEYS})
+
+
+def _active_body(conn, slug: str) -> str:
+    body = conn.execute(
+        sa.text(
+            "SELECT v.body FROM xray_template_versions v "
+            "JOIN xray_templates t ON t.id = v.template_id "
+            "WHERE t.slug = :slug ORDER BY v.version DESC LIMIT 1"
+        ),
+        {"slug": slug},
+    ).scalar()
+    return str(body or "")
 
 
 def _rollback_data(op_like) -> None:
-    """Обратный перенос: активные тела документов возвращаются в плоские ключи."""
+    """Обратный перенос: самодостаточные документы раскладываются обратно в три
+    плоских ключа так, чтобы рендер подписки совпал.
+
+    Документ `default` целиком становится общим шаблоном, а sub_routing_json_default
+    — пустым: пустой ключ уводил обычный хост на routing шаблона, то есть ровно на
+    routing документа `default`, который теперь и есть шаблон. У БС-хостов в ключ
+    возвращается только секция routing документа `bs` — остальные его секции в
+    дореформенной модели не существовали и всё равно брались из шаблона.
+    """
     conn = op_like.get_bind()
     data = _panel_data(conn)
-    for slug, key in FLAT_KEYS.items():
-        body = conn.execute(
-            sa.text(
-                "SELECT v.body FROM xray_template_versions v "
-                "JOIN xray_templates t ON t.id = v.template_id "
-                "WHERE t.slug = :slug ORDER BY v.version DESC LIMIT 1"
-            ),
-            {"slug": slug},
-        ).scalar()
-        data[key] = body or ""
+    data[FLAT_TEMPLATE_KEY] = _active_body(conn, "default")
+    data[FLAT_ROUTING_KEYS["default"]] = ""
+    bs_body = _active_body(conn, "bs")
+    bs_routing = ""
+    if bs_body.strip():
+        routing = json.loads(bs_body).get("routing")
+        if routing is not None:
+            bs_routing = json.dumps(routing, ensure_ascii=False)
+    data[FLAT_ROUTING_KEYS["bs"]] = bs_routing
     _write_panel_data(conn, data)
 
 
@@ -163,7 +205,6 @@ def upgrade() -> None:
     op.create_table(
         "xray_templates",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("kind", sa.String(32), nullable=False),
         sa.Column("slug", sa.String(64), nullable=False, unique=True),
         sa.Column("title", sa.String(128), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=True),

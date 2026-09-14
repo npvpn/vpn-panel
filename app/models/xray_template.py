@@ -17,7 +17,6 @@ class XrayTemplateVersionMeta(BaseModel):
 
 class XrayTemplateDocument(BaseModel):
     id: int
-    kind: str
     slug: str
     title: str
     body: str = ""

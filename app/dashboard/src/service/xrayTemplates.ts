@@ -10,7 +10,6 @@ export type XrayTemplateVersionMeta = {
 
 export type XrayTemplateDocument = {
   id: number;
-  kind: "template" | "routing_profile";
   slug: string;
   title: string;
   body: string;

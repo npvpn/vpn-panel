@@ -71,12 +71,10 @@ export const HostAdvancedOptions = memo(
     >([]);
 
     useEffect(() => {
+      // Видов документов больше нет (NPVPN-2024): каждый документ — полный
+      // самодостаточный конфиг и может быть назначен хосту.
       listTemplates()
-        .then((docs) =>
-          setRoutingProfiles(
-            docs.filter((doc) => doc.kind === "routing_profile")
-          )
-        )
+        .then((docs) => setRoutingProfiles(docs))
         .catch(() => setRoutingProfiles([]));
     }, []);
 

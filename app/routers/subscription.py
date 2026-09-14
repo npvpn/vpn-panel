@@ -190,9 +190,9 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
     """Единая точка генерации ответа подписки по контексту и плану рендера.
 
     db передаётся генератору как признак «настоящий запрос»: без него v2ray-json
-    рендерится дефолтным шаблоном. С ним генератор читает активные тела
-    шаблона/routing-профилей (app.services.xray_templates, NPVPN-2024) через процессный
-    кэш; привязка профиля к серверу лежит прямо на хосте (host["client_config_id"]).
+    рендерится файловым шаблоном. С ним генератор читает активные тела документов
+    клиентского конфига (app.services.xray_templates, NPVPN-2024) через процессный
+    кэш; привязка документа к серверу лежит прямо на хосте (host["client_config_id"]).
     """
     conf = generate_subscription(
         user=ctx.user,

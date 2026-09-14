@@ -14,7 +14,7 @@ xray даёт только так.
 Проба идёт ЧЕРЕЗ ноду до probeUrl: у живой ноды (VPN-выход) google/generate_204 доступен →
 низкий пинг; мёртвая → проба падает → выпадает из пула.
 
-Без импортов БД/шаблонов — покрывается pytest без окружения (как cascade_config/routing_profiles).
+Без импортов БД/шаблонов — покрывается pytest без окружения (как cascade_config/client_configs).
 """
 
 from __future__ import annotations
@@ -69,14 +69,15 @@ def apply_host_balancer(config: dict) -> dict:
 
     Вызывается только когда proxy-outbound'ов >1 (см. V2rayJsonConfig.add_balanced).
 
-    ВАЖНО: не мутирует config["routing"] на месте — select_routing()
-    (app/xray/routing_profiles.py) может отдавать ОДИН И ТОТ ЖЕ routing-объект (без копии)
-    во все серверные конфиги подписки (_assemble_config в app/subscription/v2ray.py).
-    Мутация на месте протекла бы между конфигами: одноадресные хосты получали бы
-    чужой balancer, а при 2+ multi-address хостах — по несколько одинаковых
-    балансировщиков с одним и тем же тегом. Поэтому здесь строится новый dict
-    routing (с новыми списками balancers/rules) и присваивается обратно в
-    config["routing"], не трогая переданный в config исходный shared-объект.
+    ВАЖНО: не мутирует config["routing"] на месте. Клиентские конфиги приходят из
+    общей карты документов (select_config, app/xray/client_configs.py), одной на всю
+    подписку, и мутация routing на месте протекла бы между серверами: одноадресные
+    хосты получали бы чужой balancer, а при 2+ multi-address хостах — по несколько
+    одинаковых балансировщиков с одним и тем же тегом. Сейчас копию документа делает
+    _assemble_config (app/subscription/v2ray.py), но эта функция чистая и на чужую
+    копию не полагается: строится новый dict routing (с новыми списками
+    balancers/rules) и присваивается обратно в config["routing"], не трогая
+    переданный внутрь исходный объект.
     """
     routing = dict(config.get("routing") or {})
     routing["balancers"] = list(routing.get("balancers", [])) + [build_balancer()]

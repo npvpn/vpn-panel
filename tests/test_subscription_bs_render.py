@@ -9,6 +9,7 @@ jinja2 из app/templates), остальное — настоящие V2rayJsonC
 from __future__ import annotations
 
 import base64
+import copy
 import importlib.util
 import json
 import pathlib
@@ -156,8 +157,8 @@ def _host(
 ) -> dict:
     """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids.
 
-    client_config_id — профиль клиентского routing этого хоста (NPVPN-2024);
-    None означает фолбэк на профиль `default`.
+    client_config_id — документ клиентского конфига этого хоста (NPVPN-2024);
+    None означает фолбэк на документ `default`.
     """
     return {
         "remark": remark,
@@ -292,39 +293,46 @@ def test_hosts_emitted_sorted_by_global_order(monkeypatch):
     assert [call["remark"] for call in conf.calls] == ["A2", "B1", "A1"]
 
 
-# Профили клиентского routing для v2ray-json-тестов: два id, назначаемых хостам через
+# Документы клиентского конфига для v2ray-json-тестов: id, назначаемые хостам через
 # client_config_id — поле, которое раньше заменял булев is_bs.
-DEFAULT_PROFILE_ID = 1
-BS_PROFILE_ID = 2
-# Профиль, который СУЩЕСТВУЕТ и может быть назначен хосту, но его тело пусто —
-# поэтому его нет в карте тел profiles, только в profile_ids.
-EMPTY_PROFILE_ID = 3
+DEFAULT_CONFIG_ID = 1
+BS_CONFIG_ID = 2
+# Документ, который СУЩЕСТВУЕТ и может быть назначен хосту, но его тело пусто —
+# поэтому его нет в карте тел configs.
+EMPTY_CONFIG_ID = 3
 OTHER_NODE_ID = 42
 
 DEFAULT_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]}
 BS_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]}
-
-
-def _v2ray_json_conf(default_routing: dict | None = DEFAULT_ROUTING) -> V2rayJsonConfig:
-    """default_routing=None — пустое тело документа `default` (его нет в карте тел)."""
-    template = {
-        "remarks": "",
-        "outbounds": [
-            {"protocol": "freedom", "tag": "direct"},
-            {"protocol": "blackhole", "tag": "block"},
-        ],
-        "routing": {"rules": [{"type": "field", "ip": ["geoip:ru"], "outboundTag": "direct"}]},
-    }
-    return V2rayJsonConfig(
-        template_override=template,
-        profiles={DEFAULT_PROFILE_ID: DEFAULT_ROUTING, BS_PROFILE_ID: BS_ROUTING},
-        # EMPTY_PROFILE_ID есть среди документов, но тела у него нет.
-        profile_ids={DEFAULT_PROFILE_ID, BS_PROFILE_ID, EMPTY_PROFILE_ID},
-        default_routing=default_routing,
-    )
-
-
 TEMPLATE_ROUTING = {"rules": [{"type": "field", "ip": ["geoip:ru"], "outboundTag": "direct"}]}
+
+# Файловый шаблон — последняя ступень фолбэка. В тестах подставляем предсказуемый
+# конфиг вместо app/templates/v2ray/default.json (раньше ту же роль играл параметр
+# template_override, которого у самодостаточных документов уже нет).
+FILE_TEMPLATE = {
+    "remarks": "",
+    "outbounds": [
+        {"protocol": "freedom", "tag": "direct"},
+        {"protocol": "blackhole", "tag": "block"},
+    ],
+    "routing": TEMPLATE_ROUTING,
+}
+
+
+def _config_document(routing: dict) -> dict:
+    """Самодостаточный документ: полный конфиг целиком, а не одна секция routing."""
+    return {**copy.deepcopy(FILE_TEMPLATE), "routing": copy.deepcopy(routing)}
+
+
+def _v2ray_json_conf(*, default_body: bool = True) -> V2rayJsonConfig:
+    """default_body=False — пустое тело документа `default` (его нет в карте тел)."""
+    configs = {BS_CONFIG_ID: _config_document(BS_ROUTING)}
+    if default_body:
+        configs[DEFAULT_CONFIG_ID] = _config_document(DEFAULT_ROUTING)
+    # EMPTY_CONFIG_ID есть среди документов, но тела у него нет — в карту не попадает.
+    conf = V2rayJsonConfig(configs=configs, default_id=DEFAULT_CONFIG_ID)
+    conf._file_template_cache = copy.deepcopy(FILE_TEMPLATE)
+    return conf
 
 
 def _routing(conf: V2rayJsonConfig) -> dict:
@@ -336,8 +344,8 @@ def _routing_domains(conf: V2rayJsonConfig) -> list[str]:
 
 
 def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
-    """Профиль БС-хоста доходит до V2rayJsonConfig.add → выбирается его routing."""
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_PROFILE_ID)])
+    """Документ БС-хоста доходит до V2rayJsonConfig.add → рендерится он."""
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -348,7 +356,7 @@ def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
 
 def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
     """Мульти-адресный (балансируемый) БС-хост → add_balanced(client_config_id=...)."""
-    xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_PROFILE_ID)])
+    xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -360,7 +368,7 @@ def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
 
 
 def test_v2ray_json_non_bs_host_gets_default_routing(xray_stub):
-    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=DEFAULT_PROFILE_ID)])
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=DEFAULT_CONFIG_ID)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -368,11 +376,11 @@ def test_v2ray_json_non_bs_host_gets_default_routing(xray_stub):
     assert _routing_domains(conf) == ["default"]
 
 
-def test_host_without_profile_falls_back_to_default_document(xray_stub):
-    """Прод-состояние: миграция вешает профиль только на хосты БС-нод, остальные — NULL.
+def test_host_without_config_falls_back_to_default_document(xray_stub):
+    """Прод-состояние: миграция вешает документ только на хосты БС-нод, остальные — NULL.
 
-    Такой хост обязан получить routing документа `default`, а не routing общего шаблона:
-    до переезда он получал sub_routing_json_default.
+    Такой хост обязан получить документ `default`, а не файловый шаблон: до переезда
+    он получал шаблон с вклеенным sub_routing_json_default.
     """
     xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=None)])
     conf = _v2ray_json_conf()
@@ -383,7 +391,7 @@ def test_host_without_profile_falls_back_to_default_document(xray_stub):
 
 
 def test_v2ray_json_host_without_nodes_falls_back_to_default_document(xray_stub):
-    """Хост без привязанных нод и без собственного профиля: фолбэк на документ `default`."""
+    """Хост без привязанных нод и без собственной привязки: фолбэк на документ `default`."""
     xray_stub([_host("orphan.example.com", node_ids=[], client_config_id=None)])
     conf = _v2ray_json_conf()
 
@@ -392,26 +400,27 @@ def test_v2ray_json_host_without_nodes_falls_back_to_default_document(xray_stub)
     assert _routing_domains(conf) == ["default"]
 
 
-def test_assigned_profile_with_empty_body_falls_back_to_template_routing(xray_stub):
-    """C1: профиль НАЗНАЧЕН, но его тело пусто → routing общего шаблона, а не `default`.
+def test_assigned_config_with_empty_body_falls_back_to_default_document(xray_stub):
+    """Документ НАЗНАЧЕН, но его тело пусто → дефолтный документ.
 
-    Так вело себя дореформенное select_routing для БС-хоста с пустым
-    sub_routing_json_bs. Если рендер перестанет отличать «назначен, но пуст» от
-    «не назначен», хост уедет на непустое тело документа `default` — это и есть
-    расхождение с дореформенным поведением.
+    У самодостаточных документов пустое тело — это «документ не заполнен», рендерить
+    из него нечего: подмены одной секции больше нет. Поэтому пустое тело и ссылка на
+    удалённый документ ведут одинаково — фолбэком на `default`. Прод после миграции
+    такого состояния не создаёт: пустой sub_routing_json_bs даёт документу `bs` тело
+    самого шаблона, а не пустую строку.
     """
-    xray_stub([_host("empty.example.com", node_ids=[OTHER_NODE_ID], client_config_id=EMPTY_PROFILE_ID)])
+    xray_stub([_host("empty.example.com", node_ids=[OTHER_NODE_ID], client_config_id=EMPTY_CONFIG_ID)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
 
-    assert _routing(conf) == TEMPLATE_ROUTING
+    assert _routing_domains(conf) == ["default"]
 
 
-def test_host_without_profile_falls_back_to_template_when_default_is_empty(xray_stub):
-    """Хост без профиля при ПУСТОМ документе `default` — последняя ступень, шаблон."""
+def test_host_without_config_falls_back_to_file_template_when_default_is_empty(xray_stub):
+    """Хост без привязки при ПУСТОМ документе `default` — последняя ступень, файловый шаблон."""
     xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=None)])
-    conf = _v2ray_json_conf(default_routing=None)
+    conf = _v2ray_json_conf(default_body=False)
 
     _render(conf, BsContext.empty())
 
@@ -419,8 +428,8 @@ def test_host_without_profile_falls_back_to_template_when_default_is_empty(xray_
 
 
 def test_is_bs_never_leaks_into_other_formats(xray_stub):
-    """Другие форматы про профили routing не знают — их conf.add вызывается без них."""
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_PROFILE_ID)])
+    """Другие форматы про документы конфига не знают — их conf.add вызывается без них."""
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
     conf = _FakeConf()
 
     _render(conf, BsContext.empty())
@@ -443,7 +452,7 @@ def test_is_bs_never_leaks_into_other_formats(xray_stub):
     ids=["clash", "clash_meta", "singbox", "outline"],
 )
 def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, conf_factory):
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_PROFILE_ID)])
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
     conf = conf_factory()
 
     rendered = _render(conf, BsContext.empty())
@@ -489,7 +498,7 @@ def test_build_bs_context_sets_stub_text_for_blocked_domain_host(fake_crud):
     assert bs.has_blocks is True
     assert bs.stub_text  # имя сервера-заглушки не пустое
     assert bs.is_blocked(_host("bs.example.com", node_ids=[BS_NODE_ID])) is True
-    # Признак routing (раньше bs.is_bs(host)) больше не хранится в BsContext — он
+    # Признак конфига (раньше bs.is_bs(host)) больше не хранится в BsContext — он
     # читается отдельно, прямо с хоста (host["client_config_id"], NPVPN-2024).
 
 

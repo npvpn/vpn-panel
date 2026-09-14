@@ -12,31 +12,26 @@ from sqlalchemy import func
 
 from app.db import GetDB, Session
 from app.db.models import (
-    DEFAULT_PROFILE_SLUG,
-    PROFILE_KIND,
-    TEMPLATE_KIND,
+    DEFAULT_CONFIG_SLUG,
     ProxyHost,
     XrayTemplate,
     XrayTemplateVersion,
 )
-from app.xray.routing_profiles import parse_json_object
+from app.xray.client_configs import parse_json_object
 
 _SESSION_CACHE_KEY = "_xray_templates"
 
 
 def get_active_bodies(db: Session) -> dict[str, Any]:
-    """{"template": str, "profiles": {id: body}, "profile_ids": set[int], "default_profile_id": int | None}.
+    """{"configs": {id: body}, "default_id": int | None}.
 
-    В "profiles" попадают только НЕпустые тела: пустое тело означает «фолбэк дальше
-    по цепочке», а не «пустой routing». Но «профиля нет» и «профиль есть, но пуст» —
-    РАЗНЫЕ случаи с разным фолбэком (см. select_routing), поэтому рядом отдаётся
-    "profile_ids" — id ВСЕХ существующих routing-профилей, включая документы с пустым
-    телом, которых в "profiles" нет. Без этого множества рендер не отличил бы
-    назначенный пустой профиль от отсутствующего и уводил бы хост на `default`.
+    Документы самодостаточны (NPVPN-2024): каждое тело — ПОЛНЫЙ клиентский конфиг,
+    видов документов больше нет. В "configs" попадают только НЕпустые тела: пустое
+    тело означает «документ не заполнен», и рендер уходит фолбэком на дефолтный
+    документ (см. app.xray.client_configs.select_config).
 
-    "default_profile_id" — id документа со slug `default`; он вторая ступень фолбэка
-    для хостов БЕЗ профиля, и отдаётся отдельно именно потому, что при пустом теле
-    в "profiles" его нет.
+    "default_id" — id документа со slug `default`; он вторая ступень фолбэка и
+    отдаётся отдельно именно потому, что при пустом теле в "configs" его нет.
 
     Кэш на сессию БД: /sub/ — горячий путь, лишних запросов на подписку быть не должно.
     """
@@ -52,7 +47,7 @@ def get_active_bodies(db: Session) -> dict[str, Any]:
         .subquery()
     )
     rows = (
-        db.query(XrayTemplate.id, XrayTemplate.kind, XrayTemplate.slug, XrayTemplateVersion.body)
+        db.query(XrayTemplate.id, XrayTemplate.slug, XrayTemplateVersion.body)
         .join(XrayTemplateVersion, XrayTemplateVersion.template_id == XrayTemplate.id)
         .join(
             latest,
@@ -61,21 +56,12 @@ def get_active_bodies(db: Session) -> dict[str, Any]:
         )
         .all()
     )
-    bodies: dict[str, Any] = {
-        "template": "",
-        "profiles": {},
-        "profile_ids": set(),
-        "default_profile_id": None,
-    }
-    for template_id, kind, slug, body in rows:
-        if kind == TEMPLATE_KIND:
-            bodies["template"] = body or ""
-            continue
-        bodies["profile_ids"].add(template_id)
-        if slug == DEFAULT_PROFILE_SLUG:
-            bodies["default_profile_id"] = template_id
+    bodies: dict[str, Any] = {"configs": {}, "default_id": None}
+    for template_id, slug, body in rows:
+        if slug == DEFAULT_CONFIG_SLUG:
+            bodies["default_id"] = template_id
         if (body or "").strip():
-            bodies["profiles"][template_id] = body
+            bodies["configs"][template_id] = body
     db.info[_SESSION_CACHE_KEY] = bodies
     return bodies
 
@@ -151,9 +137,9 @@ def _version_dict(row: XrayTemplateVersion) -> dict[str, Any]:
 
 
 def list_documents(db: Session) -> list[dict[str, Any]]:
-    """Документы + мета текущей версии, шаблон первым."""
+    """Документы + мета текущей версии, в порядке создания."""
     out: list[dict[str, Any]] = []
-    for template in db.query(XrayTemplate).order_by(XrayTemplate.kind.desc(), XrayTemplate.id).all():
+    for template in db.query(XrayTemplate).order_by(XrayTemplate.id).all():
         latest = (
             db.query(XrayTemplateVersion)
             .filter(XrayTemplateVersion.template_id == template.id)
@@ -163,12 +149,11 @@ def list_documents(db: Session) -> list[dict[str, Any]]:
         out.append(
             {
                 "id": template.id,
-                "kind": template.kind,
                 "slug": template.slug,
                 "title": template.title,
                 "current": _version_dict(latest) if latest else None,
                 "body": latest.body if latest else "",
-                "deletable": template.kind == PROFILE_KIND and template.slug != DEFAULT_PROFILE_SLUG,
+                "deletable": template.slug != DEFAULT_CONFIG_SLUG,
             }
         )
     return out
@@ -213,7 +198,7 @@ def create_profile(db: Session, slug: str, title: str, admin) -> dict[str, Any]:
         raise XrayTemplateError("slug is required")
     if db.query(XrayTemplate).filter(XrayTemplate.slug == slug).first() is not None:
         raise XrayTemplateError("slug already exists")
-    template = XrayTemplate(kind=PROFILE_KIND, slug=slug, title=(title or slug).strip())
+    template = XrayTemplate(slug=slug, title=(title or slug).strip())
     db.add(template)
     db.commit()
     db.refresh(template)
@@ -221,21 +206,18 @@ def create_profile(db: Session, slug: str, title: str, admin) -> dict[str, Any]:
     return {"id": template.id, "slug": template.slug, "title": template.title}
 
 
-def assert_profile_exists(db: Session, template_id: int | None) -> None:
-    """None (профиль default) допустим; иначе id обязан быть существующим routing-профилем."""
+def assert_config_exists(db: Session, template_id: int | None) -> None:
+    """None (документ default) допустим; иначе id обязан быть существующим документом."""
     if template_id is None:
         return
-    template = db.query(XrayTemplate).filter(XrayTemplate.id == template_id).first()
-    if template is None or template.kind != PROFILE_KIND:
-        raise XrayTemplateError("unknown routing profile")
+    if db.query(XrayTemplate).filter(XrayTemplate.id == template_id).first() is None:
+        raise XrayTemplateError("unknown client config")
 
 
-def delete_profile(db: Session, template_id: int) -> None:
+def delete_config(db: Session, template_id: int) -> None:
     template = _get_template(db, template_id)
-    if template.kind != PROFILE_KIND:
-        raise XrayTemplateError("the shared template cannot be deleted")
-    if template.slug == DEFAULT_PROFILE_SLUG:
-        raise XrayTemplateError("the default profile cannot be deleted")
+    if template.slug == DEFAULT_CONFIG_SLUG:
+        raise XrayTemplateError("the default config cannot be deleted")
     # ON DELETE SET NULL в БД возвращает хосты на default (NPVPN-2024: привязка живёт
     # на ProxyHost, а не на Node); в ORM-сессии делаем то же явно, иначе уже
     # загруженные объекты останутся с висячим id.

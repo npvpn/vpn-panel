@@ -1,4 +1,4 @@
-"""REST документов клиентского конфига (общий шаблон + routing-профили) и истории версий.
+"""REST самодостаточных документов клиентского конфига и истории их версий.
 
 Только sudo-админ. Роутер тонкий: вся логика в app.services.xray_templates (NPVPN-2024).
 """
@@ -104,14 +104,14 @@ def create_profile(
 
 
 @router.delete("/settings/xray-templates/{template_id}")
-def delete_profile(
+def delete_config(
     template_id: int,
     db: Session = Depends(get_db),
     admin: Admin = Depends(Admin.check_sudo_admin),
 ):
     del admin
     try:
-        service.delete_profile(db, template_id)
+        service.delete_config(db, template_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except service.XrayTemplateError as exc:

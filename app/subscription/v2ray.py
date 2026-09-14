@@ -11,8 +11,8 @@ from jinja2.exceptions import TemplateNotFound
 from app.subscription.funcs import get_grpc_gun, get_grpc_multi
 from app.templates import render_template
 from app.utils.helpers import UUIDEncoder
+from app.xray.client_configs import select_config
 from app.xray.host_balancer import apply_host_balancer, proxy_outbound_tag
-from app.xray.routing_profiles import select_routing
 from config import (
     EXTERNAL_CONFIG,
     GRPC_USER_AGENT_TEMPLATE,
@@ -484,25 +484,18 @@ class V2rayShareLink(str):
 
 
 class V2rayJsonConfig(str):
-    def __new__(cls, template_override=None, profiles=None, default_routing=None, profile_ids=None):
+    def __new__(cls, configs=None, default_id=None):
         # str subclass: __new__ must absorb the kwargs, or str.__new__ would reject them with TypeError
         return super().__new__(cls)
 
-    def __init__(self, template_override=None, profiles=None, default_routing=None, profile_ids=None):
+    def __init__(self, configs=None, default_id=None):
         self.config = []
-        if template_override is not None:
-            self.template = json.dumps(template_override)
-        else:
-            self.template = render_template(V2RAY_SUBSCRIPTION_TEMPLATE)
-        # {template_id: routing-объект}; пустые тела в карту не попадают.
-        self.profiles = profiles or {}
-        # id ВСЕХ существующих профилей, включая пустые (которых нет в self.profiles).
-        # Отличает «профиль назначен, но пуст» (→ routing шаблона) от «профиля нет»
-        # (→ документ `default`): по одной карте тел эти случаи неразличимы.
-        self.profile_ids = set(profile_ids or ())
-        # Вторая ступень фолбэка: тело документа `default` для хостов БЕЗ профиля
-        # (host.client_config_id = NULL).
-        self.default_routing = default_routing
+        # {id документа: распарсенный полный конфиг}; пустые тела сюда не попадают.
+        self.configs = configs or {}
+        # Вторая ступень фолбэка: документ `default` для хостов БЕЗ собственной
+        # привязки (host.client_config_id = NULL).
+        self.default_id = default_id
+        self._file_template_cache = None
         self.mux_template = render_template(MUX_TEMPLATE)
         user_agent_data = json.loads(render_template(USER_AGENT_TEMPLATE))
 
@@ -525,16 +518,30 @@ class V2rayJsonConfig(str):
 
         del user_agent_data, grpc_user_agent_data
 
+    def _file_template(self) -> dict:
+        """Файловый шаблон — последний рубеж, читается ЛЕНИВО.
+
+        В штатной панели документы заполнены, и рендер jinja на горячем /sub/
+        не нужен вовсе. Ленивость заодно сохраняет работоспособность песочницы
+        tests/test_v2ray_extra.py, где app.templates.render_template заглушён None.
+        """
+        if self._file_template_cache is None:
+            self._file_template_cache = json.loads(render_template(V2RAY_SUBSCRIPTION_TEMPLATE))
+        return self._file_template_cache
+
     def _assemble_config(self, remarks, outbounds, client_config_id=None):
-        json_template = json.loads(self.template)
+        # Документ самодостаточен: берём его целиком и лишь дописываем в него этот
+        # сервер. remarks/outbounds — инъекция сервера, а не подмена секции конфига:
+        # без неё в подписке не будет точки подключения.
+        base = select_config(self.configs, self.default_id, client_config_id)
+        if base is None:
+            base = self._file_template()
+        # deepcopy обязателен: select_config отдаёт ОБЩИЙ объект из карты, а дальше
+        # он мутируется — без копии второй сервер унёс бы outbounds первого.
+        json_template = copy.deepcopy(base)
         json_template["remarks"] = remarks
-        json_template["outbounds"] = outbounds + json_template["outbounds"]
-        json_template["routing"] = select_routing(
-            json_template.get("routing", {}),
-            self.profiles.get(client_config_id),
-            self.default_routing,
-            profile_assigned=client_config_id in self.profile_ids,
-        )
+        # .get: конфиг без ключа outbounds — валидный JSON-объект, рендер на нём падать не должен.
+        json_template["outbounds"] = outbounds + json_template.get("outbounds", [])
         return json_template
 
     def add_config(self, remarks, outbounds, client_config_id=None):

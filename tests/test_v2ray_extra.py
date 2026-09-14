@@ -19,8 +19,8 @@ for _name, _attrs in {
     "app.subscription.funcs": {"get_grpc_gun": None, "get_grpc_multi": None},
     "app.templates": {"render_template": None},
     "app.utils.helpers": {"UUIDEncoder": json.JSONEncoder},
-    "app.xray.routing_profiles": {
-        "select_routing": None,
+    "app.xray.client_configs": {
+        "select_config": None,
         "parse_json_object": None,
     },
 }.items():

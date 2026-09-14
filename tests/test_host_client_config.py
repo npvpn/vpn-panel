@@ -13,7 +13,7 @@ _share_stub.generate_v2ray_links = lambda *args, **kwargs: []
 sys.modules.setdefault("app.subscription.share", _share_stub)
 
 from app.db.base import Base  # noqa: E402
-from app.db.models import PROFILE_KIND, ProxyInbound, XrayTemplate  # noqa: E402
+from app.db.models import ProxyInbound, XrayTemplate  # noqa: E402
 from app.models.proxy import ProxyHost as ProxyHostModify  # noqa: E402
 
 
@@ -23,7 +23,7 @@ def db():
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     session.add(ProxyInbound(tag="VLESS_TCP"))
-    session.add(XrayTemplate(kind=PROFILE_KIND, slug="mobile", title="Мобильные"))
+    session.add(XrayTemplate(slug="mobile", title="Мобильные"))
     session.commit()
     yield session
     session.close()

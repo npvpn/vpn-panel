@@ -81,8 +81,8 @@ def _render(
 ) -> list | str:
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
-    conf передаётся готовым только для v2ray-json (его конструктор принимает шаблон и
-    карту routing-профилей из app.services.xray_templates).
+    conf передаётся готовым только для v2ray-json (его конструктор принимает карту
+    документов клиентского конфига из app.services.xray_templates).
     """
     if conf is None:
         factory = CONF_FACTORIES.get(render_format)
@@ -142,19 +142,17 @@ def generate_subscription(
 
     resolved_settings = apply_bot_settings_fallback(settings or DEFAULT_BOT_SETTINGS)
 
-    # Тела шаблона/профилей routing живут в app.services.xray_templates (документы с
-    # историей, NPVPN-2024) и читаются через процессный кэш get_cached_active_bodies —
-    # без запроса к БД на каждую подписку. Привязка профиля лежит прямо на хосте
-    # (host["client_config_id"]), поэтому карта нод больше не нужна. db здесь —
-    # признак «настоящий запрос»: без него v2ray-json рендерится дефолтным шаблоном,
-    # тот же фолбэк, что и раньше для пустых настроек.
-    v2ray_template_override = None
-    profiles: dict[int, dict] = {}
-    profile_ids: set[int] = set()
-    default_routing: dict | None = None
+    # Тела документов клиентского конфига живут в app.services.xray_templates
+    # (документы с историей, NPVPN-2024) и читаются через процессный кэш
+    # get_cached_active_bodies — без запроса к БД на каждую подписку. Привязка лежит
+    # прямо на хосте (host["client_config_id"]), поэтому карта нод больше не нужна.
+    # db здесь — признак «настоящий запрос»: без него v2ray-json рендерится файловым
+    # шаблоном, тот же фолбэк, что и раньше для пустых настроек.
+    client_configs: dict[int, dict] = {}
+    default_config_id: int | None = None
     if db is not None:
         from app.services.xray_templates import get_cached_active_bodies
-        from app.xray.routing_profiles import parse_json_object
+        from app.xray.client_configs import parse_json_object
 
         def _safe_json(raw, name):
             try:
@@ -168,23 +166,14 @@ def generate_subscription(
         # panel_settings, без лишнего JOIN). Инвалидируется через
         # app.services.xray_templates.invalidate при любой записи версии (Task 3).
         bodies = get_cached_active_bodies()
-        v2ray_template_override = _safe_json(bodies.get("template"), "v2ray_json template")
-        profiles = {
-            template_id: parsed
-            for template_id, raw in bodies.get("profiles", {}).items()
-            if (parsed := _safe_json(raw, f"routing profile {template_id}")) is not None
+        client_configs = {
+            config_id: parsed
+            for config_id, raw in bodies.get("configs", {}).items()
+            if (parsed := _safe_json(raw, f"client config {config_id}")) is not None
         }
-        # Назначенный профиль с ПУСТЫМ телом в profiles не попадает, поэтому отдельно
-        # несём множество id всех существующих профилей: без него «профиль назначен,
-        # но пуст» неотличим от «профиля нет» и уводит хост на `default` вместо
-        # routing шаблона.
-        profile_ids = set(bodies.get("profile_ids") or ())
-        # Вторая ступень фолбэка (NPVPN-2024): хост без собственного профиля —
-        # так миграция оставляет все не-БС-хосты — получает тело документа `default`,
-        # а не routing общего шаблона. До реформы это был sub_routing_json_default.
-        default_profile_id: int | None = bodies.get("default_profile_id")
-        if default_profile_id is not None:
-            default_routing = profiles.get(default_profile_id)
+        # Вторая ступень фолбэка (NPVPN-2024): хост без собственной привязки — так
+        # миграция оставляет все не-БС-хосты — получает документ `default` целиком.
+        default_config_id = bodies.get("default_id")
 
     render_format = config_format
     if config_format == "incy":
@@ -289,12 +278,7 @@ def generate_subscription(
         from app.subscription.sub_stub import JSON_STUB_ADDRESS, JSON_STUB_ID, JSON_STUB_PORT
         from app.subscription.v2ray import V2rayJsonConfig
 
-        conf = V2rayJsonConfig(
-            template_override=v2ray_template_override,
-            profiles=profiles,
-            default_routing=default_routing,
-            profile_ids=profile_ids,
-        )
+        conf = V2rayJsonConfig(configs=client_configs, default_id=default_config_id)
         if device_limit_text:
             stub_inbound = {
                 "network": "ws",
@@ -544,13 +528,13 @@ def process_inbounds_and_tags(
                     )
                     continue
 
-                # Пер-серверный routing только для v2ray-json: профиль лежит на самом
-                # хосте. Другие форматы про профили не знают.
+                # Пер-серверный конфиг только для v2ray-json: привязка лежит на самом
+                # хосте. Другие форматы про документы конфига не знают.
                 add_kwargs = {}
                 if isinstance(conf, V2rayJsonConfig):
-                    profile_id = host.get("client_config_id")
-                    if profile_id is not None:
-                        add_kwargs["client_config_id"] = profile_id
+                    config_id = host.get("client_config_id")
+                    if config_id is not None:
+                        add_kwargs["client_config_id"] = config_id
 
                 candidate = {
                     "order": host.get("order", 0),
