@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 
@@ -280,17 +281,21 @@ def test_default_config_cannot_be_deleted(db):
     svc.delete_config(db, _template_id(db, BS_CONFIG_SLUG))
 
 
-def test_created_profile_starts_with_empty_version_one(db):
-    created = svc.create_profile(db, "mobile", "Мобильные", _Admin())
-    versions = svc.list_versions(db, created["id"], limit=10, offset=0)
-    assert [v["version"] for v in versions] == [1]
-    assert svc.get_version(db, created["id"], 1).body == ""
+def test_created_config_copies_default_body(db):
+    """Пустой самодостаточный конфиг бессмыслен: новый документ рождается копией дефолтного."""
+    default_id = _template_id(db, DEFAULT_CONFIG_SLUG)
+    svc.save_version(db, default_id, '{"dns": {"servers": ["1.1.1.1"]}}', None, _Admin())
+
+    created = svc.create_config(db, "eu", "Европа", _Admin())
+
+    assert [v["version"] for v in svc.list_versions(db, created["id"], limit=10, offset=0)] == [1]
+    assert json.loads(svc.get_version(db, created["id"], 1).body) == {"dns": {"servers": ["1.1.1.1"]}}
 
 
 def test_duplicate_slug_is_rejected(db):
-    svc.create_profile(db, "mobile", "Мобильные", _Admin())
+    svc.create_config(db, "mobile", "Мобильные", _Admin())
     with pytest.raises(svc.XrayTemplateError):
-        svc.create_profile(db, "mobile", "Дубль", _Admin())
+        svc.create_config(db, "mobile", "Дубль", _Admin())
 
 
 def test_invalidate_called_on_save_refreshes_process_cache(db, monkeypatch):

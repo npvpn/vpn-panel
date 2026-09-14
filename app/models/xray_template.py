@@ -33,12 +33,12 @@ class SaveTemplatePayload(BaseModel):
     comment: str | None = None
 
 
-class CreateProfilePayload(BaseModel):
+class CreateConfigPayload(BaseModel):
     slug: str
     title: str = ""
 
 
-class CreatedProfile(BaseModel):
+class CreatedConfig(BaseModel):
     id: int
     slug: str
     title: str

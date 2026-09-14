@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.db import Session, get_db
 from app.models.admin import Admin
 from app.models.xray_template import (
-    CreatedProfile,
-    CreateProfilePayload,
+    CreateConfigPayload,
+    CreatedConfig,
     SaveTemplatePayload,
     XrayTemplateDocument,
     XrayTemplateVersionBody,
@@ -91,14 +91,14 @@ def revert_template(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.post("/settings/xray-templates", response_model=CreatedProfile)
-def create_profile(
-    payload: CreateProfilePayload,
+@router.post("/settings/xray-templates", response_model=CreatedConfig)
+def create_config(
+    payload: CreateConfigPayload,
     db: Session = Depends(get_db),
     admin: Admin = Depends(Admin.check_sudo_admin),
 ):
     try:
-        return service.create_profile(db, payload.slug, payload.title, admin)
+        return service.create_config(db, payload.slug, payload.title, admin)
     except service.XrayTemplateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

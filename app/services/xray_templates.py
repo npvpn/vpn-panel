@@ -192,7 +192,29 @@ def revert(db: Session, template_id: int, version: int, admin) -> dict[str, Any]
     return _append_version(db, template_id, str(source.body or ""), f"откат на версию {version}", admin)
 
 
-def create_profile(db: Session, slug: str, title: str, admin) -> dict[str, Any]:
+def _default_body(db: Session) -> str:
+    """Тело дефолтного конфига, а при пустом — файловый шаблон.
+
+    Новый документ обязан рождаться рабочим: пустой самодостаточный конфиг
+    молча уехал бы на фолбэк и выглядел бы как «конфиг не применяется».
+    """
+    row = db.query(XrayTemplate).filter(XrayTemplate.slug == DEFAULT_CONFIG_SLUG).first()
+    if row is not None:
+        latest = (
+            db.query(XrayTemplateVersion)
+            .filter(XrayTemplateVersion.template_id == row.id)
+            .order_by(XrayTemplateVersion.version.desc())
+            .first()
+        )
+        if latest is not None and (latest.body or "").strip():
+            return str(latest.body)
+    from app.templates import render_template
+    from config import V2RAY_SUBSCRIPTION_TEMPLATE
+
+    return render_template(V2RAY_SUBSCRIPTION_TEMPLATE)
+
+
+def create_config(db: Session, slug: str, title: str, admin) -> dict[str, Any]:
     slug = (slug or "").strip()
     if not slug:
         raise XrayTemplateError("slug is required")
@@ -202,7 +224,7 @@ def create_profile(db: Session, slug: str, title: str, admin) -> dict[str, Any]:
     db.add(template)
     db.commit()
     db.refresh(template)
-    _append_version(db, int(template.id), "", "создание профиля", admin)
+    _append_version(db, int(template.id), _default_body(db), "создан копией дефолтного конфига", admin)
     return {"id": template.id, "slug": template.slug, "title": template.title}
 
 
