@@ -150,6 +150,8 @@ class ProxyHost(BaseModel):
     fingerprint: ProxyHostFingerprint = ProxyHostFingerprint.none
     bot_usernames: list[str] = Field(default_factory=list)
     node_ids: list[int] = Field(default_factory=list)
+    # Профиль клиентского routing (NPVPN-2024). None — фолбэк на профиль `default`.
+    routing_profile_id: int | None = None
     allowinsecure: bool | None = None
     is_disabled: bool | None = None
     mux_enable: bool | None = None

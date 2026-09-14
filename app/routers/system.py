@@ -6,6 +6,7 @@ from app.models.admin import Admin
 from app.models.proxy import ProxyHost, ProxyInbound, ProxyTypes
 from app.models.system import SystemStats
 from app.models.user import UserStatus
+from app.services import xray_templates as xray_templates_service
 from app.utils import responses
 from app.utils.system import cpu_usage, memory_usage, realtime_bandwidth
 
@@ -72,6 +73,13 @@ def modify_hosts(
     for inbound_tag in modified_hosts:
         if inbound_tag not in xray.config.inbounds_by_tag:
             raise HTTPException(status_code=400, detail=f"Inbound {inbound_tag} doesn't exist")
+
+    try:
+        for hosts in modified_hosts.values():
+            for host in hosts:
+                xray_templates_service.assert_profile_exists(db, host.routing_profile_id)
+    except xray_templates_service.XrayTemplateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
         for inbound_tag, hosts in modified_hosts.items():
