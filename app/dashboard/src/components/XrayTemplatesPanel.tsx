@@ -1,4 +1,5 @@
 import {
+  Badge,
   Box,
   Button,
   Collapse,
@@ -9,7 +10,6 @@ import {
   HStack,
   IconButton,
   Input,
-  Select,
   Table,
   Tbody,
   Td,
@@ -28,8 +28,8 @@ import { useTranslation } from "react-i18next";
 import {
   XrayTemplateDocument,
   XrayTemplateVersionMeta,
-  createProfile,
-  deleteProfile,
+  createConfig,
+  deleteConfig,
   getVersion,
   listTemplates,
   listVersions,
@@ -49,10 +49,10 @@ const parseBody = (body: string): any => {
 
 // Пустой документ показывается в JsonEditor как {} (редактору нужен объект), и любое
 // касание редактора отдаёт onChangeText("{}"). Сохранить такое — значит превратить
-// «тело пустое, фолбэк дальше по цепочке» в «routing пустой»: у всех серверов профиля
-// routing молча обнулился бы. Поэтому объект без единого ключа сохраняем как пустое
-// тело. Задать серверам заведомо пустой routing через этот редактор нельзя — это
-// осознанный размен: молча потерять routing целой группы серверов дороже.
+// «тело не заполнено, фолбэк на дефолтный конфиг» в «конфиг пустой»: серверы этого
+// конфига молча получили бы пустышку вместо рабочего конфига. Поэтому объект без
+// единого ключа сохраняем как пустое тело. Задать серверам заведомо пустой конфиг
+// через этот редактор нельзя — это осознанный размен.
 const normalizeBody = (body: string): string => {
   if (!body.trim()) return "";
   try {
@@ -92,9 +92,7 @@ export const XrayTemplatesPanel: FC = () => {
   const [newSlug, setNewSlug] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const selectedDocument = documents.find((d) => d.id === selectedId) || null;
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const showErrorToast = (titleKey: string, err?: any) => {
     const detail = err?.response?._data?.detail;
@@ -222,7 +220,7 @@ export const XrayTemplatesPanel: FC = () => {
   const handleCreate = () => {
     if (!newSlug.trim() || !newTitle.trim()) return;
     setCreating(true);
-    createProfile(newSlug.trim(), newTitle.trim())
+    createConfig(newSlug.trim(), newTitle.trim())
       .then((created) => {
         setShowCreateForm(false);
         setNewSlug("");
@@ -239,10 +237,12 @@ export const XrayTemplatesPanel: FC = () => {
       .finally(() => setCreating(false));
   };
 
-  const handleDelete = () => {
-    if (selectedId == null || !selectedDocument?.deletable) return;
-    setDeleting(true);
-    deleteProfile(selectedId)
+  // Право на удаление приходит с бэка полем `deletable` — фронт не решает это сам
+  // сравнением slug с "default".
+  const handleDelete = (doc: XrayTemplateDocument) => {
+    if (!doc.deletable) return;
+    setDeletingId(doc.id);
+    deleteConfig(doc.id)
       .then(() => loadDocuments())
       .catch((err) => {
         if (err?.response?.status === 409) {
@@ -251,47 +251,73 @@ export const XrayTemplatesPanel: FC = () => {
           showErrorToast("panelSettings.xrayTemplates.deleteGenericFailed", err);
         }
       })
-      .finally(() => setDeleting(false));
+      .finally(() => setDeletingId(null));
   };
 
   return (
     <VStack spacing={4} align="stretch">
       <FormControl>
-        <FormLabel>{t("panelSettings.xrayTemplates.document")}</FormLabel>
-        <HStack>
-          <Select
-            size="sm"
-            value={selectedId ?? ""}
-            onChange={(e) => handleSelectDocument(Number(e.target.value))}
-          >
-            {documents.map((doc) => (
-              <option key={doc.id} value={doc.id}>
+        <FormLabel>{t("panelSettings.xrayTemplates.config")}</FormLabel>
+        {/* Видов документов больше нет: каждая строка — целый самодостаточный
+            конфиг. Дефолтный отличается только тем, что достаётся серверам без
+            явного выбора и не удаляется (NPVPN-2024). */}
+        <VStack
+          align="stretch"
+          spacing={0}
+          borderWidth="1px"
+          borderRadius="md"
+          overflow="hidden"
+        >
+          {documents.map((doc) => (
+            <HStack
+              key={doc.id}
+              px={3}
+              py={2}
+              spacing={2}
+              cursor="pointer"
+              borderTopWidth="1px"
+              _first={{ borderTopWidth: 0 }}
+              bg={doc.id === selectedId ? "gray.100" : undefined}
+              _dark={{ bg: doc.id === selectedId ? "gray.700" : undefined }}
+              onClick={() => handleSelectDocument(doc.id)}
+            >
+              <Text fontSize="sm" noOfLines={1}>
                 {doc.title}
-              </option>
-            ))}
-          </Select>
-          <Tooltip label={t("panelSettings.xrayTemplates.newProfile")}>
-            <IconButton
-              aria-label={t("panelSettings.xrayTemplates.newProfile")}
-              icon={<PlusIcon width="18px" />}
-              size="sm"
-              variant="outline"
-              onClick={() => setShowCreateForm((v) => !v)}
-            />
-          </Tooltip>
-          <Tooltip label={t("panelSettings.xrayTemplates.deleteProfile")}>
-            <IconButton
-              aria-label={t("panelSettings.xrayTemplates.deleteProfile")}
-              icon={<DeleteIcon />}
-              size="sm"
-              variant="outline"
-              colorScheme="red"
-              isDisabled={!selectedDocument?.deletable}
-              isLoading={deleting}
-              onClick={handleDelete}
-            />
-          </Tooltip>
-        </HStack>
+              </Text>
+              {!doc.deletable && (
+                <Badge colorScheme="primary" fontSize="0.65rem">
+                  {t("panelSettings.xrayTemplates.defaultBadge")}
+                </Badge>
+              )}
+              <Box flexGrow={1} />
+              {doc.deletable && (
+                <Tooltip label={t("panelSettings.xrayTemplates.deleteConfig")}>
+                  <IconButton
+                    aria-label={t("panelSettings.xrayTemplates.deleteConfig")}
+                    icon={<DeleteIcon />}
+                    size="xs"
+                    variant="ghost"
+                    colorScheme="red"
+                    isLoading={deletingId === doc.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(doc);
+                    }}
+                  />
+                </Tooltip>
+              )}
+            </HStack>
+          ))}
+        </VStack>
+        <Button
+          mt={2}
+          size="sm"
+          variant="outline"
+          leftIcon={<PlusIcon width="16px" />}
+          onClick={() => setShowCreateForm((v) => !v)}
+        >
+          {t("panelSettings.xrayTemplates.newConfig")}
+        </Button>
         <Collapse in={showCreateForm} animateOpacity>
           <HStack mt={2}>
             <Input
@@ -302,7 +328,7 @@ export const XrayTemplatesPanel: FC = () => {
             />
             <Input
               size="sm"
-              placeholder={t("panelSettings.xrayTemplates.document")}
+              placeholder={t("panelSettings.xrayTemplates.configTitle")}
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
             />
@@ -312,10 +338,13 @@ export const XrayTemplatesPanel: FC = () => {
               isLoading={creating}
               onClick={handleCreate}
             >
-              {t("panelSettings.xrayTemplates.newProfile")}
+              {t("panelSettings.xrayTemplates.create")}
             </Button>
           </HStack>
         </Collapse>
+        <FormHelperText>
+          {t("panelSettings.xrayTemplates.configHint")}
+        </FormHelperText>
       </FormControl>
 
       <FormControl isInvalid={!!validationError}>

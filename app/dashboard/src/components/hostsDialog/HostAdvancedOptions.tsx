@@ -66,16 +66,16 @@ export const HostAdvancedOptions = memo(
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
-    const [routingProfiles, setRoutingProfiles] = useState<
-      XrayTemplateDocument[]
-    >([]);
+    const [clientConfigs, setClientConfigs] = useState<XrayTemplateDocument[]>(
+      []
+    );
 
     useEffect(() => {
       // Видов документов больше нет (NPVPN-2024): каждый документ — полный
       // самодостаточный конфиг и может быть назначен хосту.
       listTemplates()
-        .then((docs) => setRoutingProfiles(docs))
-        .catch(() => setRoutingProfiles([]));
+        .then((docs) => setClientConfigs(docs))
+        .catch(() => setClientConfigs([]));
     }, []);
 
     return (
@@ -751,7 +751,7 @@ export const HostAdvancedOptions = memo(
           </FormControl>
         )}
         <FormControl>
-          <FormLabel>{t("hostsDialog.routingProfile")}</FormLabel>
+          <FormLabel>{t("hostsDialog.clientConfig")}</FormLabel>
           <Controller
             control={control}
             name={`${hostKey}.${index}.client_config_id`}
@@ -765,8 +765,10 @@ export const HostAdvancedOptions = memo(
                   )
                 }
               >
-                <option value="">{t("hostsDialog.routingProfileDefault")}</option>
-                {routingProfiles.map((p) => (
+                <option value="">
+                  {t("hostsDialog.clientConfigDefault")}
+                </option>
+                {clientConfigs.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.title}
                   </option>

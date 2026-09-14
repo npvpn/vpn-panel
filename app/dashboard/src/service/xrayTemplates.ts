@@ -41,11 +41,13 @@ export const revertTemplate = (id: number, version: number) =>
     method: "POST",
   }) as Promise<XrayTemplateVersionMeta>;
 
-export const createProfile = (slug: string, title: string) =>
+// Новый конфиг бэкенд заводит копией дефолтного: видов документов нет, каждый
+// документ — целый конфиг, который уедет клиенту (NPVPN-2024).
+export const createConfig = (slug: string, title: string) =>
   fetch("/settings/xray-templates", {
     method: "POST",
     body: { slug, title },
   }) as Promise<{ id: number; slug: string; title: string }>;
 
-export const deleteProfile = (id: number) =>
+export const deleteConfig = (id: number) =>
   fetch(`/settings/xray-templates/${id}`, { method: "DELETE" });
