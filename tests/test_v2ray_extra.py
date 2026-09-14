@@ -21,7 +21,6 @@ for _name, _attrs in {
     "app.utils.helpers": {"UUIDEncoder": json.JSONEncoder},
     "app.xray.routing_profiles": {
         "select_routing": None,
-        "resolve_routing_profile": None,
         "parse_json_object": None,
     },
 }.items():

@@ -3,7 +3,7 @@ import logging
 import random
 import secrets
 from collections import defaultdict
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from datetime import datetime as dt
 from datetime import timedelta
 from typing import TYPE_CHECKING, Literal, cast
@@ -13,7 +13,6 @@ from jdatetime import date as jd
 from app import xray
 from app.subscription.bs_context import ZERO_STUB, BsContext, StubEndpoint
 from app.utils.system import get_public_ip, get_public_ipv6, readable_size
-from app.xray.routing_profiles import resolve_routing_profile
 
 from . import *
 
@@ -79,7 +78,6 @@ def _render(
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
     conf: SubscriptionConf | None = None,
-    node_profiles: Mapping[int, int] | None = None,
 ) -> list | str:
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
@@ -99,7 +97,6 @@ def _render(
         reverse=reverse,
         bs=bs,
         stub=stub,
-        node_profiles=node_profiles,
     )
 
 
@@ -138,7 +135,6 @@ def generate_subscription(
     settings: dict | None = None,
     bs: BsContext | None = None,
     db: "Session | None" = None,
-    node_profiles: Mapping[int, int] | None = None,
 ) -> str:
     bs = bs or BsContext.empty()
     from app.models.bot import DEFAULT_BOT_SETTINGS, apply_bot_settings_fallback
@@ -146,13 +142,12 @@ def generate_subscription(
 
     resolved_settings = apply_bot_settings_fallback(settings or DEFAULT_BOT_SETTINGS)
 
-    # Тела шаблона/профилей routing теперь живут в app.services.xray_templates (документы
-    # с историей, NPVPN-2024), а не в panel_settings. Тела читаются через процессный кэш
-    # get_cached_active_bodies (без запроса к БД на каждую подписку); db передаётся только
-    # там, где он уже открыт per-request (роутер /sub/). NPVPN-2024: резолюция
-    # node_profiles с host_nodes/ProxyHost.routing_profile_id переезжает сюда в
-    # следующей задаче — сейчас node_profiles приходит пустым, если вызывающая
-    # сторона не передала его явно, и рендер честно фолбэкается на default.
+    # Тела шаблона/профилей routing живут в app.services.xray_templates (документы с
+    # историей, NPVPN-2024) и читаются через процессный кэш get_cached_active_bodies —
+    # без запроса к БД на каждую подписку. Привязка профиля лежит прямо на хосте
+    # (host["routing_profile_id"]), поэтому карта нод больше не нужна. db здесь —
+    # признак «настоящий запрос»: без него v2ray-json рендерится дефолтным шаблоном,
+    # тот же фолбэк, что и раньше для пустых настроек.
     v2ray_template_override = None
     profiles: dict[int, dict] = {}
     default_routing: dict | None = None
@@ -178,15 +173,12 @@ def generate_subscription(
             for template_id, raw in bodies.get("profiles", {}).items()
             if (parsed := _safe_json(raw, f"routing profile {template_id}")) is not None
         }
-        # Вторая ступень фолбэка (NPVPN-2024): хост без профиля (нода с NULL в
-        # routing_profile_id — так миграция оставляет ВСЕ не-БС-ноды — либо хост
-        # вовсе без привязанных нод) получает тело документа `default`, а не
-        # routing общего шаблона. До реформы это был sub_routing_json_default.
+        # Вторая ступень фолбэка (NPVPN-2024): хост без собственного профиля —
+        # так миграция оставляет все не-БС-хосты — получает тело документа `default`,
+        # а не routing общего шаблона. До реформы это был sub_routing_json_default.
         default_profile_id: int | None = bodies.get("default_profile_id")
         if default_profile_id is not None:
             default_routing = profiles.get(default_profile_id)
-
-    node_profiles = node_profiles or {}
 
     render_format = config_format
     if config_format == "incy":
@@ -327,7 +319,6 @@ def generate_subscription(
                 bs=bs,
                 stub=stub,
                 conf=conf,
-                node_profiles=node_profiles,
             ),
         )
     else:
@@ -451,11 +442,9 @@ def process_inbounds_and_tags(
     reverse=False,
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
-    node_profiles: Mapping[int, int] | None = None,
 ) -> list | str:
     bs = bs or BsContext.empty()
     stub = stub or ZERO_STUB
-    node_profiles = node_profiles or {}
     _inbounds = []
     for protocol, tags in inbounds.items():
         for tag in tags:
@@ -548,11 +537,11 @@ def process_inbounds_and_tags(
                     )
                     continue
 
-                # Пер-серверный routing только для v2ray-json: профиль берётся по
-                # привязанным нодам хоста. Другие форматы про профили не знают.
+                # Пер-серверный routing только для v2ray-json: профиль лежит на самом
+                # хосте. Другие форматы про профили не знают.
                 add_kwargs = {}
                 if isinstance(conf, V2rayJsonConfig):
-                    profile_id = resolve_routing_profile(host, node_profiles)
+                    profile_id = host.get("routing_profile_id")
                     if profile_id is not None:
                         add_kwargs["routing_profile_id"] = profile_id
 

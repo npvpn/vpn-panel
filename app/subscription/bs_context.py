@@ -5,8 +5,7 @@
 
 С NPVPN-2024 BsContext отвечает только за БС-лимит трафика (blocked_node_ids/stub_text).
 Признак клиентского routing (какой профиль отдать хосту) больше не хранится здесь —
-за это отвечает app.xray.routing_profiles.resolve_routing_profile по карте
-node_id → profile_id.
+профиль лежит прямо на хосте (host["routing_profile_id"], кэш xray.hosts).
 
 Признак блокировки хоста определяется ТОЛЬКО по привязанным нодам (host_nodes →
 host["node_ids"]), а не по совпадению адреса хоста с Node.address: хост может быть задан

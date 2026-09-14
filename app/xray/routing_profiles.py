@@ -1,12 +1,12 @@
-"""Чистые функции выбора клиентского routing по профилю ноды (NPVPN-2024).
+"""Чистые функции выбора клиентского routing по профилю хоста (NPVPN-2024).
 
-Пришли на смену bs_routing.py: осью выбора стал профиль (произвольный
-именованный документ), а не булев признак БС-ноды. Без зависимостей от
+Пришли на смену bs_routing.py: осью выбора стал профиль (произвольный именованный
+документ), привязанный к хосту, а не булев признак БС-ноды. Резолва здесь нет —
+профиль лежит прямо в словаре хоста из кэша xray.hosts. Без зависимостей от
 БД/окружения — тестируются как bs_limit/inbound_filter.
 """
 
 import json
-from collections.abc import Mapping
 
 
 def parse_json_object(raw: str | None) -> dict | None:
@@ -27,23 +27,6 @@ def parse_json_object(raw: str | None) -> dict | None:
     return value
 
 
-def resolve_routing_profile(host: Mapping, node_profiles: Mapping[int, int]) -> int | None:
-    """Профиль хоста по привязанным нодам.
-
-    ANY-семантика: хватает одной ноды с профилем среди привязанных. Профиль
-    определяется ТОЛЬКО по host_nodes → host["node_ids"], а не по совпадению
-    адреса хоста с Node.address: хост может быть доменом (маскировка TLS/SNI),
-    тогда как нода подключена по IP (NPVPN-1652).
-    """
-    if not node_profiles:
-        return None
-    for node_id in host.get("node_ids") or ():
-        profile_id = node_profiles.get(node_id)
-        if profile_id is not None:
-            return profile_id
-    return None
-
-
 def select_routing(
     template_routing: dict,
     profile_routing: dict | None,
@@ -53,8 +36,8 @@ def select_routing(
 
     Двухступенчатый фолбэк: профиль хоста → профиль `default` → routing шаблона.
 
-    Профиль хоста не задан (у ноды NULL в routing_profile_id, у хоста вовсе нет
-    привязанных нод, либо у назначенного профиля пустое тело) — берётся тело
+    Профиль хоста не задан (у хоста NULL в routing_profile_id, либо у назначенного
+    профиля пустое тело) — берётся тело
     документа `default`. Так сохраняется дореформенное поведение, где обычный
     хост получал sub_routing_json_default, а routing шаблона был последним
     рубежом. Пустое тело на любой ступени означает «падать дальше по цепочке»,

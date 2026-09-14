@@ -80,7 +80,6 @@ from app.subscription.sub_stub import (  # noqa: E402
     JSON_STUB_PORT,
 )
 from app.subscription.v2ray import V2rayJsonConfig, V2rayShareLink  # noqa: E402
-from app.xray.routing_profiles import resolve_routing_profile  # noqa: E402
 
 # share.py делает `from . import *`; в песочнице app/subscription/__init__.py не выполняется
 # (conftest подменяет пакет), поэтому кладём классы конфигов в модуль пакета руками.
@@ -153,12 +152,18 @@ def _host(
     node_ids: list[int] | None = None,
     remark: str = "BS server",
     order: int = 0,
+    routing_profile_id: int | None = None,
 ) -> dict:
-    """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids."""
+    """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids.
+
+    routing_profile_id — профиль клиентского routing этого хоста (NPVPN-2024);
+    None означает фолбэк на профиль `default`.
+    """
     return {
         "remark": remark,
         "address": list(addresses),
         "node_ids": list(node_ids or []),
+        "routing_profile_id": routing_profile_id,
         "port": 8443,
         "sni": [],
         "host": [],
@@ -195,7 +200,7 @@ def xray_stub(monkeypatch):
     return _apply
 
 
-def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB, node_profiles: dict[int, int] | None = None):
+def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB):
     # setup_format_variables тянет app.models.user → app.db; подставляем готовые переменные.
     format_variables = defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": None})
     protocol = _Protocol()
@@ -206,7 +211,6 @@ def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB, node_profiles: 
         conf=conf,
         bs=bs,
         stub=stub,
-        node_profiles=node_profiles,
     )
 
 
@@ -292,15 +296,11 @@ def test_hosts_emitted_sorted_by_global_order(monkeypatch):
     assert [call["remark"] for call in conf.calls] == ["A2", "B1", "A1"]
 
 
-# Профили клиентского routing для v2ray-json-тестов: два id, назначаемых нодам через
-# node_profiles (node_id → profile_id) — карта, которую раньше заменял булев is_bs.
+# Профили клиентского routing для v2ray-json-тестов: два id, назначаемых хостам через
+# routing_profile_id — поле, которое раньше заменял булев is_bs.
 DEFAULT_PROFILE_ID = 1
 BS_PROFILE_ID = 2
 OTHER_NODE_ID = 42
-NODE_PROFILES = {OTHER_NODE_ID: DEFAULT_PROFILE_ID, BS_NODE_ID: BS_PROFILE_ID}
-# Прод-состояние после миграции: профиль проставлен ТОЛЬКО БС-нодам, у обычных
-# routing_profile_id = NULL, поэтому их в карте нет вовсе (NPVPN-2024).
-PROD_NODE_PROFILES = {BS_NODE_ID: BS_PROFILE_ID}
 
 DEFAULT_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]}
 BS_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]}
@@ -327,11 +327,11 @@ def _routing_domains(conf: V2rayJsonConfig) -> list[str]:
 
 
 def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
-    """Профиль БС-ноды доходит до V2rayJsonConfig.add → выбирается его routing."""
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
+    """Профиль БС-хоста доходит до V2rayJsonConfig.add → выбирается его routing."""
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
+    _render(conf, _bs_ctx())
 
     assert len(conf.config) == 1
     assert _routing_domains(conf) == ["bs"]
@@ -339,10 +339,10 @@ def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
 
 def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
     """Мульти-адресный (балансируемый) БС-хост → add_balanced(routing_profile_id=...)."""
-    xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID])])
+    xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
+    _render(conf, _bs_ctx())
 
     cfg = conf.config[-1]
     proxy_tags = [o["tag"] for o in cfg["outbounds"] if o["tag"].startswith("proxy")]
@@ -351,44 +351,44 @@ def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
 
 
 def test_v2ray_json_non_bs_host_gets_default_routing(xray_stub):
-    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID])])
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=DEFAULT_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
+    _render(conf, _bs_ctx())
 
     assert _routing_domains(conf) == ["default"]
 
 
-def test_v2ray_json_node_without_profile_falls_back_to_default_document(xray_stub):
-    """Прод-состояние: у обычной ноды routing_profile_id = NULL (миграция проставляет
-    профиль только БС-нодам), поэтому её нет в карте node_profiles. Такой хост обязан
-    получить тело документа `default` — как до реформы получал sub_routing_json_default,
-    а не routing общего шаблона."""
-    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID])])
+def test_host_without_profile_falls_back_to_default_document(xray_stub):
+    """Прод-состояние: миграция вешает профиль только на хосты БС-нод, остальные — NULL.
+
+    Такой хост обязан получить routing документа `default`, а не routing общего шаблона:
+    до переезда он получал sub_routing_json_default.
+    """
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=None)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx(), node_profiles=PROD_NODE_PROFILES)
+    _render(conf, _bs_ctx())
 
     assert _routing_domains(conf) == ["default"]
 
 
 def test_v2ray_json_host_without_nodes_falls_back_to_default_document(xray_stub):
-    """Хост без привязанных нод: профиль определить не по чему, и назначением профилей
-    нодам этот случай не чинится в принципе — только фолбэком на документ `default`."""
-    xray_stub([_host("orphan.example.com", node_ids=[])])
+    """Хост без привязанных нод и без собственного профиля: фолбэк на документ `default`."""
+    xray_stub([_host("orphan.example.com", node_ids=[], routing_profile_id=None)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx(), node_profiles=PROD_NODE_PROFILES)
+    _render(conf, _bs_ctx())
 
     assert _routing_domains(conf) == ["default"]
 
 
 def test_is_bs_never_leaks_into_other_formats(xray_stub):
     """Другие форматы про профили routing не знают — их conf.add вызывается без них."""
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
     conf = _FakeConf()
 
-    _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
+    _render(conf, _bs_ctx())
 
     assert conf.calls[0]["kwargs"] == {}
     assert conf.calls[0]["remark"] == "BS server"
@@ -408,10 +408,10 @@ def test_is_bs_never_leaks_into_other_formats(xray_stub):
     ids=["clash", "clash_meta", "singbox", "outline"],
 )
 def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, conf_factory):
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
     conf = conf_factory()
 
-    rendered = _render(conf, _bs_ctx(), node_profiles=NODE_PROFILES)
+    rendered = _render(conf, _bs_ctx())
 
     assert rendered  # рендер прошёл до конца, а не упал TypeError'ом на лишнем kwarg
 
@@ -421,7 +421,6 @@ def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, c
 # подменяем модулем с фейковым crud (Session/User нужны только как аннотации).
 _fake_crud = types.SimpleNamespace(
     get_blocked_bs_node_ids=lambda db, user_id: set(db["blocked"]),
-    get_node_routing_profiles=lambda db: {nid: BS_PROFILE_ID for nid in db["bs"]},
 )
 _stub_module("app.db", {"Session": dict, "crud": _fake_crud})
 _stub_module("app.db.models", {"User": types.SimpleNamespace})
@@ -456,9 +455,7 @@ def test_build_bs_context_sets_stub_text_for_blocked_domain_host(fake_crud):
     assert bs.stub_text  # имя сервера-заглушки не пустое
     assert bs.is_blocked(_host("bs.example.com", node_ids=[BS_NODE_ID])) is True
     # Признак routing (раньше bs.is_bs(host)) больше не хранится в BsContext — он
-    # считается отдельно, по карте node_id → profile_id из crud.get_node_routing_profiles.
-    node_profiles = _fake_crud.get_node_routing_profiles(db)
-    assert resolve_routing_profile(_host("bs.example.com", node_ids=[BS_NODE_ID]), node_profiles) == BS_PROFILE_ID
+    # читается отдельно, прямо с хоста (host["routing_profile_id"], NPVPN-2024).
 
 
 def test_build_bs_context_without_blocks_has_no_stub_text(fake_crud):

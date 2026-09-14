@@ -63,6 +63,10 @@ def hosts(storage: dict):
                     # Инвариант: адреса и node_ids строятся по одному множеству нод —
                     # обе функции живут рядом в host_addresses.py.
                     "node_ids": resolve_host_node_ids(host),
+                    # Профиль клиентского routing этого хоста (NPVPN-2024). Лежит прямо
+                    # в кэше, поэтому share.py не делает ни одного запроса к БД за
+                    # привязками на каждую подписку.
+                    "routing_profile_id": host.routing_profile_id,
                     "port": host.port,
                     "path": host.path if host.path else None,
                     "sni": [i.strip() for i in host.sni.split(",")] if host.sni else [],
