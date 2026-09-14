@@ -7,10 +7,16 @@ BsContext._matches (app/subscription/bs_context.py) читает host.get("node_
 resolve_host_node_ids(host) из app/xray/host_addresses.py — того самого, который
 согласован с resolve_host_addresses (NPVPN-1652). Если ключ пропадёт/переименуется
 или в него положат другое значение (например, host.node_ids — ВСЕ ноды, включая
-disabled, чьих адресов в подписке уже нет), БС-логика (заглушки лимита и клиентский
-routing по профилю ноды) молча разъедется с адресами хоста, а обычные тесты
+disabled, чьих адресов в подписке уже нет), БС-логика (заглушки лимита) молча
+разъедется с адресами хоста, а обычные тесты
 BsContext/subscription (которые строят словари хостов руками, не через hosts())
 этого не заметят — этот тест ловит именно такой разрыв.
+
+Тем же способом проверяется ключ "routing_profile_id" (NPVPN-2024): клиентский routing
+выбирается по профилю ХОСТА, и этот словарь — единственный стык между колонкой
+hosts.routing_profile_id и рендером подписки. Если ключ пропадёт,
+host.get("routing_profile_id") вернёт None и ВСЕ хосты молча уедут на документ
+`default` — тесты рендера строят словари хостов руками и этого не увидят.
 """
 
 from __future__ import annotations
@@ -82,3 +88,25 @@ def test_hosts_storage_address_and_node_ids_share_the_same_host():
     assert isinstance(address, ast.Call) and isinstance(address.func, ast.Name)
     assert address.func.id == "resolve_host_addresses"
     assert [arg.id for arg in address.args if isinstance(arg, ast.Name)] == ["host"]
+
+
+def test_hosts_storage_dict_has_routing_profile_id_key():
+    """В storage-словаре хоста есть ключ "routing_profile_id" — единственный источник
+    профиля клиентского routing для рендера подписки (share.py читает его с хоста)."""
+    assert "routing_profile_id" in _dict_keys(_host_dict_literal())
+
+
+def test_hosts_storage_routing_profile_id_comes_from_the_host_column():
+    """В "routing_profile_id" кладётся именно host.routing_profile_id.
+
+    Профиль живёт на ХОСТЕ, а не на ноде (NPVPN-2024): подмена значения на что-то
+    производное от нод вернула бы первый, отменённый подход — тест краснеет.
+    """
+    value = _value_for_key(_host_dict_literal(), "routing_profile_id")
+
+    assert isinstance(value, ast.Attribute) and value.attr == "routing_profile_id", (
+        'значение "routing_profile_id" должно быть атрибутом routing_profile_id'
+    )
+    assert isinstance(value.value, ast.Name) and value.value.id == "host", (
+        "routing_profile_id должен читаться с хоста текущей итерации (host.routing_profile_id)"
+    )
