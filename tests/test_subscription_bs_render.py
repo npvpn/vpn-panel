@@ -343,6 +343,11 @@ def _routing_domains(conf: V2rayJsonConfig) -> list[str]:
     return [rule.get("domain", [""])[0] for rule in conf.config[-1]["routing"]["rules"]]
 
 
+def _proxy_addresses(assembled_config: dict) -> list[str]:
+    """Адреса всех proxy-outbound'ов (не dialer/direct/block) собранного конфига."""
+    return [o["settings"]["vnext"][0]["address"] for o in assembled_config["outbounds"] if o["tag"].startswith("proxy")]
+
+
 def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
     """Документ БС-хоста доходит до V2rayJsonConfig.add → рендерится он."""
     xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
@@ -398,6 +403,35 @@ def test_v2ray_json_host_without_nodes_falls_back_to_default_document(xray_stub)
     _render(conf, BsContext.empty())
 
     assert _routing_domains(conf) == ["default"]
+
+
+def test_two_hosts_sharing_default_document_do_not_leak_outbounds(xray_stub):
+    """Документ `default` в conf.configs — ОБЩИЙ объект: сразу два хоста без своей
+    привязки (client_config_id=None, после миграции — все не-БС-хосты) фолбэком идут
+    на один и тот же документ. Без copy.deepcopy(base) в _assemble_config первый
+    сервер дописал бы свой outbound прямо в объект из карты, и второй сервер получил
+    бы СВОЙ + ЧУЖОЙ outbound (унаследованную точку подключения первого хоста), а
+    карта документов необратимо испортилась бы для всех следующих подписок. Тест
+    ловит именно это: без deepcopy падает и на "чужом outbound", и на мутации карты.
+    """
+    xray_stub(
+        [
+            _host("h1.example.com", node_ids=[OTHER_NODE_ID], remark="H1", order=0, client_config_id=None),
+            _host("h2.example.com", node_ids=[OTHER_NODE_ID], remark="H2", order=1, client_config_id=None),
+        ]
+    )
+    conf = _v2ray_json_conf()
+    default_doc = conf.configs[DEFAULT_CONFIG_ID]
+    outbounds_count_before = len(default_doc["outbounds"])
+
+    _render(conf, BsContext.empty())
+
+    assert len(conf.config) == 2
+    # у каждого сервера — ровно свой proxy-outbound, а не свой+чужой и не чужой вместо своего
+    assert _proxy_addresses(conf.config[0]) == ["h1.example.com"]
+    assert _proxy_addresses(conf.config[1]) == ["h2.example.com"]
+    # документ в карте conf.configs остался нетронутым: outbounds серверов в нём не осели
+    assert len(conf.configs[DEFAULT_CONFIG_ID]["outbounds"]) == outbounds_count_before
 
 
 def test_assigned_config_with_empty_body_falls_back_to_default_document(xray_stub):
