@@ -189,8 +189,10 @@ def build_render_context(
 def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: SubscriptionRenderPlan) -> Response:
     """Единая точка генерации ответа подписки по контексту и плану рендера.
 
-    db передаётся генератору для чтения активных тел шаблона/routing-профилей
-    (app.services.xray_templates, NPVPN-2024) и карты node_id → profile_id.
+    db передаётся генератору как признак «настоящий запрос»: без него v2ray-json
+    рендерится дефолтным шаблоном. С ним генератор читает активные тела
+    шаблона/routing-профилей (app.services.xray_templates, NPVPN-2024) через процессный
+    кэш; привязка профиля к серверу лежит прямо на хосте (host["routing_profile_id"]).
     """
     conf = generate_subscription(
         user=ctx.user,
