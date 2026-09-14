@@ -47,6 +47,25 @@ const parseBody = (body: string): any => {
   }
 };
 
+// Пустой документ показывается в JsonEditor как {} (редактору нужен объект), и любое
+// касание редактора отдаёт onChangeText("{}"). Сохранить такое — значит превратить
+// «тело пустое, фолбэк дальше по цепочке» в «routing пустой»: у всех серверов профиля
+// routing молча обнулился бы. Поэтому объект без единого ключа сохраняем как пустое
+// тело. Задать серверам заведомо пустой routing через этот редактор нельзя — это
+// осознанный размен: молча потерять routing целой группы серверов дороже.
+const normalizeBody = (body: string): string => {
+  if (!body.trim()) return "";
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length === 0) {
+      return "";
+    }
+  } catch {
+    // невалидный JSON — отдаём как есть, ошибку покажет 422 от бэка
+  }
+  return body;
+};
+
 export const XrayTemplatesPanel: FC = () => {
   const { t } = useTranslation();
   const toast = useToast();
@@ -147,7 +166,7 @@ export const XrayTemplatesPanel: FC = () => {
     if (selectedId == null) return;
     setSaving(true);
     setValidationError(null);
-    saveTemplate(selectedId, body, comment)
+    saveTemplate(selectedId, normalizeBody(body), comment)
       .then(() => {
         toast({
           title: t("panelSettings.xrayTemplates.saved"),
