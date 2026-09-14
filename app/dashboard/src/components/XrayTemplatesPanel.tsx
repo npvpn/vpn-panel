@@ -18,6 +18,10 @@ import {
   Thead,
   Tooltip,
   Tr,
+  UseRadioProps,
+  useColorModeValue,
+  useRadio,
+  useRadioGroup,
   useToast,
   VStack,
 } from "@chakra-ui/react";
@@ -66,6 +70,73 @@ const normalizeBody = (body: string): string => {
   return body;
 };
 
+// Строка списка конфигов — радиокнопка, а не Box с onClick. Способ взят из
+// UsageFilter: скрытый нативный <input> внутри <label> + оформление на getRadioProps().
+// Так в таб-порядок и под стрелки список попадает сам, состояние «выбран» читает
+// скринридер, а бейдж и прочая вёрстка внутри строки остаются произвольными (ради них
+// и ушёл <select>). Кнопка удаления намеренно лежит СНАРУЖИ <label>: внутри неё клик
+// заодно переключал бы радио.
+const ConfigListItem: FC<
+  UseRadioProps & {
+    doc: XrayTemplateDocument;
+    isDeleting: boolean;
+    onDelete: (doc: XrayTemplateDocument) => void;
+  }
+> = ({ doc, isDeleting, onDelete, ...radioProps }) => {
+  const { t } = useTranslation();
+  const { getInputProps, getRadioProps } = useRadio(radioProps);
+  const checkedBg = useColorModeValue("gray.100", "gray.700");
+
+  return (
+    <HStack
+      spacing={0}
+      borderTopWidth="1px"
+      _first={{ borderTopWidth: 0 }}
+      align="stretch"
+    >
+      <Box as="label" flexGrow={1} minW={0}>
+        <input {...getInputProps()} />
+        <HStack
+          {...getRadioProps()}
+          h="full"
+          px={3}
+          py={2}
+          spacing={2}
+          cursor="pointer"
+          _checked={{ bg: checkedBg }}
+          _focus={{ boxShadow: "outline" }}
+        >
+          <Text fontSize="sm" noOfLines={1}>
+            {doc.title}
+          </Text>
+          {!doc.deletable && (
+            <Badge colorScheme="primary" fontSize="0.65rem">
+              {t("panelSettings.xrayTemplates.defaultBadge")}
+            </Badge>
+          )}
+        </HStack>
+      </Box>
+      {doc.deletable && (
+        <Tooltip label={t("panelSettings.xrayTemplates.deleteConfig")}>
+          <IconButton
+            aria-label={`${t("panelSettings.xrayTemplates.deleteConfig")}: ${
+              doc.title
+            }`}
+            icon={<DeleteIcon />}
+            size="xs"
+            alignSelf="center"
+            mr={2}
+            variant="ghost"
+            colorScheme="red"
+            isLoading={isDeleting}
+            onClick={() => onDelete(doc)}
+          />
+        </Tooltip>
+      )}
+    </HStack>
+  );
+};
+
 export const XrayTemplatesPanel: FC = () => {
   const { t } = useTranslation();
   const toast = useToast();
@@ -93,6 +164,14 @@ export const XrayTemplatesPanel: FC = () => {
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // Группа радио на список конфигов: выбор документа обязан оставаться доступным с
+  // клавиатуры (таб в группу, стрелки между строками) — ровно то, что раньше давал
+  // нативный <select>.
+  const { getRootProps, getRadioProps } = useRadioGroup({
+    value: selectedId != null ? String(selectedId) : "",
+    onChange: (value) => handleSelectDocument(Number(value)),
+  });
 
   const showErrorToast = (titleKey: string, err?: any) => {
     const detail = err?.response?._data?.detail;
@@ -262,51 +341,23 @@ export const XrayTemplatesPanel: FC = () => {
             конфиг. Дефолтный отличается только тем, что достаётся серверам без
             явного выбора и не удаляется (NPVPN-2024). */}
         <VStack
+          {...getRootProps()}
+          aria-label={t("panelSettings.xrayTemplates.config")}
           align="stretch"
           spacing={0}
+          maxH="180px"
+          overflowY="auto"
           borderWidth="1px"
           borderRadius="md"
-          overflow="hidden"
         >
           {documents.map((doc) => (
-            <HStack
+            <ConfigListItem
               key={doc.id}
-              px={3}
-              py={2}
-              spacing={2}
-              cursor="pointer"
-              borderTopWidth="1px"
-              _first={{ borderTopWidth: 0 }}
-              bg={doc.id === selectedId ? "gray.100" : undefined}
-              _dark={{ bg: doc.id === selectedId ? "gray.700" : undefined }}
-              onClick={() => handleSelectDocument(doc.id)}
-            >
-              <Text fontSize="sm" noOfLines={1}>
-                {doc.title}
-              </Text>
-              {!doc.deletable && (
-                <Badge colorScheme="primary" fontSize="0.65rem">
-                  {t("panelSettings.xrayTemplates.defaultBadge")}
-                </Badge>
-              )}
-              <Box flexGrow={1} />
-              {doc.deletable && (
-                <Tooltip label={t("panelSettings.xrayTemplates.deleteConfig")}>
-                  <IconButton
-                    aria-label={t("panelSettings.xrayTemplates.deleteConfig")}
-                    icon={<DeleteIcon />}
-                    size="xs"
-                    variant="ghost"
-                    colorScheme="red"
-                    isLoading={deletingId === doc.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(doc);
-                    }}
-                  />
-                </Tooltip>
-              )}
-            </HStack>
+              {...getRadioProps({ value: String(doc.id) })}
+              doc={doc}
+              isDeleting={deletingId === doc.id}
+              onDelete={handleDelete}
+            />
           ))}
         </VStack>
         <Button
