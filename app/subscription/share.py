@@ -149,14 +149,14 @@ def generate_subscription(
     # Тела шаблона/профилей routing теперь живут в app.services.xray_templates (документы
     # с историей, NPVPN-2024), а не в panel_settings. Тела читаются через процессный кэш
     # get_cached_active_bodies (без запроса к БД на каждую подписку); db передаётся только
-    # там, где он уже открыт per-request (роутер /sub/) — нужен для node_profiles. Без db
-    # v2ray-json рендерится дефолтным шаблоном без пер-серверных профилей — тот же фолбэк,
-    # что и раньше для пустых настроек.
+    # там, где он уже открыт per-request (роутер /sub/). NPVPN-2024: резолюция
+    # node_profiles с host_nodes/ProxyHost.routing_profile_id переезжает сюда в
+    # следующей задаче — сейчас node_profiles приходит пустым, если вызывающая
+    # сторона не передала его явно, и рендер честно фолбэкается на default.
     v2ray_template_override = None
     profiles: dict[int, dict] = {}
     default_routing: dict | None = None
     if db is not None:
-        from app.db import crud
         from app.services.xray_templates import get_cached_active_bodies
         from app.xray.routing_profiles import parse_json_object
 
@@ -167,7 +167,6 @@ def generate_subscription(
                 logger.warning("[sub] ignoring invalid %s: %s", name, exc)
                 return None
 
-        node_profiles = node_profiles if node_profiles is not None else crud.get_node_routing_profiles(db)
         # Процессный кэш (не db.info): /sub/ — горячий путь, обычный запрос БД на КАЖДУЮ
         # подписку недопустим (раньше шаблон/routing читались из уже загруженного
         # panel_settings, без лишнего JOIN). Инвалидируется через

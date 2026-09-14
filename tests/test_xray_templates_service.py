@@ -25,7 +25,8 @@ from app.db.models import (  # noqa: E402
     PROFILE_KIND,
     TEMPLATE_KIND,
     TEMPLATE_SLUG,
-    Node,
+    ProxyHost,
+    ProxyInbound,
     XrayTemplate,
     XrayTemplateVersion,
 )
@@ -192,7 +193,8 @@ class _Admin:
 
 @pytest.fixture()
 def db():
-    """Отдельная in-memory БД с полной схемой (Node нужен для теста удаления профиля)."""
+    """Отдельная in-memory БД с полной схемой (ProxyHost/ProxyInbound нужны для теста
+    удаления профиля)."""
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
@@ -263,12 +265,24 @@ def test_profiles_map_skips_blank_bodies(db):
     assert _template_id(db, DEFAULT_PROFILE_SLUG) not in bodies["profiles"]
 
 
-def test_deleting_profile_resets_bound_nodes(db):
+def test_deleting_profile_resets_bound_hosts(db):
+    """NPVPN-2024: привязка живёт на ProxyHost, а не на Node — delete_profile обязан
+    сбрасывать routing_profile_id у хостов, а не у нод (в БД это делает ON DELETE
+    SET NULL у хостового FK, здесь проверяем то же самое в ORM-сессии)."""
     bs_id = _template_id(db, BS_PROFILE_SLUG)
-    db.add(Node(name="n1", address="192.0.2.1", port=62050, api_port=62051, routing_profile_id=bs_id))
+    db.add(ProxyInbound(tag="VLESS_TCP_REALITY"))
+    db.commit()
+    db.add(
+        ProxyHost(
+            remark="host-1",
+            address="1.2.3.4",
+            inbound_tag="VLESS_TCP_REALITY",
+            routing_profile_id=bs_id,
+        )
+    )
     db.commit()
     svc.delete_profile(db, bs_id)
-    assert db.query(Node).one().routing_profile_id is None
+    assert db.query(ProxyHost).one().routing_profile_id is None
 
 
 def test_template_and_default_profile_cannot_be_deleted(db):

@@ -253,23 +253,26 @@ def _compiled_mysql_ddl(fn) -> str:
 
 
 def test_ddl_names_hosts_foreign_key_and_drops_it_before_column():
-    """Регресс: MySQL не даёт дропнуть колонку под живым FK (ERROR 1828)."""
-    import io
+    """Регресс: MySQL не даёт дропнуть колонку под живым FK (ERROR 1828).
 
-    from alembic.migration import MigrationContext
-    from alembic.operations import Operations
-    from sqlalchemy.dialects import mysql
-
+    Утверждение про upgrade проверяет именно СОЗДАНИЕ констрейнта под явным именем
+    (`ADD CONSTRAINT <HOSTS_FK_NAME> FOREIGN KEY`) — просто наличие HOSTS_FK_NAME
+    где-то в тексте SQL прошло бы и при `create_foreign_key(None, ...)`, потому что
+    то же имя жёстко зашито в `_drop_routing_profile_column` для DROP FOREIGN KEY.
+    На MySQL такая рассинхронизация (безымянный ADD CONSTRAINT + именованный DROP)
+    реально давала бы ERROR 1305 Unknown table constraint.
+    """
     migration = _load_migration()
-    buf = io.StringIO()
-    ctx = MigrationContext.configure(dialect=mysql.dialect(), opts={"as_sql": True, "output_buffer": buf})
-    op_like = Operations(ctx)
-    migration._add_routing_profile_column(op_like)
-    migration._drop_routing_profile_column(op_like)
-    sql = buf.getvalue()
-    assert migration.HOSTS_FK_NAME in sql
-    assert "ALTER TABLE hosts" in sql
-    assert sql.index("DROP FOREIGN KEY") < sql.index("DROP COLUMN")
+
+    upgrade_sql = _compiled_mysql_ddl(migration._add_routing_profile_column)
+    assert f"ADD CONSTRAINT {migration.HOSTS_FK_NAME} FOREIGN KEY" in upgrade_sql
+    assert "ALTER TABLE hosts ADD COLUMN routing_profile_id" in upgrade_sql
+
+    downgrade_sql = _compiled_mysql_ddl(migration._drop_routing_profile_column)
+    assert "ALTER TABLE hosts" in downgrade_sql
+    drop_fk = downgrade_sql.index(f"DROP FOREIGN KEY {migration.HOSTS_FK_NAME}")
+    drop_column = downgrade_sql.index("DROP COLUMN routing_profile_id")
+    assert drop_fk < drop_column
 
 
 def test_migrate_data_without_panel_row_does_not_fail_and_creates_row():

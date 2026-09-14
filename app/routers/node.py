@@ -18,7 +18,6 @@ from app.models.node import (
     NodesUsageResponse,
 )
 from app.models.proxy import ProxyHost
-from app.services import xray_templates as xray_templates_service
 from app.utils import responses
 
 router = APIRouter(tags=["Node"], prefix="/api", responses={401: responses._401, 403: responses._403})
@@ -51,11 +50,6 @@ def add_node(
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Add a new node to the database and optionally add it as a host."""
-    try:
-        xray_templates_service.assert_profile_exists(db, new_node.routing_profile_id)
-    except xray_templates_service.XrayTemplateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
     try:
         dbnode = crud.create_node(db, new_node)
     except IntegrityError:
@@ -157,11 +151,6 @@ def modify_node(
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Update a node's details. Only accessible to sudo admins."""
-    try:
-        xray_templates_service.assert_profile_exists(db, modified_node.routing_profile_id)
-    except xray_templates_service.XrayTemplateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
     updated_node = crud.update_node(db, dbnode, modified_node)
     # remove_node → remote /disconnect (stops Xray). Reattach must be HARD:
     # new session + /restart, not soft try_restore (session already wiped).
