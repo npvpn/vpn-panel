@@ -504,6 +504,14 @@ class ProxyHost(Base):
     def node_ids(self):
         return [node.id for node in self.nodes]
 
+    # Профиль клиентского routing этого хоста. NULL — фолбэк на профиль `default`
+    # (см. select_routing). Живёт на хосте, а не на ноде: хост — это отдельный
+    # сервер в подписке, и одна нода может обслуживать несколько хостов с разными
+    # конфигами. nodes.is_bs остаётся исключительно про БС-лимит трафика (NPVPN-2024).
+    routing_profile_id = Column(
+        Integer, ForeignKey("xray_templates.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+
 
 class System(Base):
     __tablename__ = "system"
@@ -580,11 +588,6 @@ class Node(Base):
         server_default=NodeBalancerStrategy.random.value,
     )
     is_bs = Column(Boolean, nullable=False, default=False, server_default=text("0"))
-    # Профиль клиентского routing. NULL — профиль `default`. is_bs остаётся
-    # исключительно про БС-лимит трафика и блокировку (NPVPN-2024).
-    routing_profile_id = Column(
-        Integer, ForeignKey("xray_templates.id", ondelete="SET NULL"), nullable=True, default=None
-    )
     # Лимит трафика у хостера на этот сервер (SI-байты). NULL — лимита нет.
     hosting_traffic_limit_bytes = Column(BigInteger, nullable=True)
 

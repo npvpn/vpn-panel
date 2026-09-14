@@ -27,8 +27,11 @@ class _Op:
         return self._bind
 
 
-def _engine(panel_data: dict, nodes: list[tuple[int, int]]):
-    """Песочница: global_settings + nodes + пустые целевые таблицы."""
+def _engine(panel_data: dict, hosts: list[tuple[int, list[int]]], bs_node_ids: list[int]):
+    """Песочница: global_settings + hosts/host_nodes/nodes + пустые целевые таблицы.
+
+    hosts — список (host_id, [node_id, ...]); bs_node_ids — ноды с is_bs=1.
+    """
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     with engine.begin() as conn:
         conn.execute(
@@ -37,7 +40,11 @@ def _engine(panel_data: dict, nodes: list[tuple[int, int]]):
                 '"key" VARCHAR(64) PRIMARY KEY, data TEXT, created_at DATETIME, updated_at DATETIME)'
             )
         )
-        conn.execute(text("CREATE TABLE nodes (id INTEGER PRIMARY KEY, is_bs BOOLEAN, routing_profile_id INTEGER)"))
+        conn.execute(text("CREATE TABLE nodes (id INTEGER PRIMARY KEY, is_bs BOOLEAN)"))
+        conn.execute(
+            text("CREATE TABLE hosts (id INTEGER PRIMARY KEY, remark VARCHAR(256), routing_profile_id INTEGER)")
+        )
+        conn.execute(text("CREATE TABLE host_nodes (host_id INTEGER, node_id INTEGER)"))
         conn.execute(
             text(
                 "CREATE TABLE xray_templates (id INTEGER PRIMARY KEY, kind VARCHAR(32), slug VARCHAR(64), "
@@ -55,15 +62,26 @@ def _engine(panel_data: dict, nodes: list[tuple[int, int]]):
             text('INSERT INTO global_settings ("key", data) VALUES (:k, :d)'),
             {"k": "panel", "d": json.dumps(panel_data)},
         )
-        for node_id, is_bs in nodes:
+        all_node_ids = {nid for _, nids in hosts for nid in nids} | set(bs_node_ids)
+        for node_id in sorted(all_node_ids):
             conn.execute(
-                text("INSERT INTO nodes (id, is_bs, routing_profile_id) VALUES (:i, :b, NULL)"),
-                {"i": node_id, "b": is_bs},
+                text("INSERT INTO nodes (id, is_bs) VALUES (:i, :b)"),
+                {"i": node_id, "b": 1 if node_id in bs_node_ids else 0},
             )
+        for host_id, node_ids in hosts:
+            conn.execute(
+                text("INSERT INTO hosts (id, remark, routing_profile_id) VALUES (:i, :r, NULL)"),
+                {"i": host_id, "r": f"host-{host_id}"},
+            )
+            for node_id in node_ids:
+                conn.execute(
+                    text("INSERT INTO host_nodes (host_id, node_id) VALUES (:h, :n)"),
+                    {"h": host_id, "n": node_id},
+                )
     return engine
 
 
-def _engine_without_panel_row(nodes: list[tuple[int, int]]):
+def _engine_without_panel_row(hosts: list[tuple[int, list[int]]], bs_node_ids: list[int]):
     """Песочница без строки key='panel' в global_settings — сеется только client_apps
     на свежей установке (см. af83ddaadbe7_add_global_settings.py)."""
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -74,7 +92,11 @@ def _engine_without_panel_row(nodes: list[tuple[int, int]]):
                 '"key" VARCHAR(64) PRIMARY KEY, data TEXT, created_at DATETIME, updated_at DATETIME)'
             )
         )
-        conn.execute(text("CREATE TABLE nodes (id INTEGER PRIMARY KEY, is_bs BOOLEAN, routing_profile_id INTEGER)"))
+        conn.execute(text("CREATE TABLE nodes (id INTEGER PRIMARY KEY, is_bs BOOLEAN)"))
+        conn.execute(
+            text("CREATE TABLE hosts (id INTEGER PRIMARY KEY, remark VARCHAR(256), routing_profile_id INTEGER)")
+        )
+        conn.execute(text("CREATE TABLE host_nodes (host_id INTEGER, node_id INTEGER)"))
         conn.execute(
             text(
                 "CREATE TABLE xray_templates (id INTEGER PRIMARY KEY, kind VARCHAR(32), slug VARCHAR(64), "
@@ -88,11 +110,22 @@ def _engine_without_panel_row(nodes: list[tuple[int, int]]):
                 "author_username VARCHAR(34), created_at DATETIME)"
             )
         )
-        for node_id, is_bs in nodes:
+        all_node_ids = {nid for _, nids in hosts for nid in nids} | set(bs_node_ids)
+        for node_id in sorted(all_node_ids):
             conn.execute(
-                text("INSERT INTO nodes (id, is_bs, routing_profile_id) VALUES (:i, :b, NULL)"),
-                {"i": node_id, "b": is_bs},
+                text("INSERT INTO nodes (id, is_bs) VALUES (:i, :b)"),
+                {"i": node_id, "b": 1 if node_id in bs_node_ids else 0},
             )
+        for host_id, node_ids in hosts:
+            conn.execute(
+                text("INSERT INTO hosts (id, remark, routing_profile_id) VALUES (:i, :r, NULL)"),
+                {"i": host_id, "r": f"host-{host_id}"},
+            )
+            for node_id in node_ids:
+                conn.execute(
+                    text("INSERT INTO host_nodes (host_id, node_id) VALUES (:h, :n)"),
+                    {"h": host_id, "n": node_id},
+                )
     return engine
 
 
@@ -109,7 +142,8 @@ def test_flat_keys_become_first_versions():
             "sub_routing_json_default": '{"rules": []}',
             "sub_routing_json_bs": "",
         },
-        nodes=[(1, 1), (2, 0)],
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
     )
     with engine.begin() as conn:
         migration._migrate_data(_Op(conn))
@@ -126,17 +160,19 @@ def test_flat_keys_become_first_versions():
     assert by_slug["bs"] == ("routing_profile", 1, "", "migration")
 
 
-def test_bs_nodes_get_bs_profile_and_others_stay_null():
+def test_hosts_of_bs_nodes_get_bs_profile_and_others_stay_null():
+    """ANY-семантика: хватает одной БС-ноды среди привязанных к хосту."""
     migration = _load_migration()
     engine = _engine(
         {"sub_v2ray_json_template": "", "sub_routing_json_default": "", "sub_routing_json_bs": ""},
-        nodes=[(1, 1), (2, 0)],
+        hosts=[(1, [10]), (2, [20]), (3, [20, 10]), (4, [])],
+        bs_node_ids=[10],
     )
     with engine.begin() as conn:
         migration._migrate_data(_Op(conn))
         bs_id = conn.execute(text("SELECT id FROM xray_templates WHERE slug = 'bs'")).scalar_one()
-        mapping = dict(conn.execute(text("SELECT id, routing_profile_id FROM nodes")).all())
-    assert mapping == {1: bs_id, 2: None}
+        mapping = dict(conn.execute(text("SELECT id, routing_profile_id FROM hosts")).all())
+    assert mapping == {1: bs_id, 2: None, 3: bs_id, 4: None}
 
 
 def test_flat_keys_are_stripped_from_panel_settings():
@@ -148,7 +184,8 @@ def test_flat_keys_are_stripped_from_panel_settings():
             "sub_routing_json_default": "",
             "sub_routing_json_bs": "",
         },
-        nodes=[],
+        hosts=[],
+        bs_node_ids=[],
     )
     with engine.begin() as conn:
         migration._migrate_data(_Op(conn))
@@ -165,7 +202,8 @@ def test_downgrade_restores_flat_keys():
             "sub_routing_json_default": '{"rules": []}',
             "sub_routing_json_bs": "",
         },
-        nodes=[(1, 1)],
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
     )
     with engine.begin() as conn:
         migration._migrate_data(_Op(conn))
@@ -214,43 +252,45 @@ def _compiled_mysql_ddl(fn) -> str:
     return buffer.getvalue()
 
 
-def test_mysql_nodes_fk_is_named_and_dropped_before_column():
-    """Регресс: безымянный FK получает от MySQL автоимя nodes_ibfk_N, и downgrade,
-    дропающий колонку без снятия констрейнта, падает с ERROR 1828 «Cannot drop column ...
-    needed in a foreign key constraint» (следом не проходит и drop_table xray_templates).
-    На sqlite это не воспроизводится — отсюда компиляция под диалект MySQL."""
+def test_ddl_names_hosts_foreign_key_and_drops_it_before_column():
+    """Регресс: MySQL не даёт дропнуть колонку под живым FK (ERROR 1828)."""
+    import io
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy.dialects import mysql
+
     migration = _load_migration()
-
-    upgrade_sql = _compiled_mysql_ddl(migration._add_routing_profile_column)
-    assert migration.NODES_FK_NAME in upgrade_sql  # имя задано явно, не отдано MySQL
-    assert "ADD COLUMN routing_profile_id" in upgrade_sql
-    assert "ON DELETE SET NULL" in upgrade_sql
-
-    downgrade_sql = _compiled_mysql_ddl(migration._drop_routing_profile_column)
-    drop_fk = downgrade_sql.index(f"DROP FOREIGN KEY {migration.NODES_FK_NAME}")
-    drop_column = downgrade_sql.index("DROP COLUMN routing_profile_id")
-    assert drop_fk < drop_column  # снятие констрейнта строго до удаления колонки
+    buf = io.StringIO()
+    ctx = MigrationContext.configure(dialect=mysql.dialect(), opts={"as_sql": True, "output_buffer": buf})
+    op_like = Operations(ctx)
+    migration._add_routing_profile_column(op_like)
+    migration._drop_routing_profile_column(op_like)
+    sql = buf.getvalue()
+    assert migration.HOSTS_FK_NAME in sql
+    assert "ALTER TABLE hosts" in sql
+    assert sql.index("DROP FOREIGN KEY") < sql.index("DROP COLUMN")
 
 
 def test_migrate_data_without_panel_row_does_not_fail_and_creates_row():
     """Свежая установка: строки key='panel' ещё нет (сеется только client_apps)."""
     migration = _load_migration()
-    engine = _engine_without_panel_row(nodes=[(1, 1), (2, 0)])
+    engine = _engine_without_panel_row(hosts=[(1, [10])], bs_node_ids=[10])
     with engine.begin() as conn:
         migration._migrate_data(_Op(conn))
         raw = conn.execute(text('SELECT data FROM global_settings WHERE "key" = :k'), {"k": "panel"}).scalar_one()
         bs_id = conn.execute(text("SELECT id FROM xray_templates WHERE slug = 'bs'")).scalar_one()
-        mapping = dict(conn.execute(text("SELECT id, routing_profile_id FROM nodes")).all())
+        mapping = dict(conn.execute(text("SELECT id, routing_profile_id FROM hosts")).all())
     # Строка создана (upsert = insert), плоских ключей в ней нет — их и не было.
     assert json.loads(raw) == {}
-    assert mapping == {1: bs_id, 2: None}
+    assert mapping == {1: bs_id}
 
 
 def test_rollback_data_without_panel_row_creates_row():
     """downgrade() на установке без строки key='panel': _rollback_data должна создать
     строку через upsert, а не молча потерять восстанавливаемые плоские ключи."""
     migration = _load_migration()
-    engine = _engine_without_panel_row(nodes=[])
+    engine = _engine_without_panel_row(hosts=[], bs_node_ids=[])
     with engine.begin() as conn:
         # Документы уже существуют (как будто upgrade() уже создал таблицы и версии),
         # но саму строку global_settings кто-то удалил/её никогда не было.

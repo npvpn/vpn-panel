@@ -11,7 +11,14 @@ from typing import Any
 from sqlalchemy import func
 
 from app.db import GetDB, Session
-from app.db.models import DEFAULT_PROFILE_SLUG, PROFILE_KIND, TEMPLATE_KIND, Node, XrayTemplate, XrayTemplateVersion
+from app.db.models import (
+    DEFAULT_PROFILE_SLUG,
+    PROFILE_KIND,
+    TEMPLATE_KIND,
+    ProxyHost,
+    XrayTemplate,
+    XrayTemplateVersion,
+)
 from app.xray.routing_profiles import parse_json_object
 
 _SESSION_CACHE_KEY = "_xray_templates"
@@ -217,9 +224,10 @@ def delete_profile(db: Session, template_id: int) -> None:
         raise XrayTemplateError("the shared template cannot be deleted")
     if template.slug == DEFAULT_PROFILE_SLUG:
         raise XrayTemplateError("the default profile cannot be deleted")
-    # ON DELETE SET NULL в БД возвращает ноды на default; в ORM-сессии делаем то же
-    # явно, иначе уже загруженные объекты останутся с висячим id.
-    db.query(Node).filter(Node.routing_profile_id == template_id).update(
+    # ON DELETE SET NULL в БД возвращает хосты на default (NPVPN-2024: привязка живёт
+    # на ProxyHost, а не на Node); в ORM-сессии делаем то же явно, иначе уже
+    # загруженные объекты останутся с висячим id.
+    db.query(ProxyHost).filter(ProxyHost.routing_profile_id == template_id).update(
         {"routing_profile_id": None}, synchronize_session=False
     )
     db.delete(template)

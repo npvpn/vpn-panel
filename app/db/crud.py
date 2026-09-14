@@ -2128,8 +2128,19 @@ def get_blocked_bs_node_ids(db: Session, user_id: int) -> set[int]:
 
 
 def get_node_routing_profiles(db: Session) -> dict[int, int]:
-    """node_id → id профиля клиентского routing. Ноды без профиля не попадают в карту."""
-    rows = db.query(Node.id, Node.routing_profile_id).filter(Node.routing_profile_id.isnot(None)).all()
+    """node_id → id профиля клиентского routing. Ноды без профиля не попадают в карту.
+
+    NPVPN-2024: столбец routing_profile_id переехал с Node на ProxyHost (Task 1);
+    эта функция и её потребитель (app/subscription/share.py) переезжают на
+    host-based резолюцию в Task 2 и здесь не переписываются, чтобы не задваивать
+    работу. До Task 2 функция мертва рантайм-кодом (не вызывается в проходящих
+    тестах) — # type: ignore закрывает разрыв типов ровно до её удаления/переезда.
+    """
+    rows = (
+        db.query(Node.id, Node.routing_profile_id)  # type: ignore[attr-defined]
+        .filter(Node.routing_profile_id.isnot(None))  # type: ignore[attr-defined]
+        .all()
+    )
     return {node_id: profile_id for node_id, profile_id in rows}
 
 

@@ -1,7 +1,8 @@
 """xray template versions
 
 NPVPN-2024: три плоских ключа клиентского конфига переезжают в документы с
-лентой версий; выбор routing отвязывается от булева nodes.is_bs.
+лентой версий; выбор routing переезжает на `hosts.routing_profile_id` и
+отвязывается от булева nodes.is_bs.
 
 Revision ID: 6f9ee5710f34
 Revises: 03e94a203122
@@ -68,21 +69,20 @@ def _write_panel_data(conn, data: dict) -> None:
         conn.execute(sa.insert(gs).values(key="panel", data=payload, created_at=now, updated_at=now))
 
 
-NODES_FK_NAME = "fk_nodes_routing_profile_id_xray_templates"
+HOSTS_FK_NAME = "fk_hosts_routing_profile_id_xray_templates"
 
 
 def _add_routing_profile_column(op_like) -> None:
-    """Колонка + ИМЕНОВАННЫЙ FK.
+    """Колонка профиля у хоста + ИМЕНОВАННЫЙ FK.
 
-    Безымянный sa.ForeignKey внутри add_column MySQL называет сам (nodes_ibfk_N), и
+    Безымянный sa.ForeignKey внутри add_column MySQL называет сам (hosts_ibfk_N), и
     downgrade потом не может его снять: drop_column упирается в ERROR 1828 «Cannot drop
-    column ... needed in a foreign key constraint». Имя задаём явно — как в
-    f0b1c2d3e4f5_add_bots_and_user_bot_link.py.
+    column ... needed in a foreign key constraint». На sqlite этого не видно.
     """
-    with op_like.batch_alter_table("nodes") as batch_op:
+    with op_like.batch_alter_table("hosts") as batch_op:
         batch_op.add_column(sa.Column("routing_profile_id", sa.Integer(), nullable=True))
         batch_op.create_foreign_key(
-            NODES_FK_NAME,
+            HOSTS_FK_NAME,
             "xray_templates",
             ["routing_profile_id"],
             ["id"],
@@ -91,9 +91,9 @@ def _add_routing_profile_column(op_like) -> None:
 
 
 def _drop_routing_profile_column(op_like) -> None:
-    """Снятие FK строго ДО удаления колонки (иначе MySQL отдаёт ERROR 1828)."""
-    with op_like.batch_alter_table("nodes") as batch_op:
-        batch_op.drop_constraint(NODES_FK_NAME, type_="foreignkey")
+    """Снять FK и только потом колонку — иначе MySQL отвечает ERROR 1828."""
+    with op_like.batch_alter_table("hosts") as batch_op:
+        batch_op.drop_constraint(HOSTS_FK_NAME, type_="foreignkey")
         batch_op.drop_column("routing_profile_id")
 
 
@@ -128,8 +128,15 @@ def _migrate_data(op_like) -> None:
                 "now": now,
             },
         )
+    # Профиль `bs` получают хосты, у которых через host_nodes привязана хотя бы одна
+    # нода с is_bs=1 — ровно та ANY-семантика, по которой БС-признак хоста определялся
+    # до переезда. Поэтому рендер подписки после миграции не меняется.
     conn.execute(
-        sa.text("UPDATE nodes SET routing_profile_id = :pid WHERE is_bs = 1"),
+        sa.text(
+            "UPDATE hosts SET routing_profile_id = :pid WHERE id IN ("
+            "SELECT hn.host_id FROM host_nodes hn JOIN nodes n ON n.id = hn.node_id "
+            "WHERE n.is_bs = 1)"
+        ),
         {"pid": slug_to_id["bs"]},
     )
     _write_panel_data(conn, {k: v for k, v in data.items() if k not in FLAT_KEYS.values()})
