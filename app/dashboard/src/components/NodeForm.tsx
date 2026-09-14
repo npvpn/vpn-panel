@@ -23,7 +23,6 @@ import { FC, ReactNode, useEffect, useMemo, useState } from "react";
 import { Controller, useFieldArray, UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { UseMutateFunction } from "react-query";
-import { XrayTemplateDocument, listTemplates } from "service/xrayTemplates";
 import "slick-carousel/slick/slick-theme.css";
 import "slick-carousel/slick/slick.css";
 import { useDashboard } from "../contexts/DashboardContext";
@@ -100,19 +99,6 @@ export const NodeForm: NodeFormType = ({
     remove: removeRoute,
   } = useFieldArray({ control: form.control, name: "cascade_routes" });
   const [showCertificate, setShowCertificate] = useState(false);
-  const [routingProfiles, setRoutingProfiles] = useState<
-    XrayTemplateDocument[]
-  >([]);
-
-  useEffect(() => {
-    listTemplates()
-      .then((docs) =>
-        setRoutingProfiles(
-          docs.filter((doc) => doc.kind === "routing_profile")
-        )
-      )
-      .catch(() => setRoutingProfiles([]));
-  }, []);
 
   const certUrl = useMemo(() => {
     if (!nodeSettings?.certificate) return null;
@@ -324,31 +310,6 @@ export const NodeForm: NodeFormType = ({
           <Checkbox {...form.register("is_bs")}>
             <FormLabel m={0}>{t("nodes.isBsNode")}</FormLabel>
           </Checkbox>
-        </FormControl>
-        <FormControl py={1}>
-          <FormLabel>{t("nodes.routingProfile")}</FormLabel>
-          <Controller
-            name="routing_profile_id"
-            control={form.control}
-            render={({ field }) => (
-              <Select
-                size="sm"
-                value={field.value ?? ""}
-                onChange={(e) =>
-                  field.onChange(
-                    e.target.value === "" ? null : Number(e.target.value)
-                  )
-                }
-              >
-                <option value="">{t("nodes.routingProfileDefault")}</option>
-                {routingProfiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.title}
-                  </option>
-                ))}
-              </Select>
-            )}
-          />
         </FormControl>
         {inboundTags.length > 0 && (
           <FormControl py={1}>

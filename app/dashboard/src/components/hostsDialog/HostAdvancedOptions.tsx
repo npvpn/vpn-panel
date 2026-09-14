@@ -14,11 +14,13 @@ import {
   Button,
   Checkbox,
   FormLabel,
+  Select,
 } from "@chakra-ui/react";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 import { NodeType } from "contexts/NodesContext";
 import { ChangeEvent, memo, useEffect, useState } from "react";
 import { Control, Controller, UseFormRegister } from "react-hook-form";
+import { XrayTemplateDocument, listTemplates } from "service/xrayTemplates";
 import { Bot } from "types/Bot";
 import { InfoIcon, PencilIcon, Error } from "./constants";
 import { Trans } from "react-i18next";
@@ -64,6 +66,19 @@ export const HostAdvancedOptions = memo(
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
+    const [routingProfiles, setRoutingProfiles] = useState<
+      XrayTemplateDocument[]
+    >([]);
+
+    useEffect(() => {
+      listTemplates()
+        .then((docs) =>
+          setRoutingProfiles(
+            docs.filter((doc) => doc.kind === "routing_profile")
+          )
+        )
+        .catch(() => setRoutingProfiles([]));
+    }, []);
 
     return (
       <SimpleGrid
@@ -737,6 +752,31 @@ export const HostAdvancedOptions = memo(
             />
           </FormControl>
         )}
+        <FormControl>
+          <FormLabel>{t("hostsDialog.routingProfile")}</FormLabel>
+          <Controller
+            control={control}
+            name={`${hostKey}.${index}.routing_profile_id`}
+            render={({ field }) => (
+              <Select
+                size="sm"
+                value={field.value ?? ""}
+                onChange={(e) =>
+                  field.onChange(
+                    e.target.value === "" ? null : Number(e.target.value)
+                  )
+                }
+              >
+                <option value="">{t("hostsDialog.routingProfileDefault")}</option>
+                {routingProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </Select>
+            )}
+          />
+        </FormControl>
       </SimpleGrid>
     );
   }

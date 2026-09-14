@@ -51,6 +51,7 @@ export const hostItemSchema = z
       ),
     bot_usernames: z.array(z.string()).default([]),
     node_ids: z.array(z.number()).default([]),
+    routing_profile_id: z.number().nullable().default(null),
   })
   .superRefine((data, ctx) => {
     if (!data.address && (!data.node_ids || data.node_ids.length === 0)) {

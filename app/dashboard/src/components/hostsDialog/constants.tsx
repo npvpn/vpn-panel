@@ -114,6 +114,7 @@ export const ADVANCED_FIELD_KEYS = [
   "xhttp_extra",
   "bot_usernames",
   "node_ids",
+  "routing_profile_id",
 ] as const;
 
 // Whether the settings-modal gear icon should show its error dot: remark/address
