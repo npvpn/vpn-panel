@@ -221,10 +221,6 @@ def _blocked_ctx() -> BsContext:
     )
 
 
-def _bs_ctx() -> BsContext:
-    return BsContext(blocked_node_ids=frozenset(), stub_text="")
-
-
 def test_blocked_domain_host_renders_stub_with_text_address_and_port(xray_stub):
     """Ключевой кейс тикета: БС-хост задан ДОМЕНОМ, нода — по IP; хост заблокирован."""
     xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
@@ -300,13 +296,17 @@ def test_hosts_emitted_sorted_by_global_order(monkeypatch):
 # routing_profile_id — поле, которое раньше заменял булев is_bs.
 DEFAULT_PROFILE_ID = 1
 BS_PROFILE_ID = 2
+# Профиль, который СУЩЕСТВУЕТ и может быть назначен хосту, но его тело пусто —
+# поэтому его нет в карте тел profiles, только в profile_ids.
+EMPTY_PROFILE_ID = 3
 OTHER_NODE_ID = 42
 
 DEFAULT_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]}
 BS_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]}
 
 
-def _v2ray_json_conf() -> V2rayJsonConfig:
+def _v2ray_json_conf(default_routing: dict | None = DEFAULT_ROUTING) -> V2rayJsonConfig:
+    """default_routing=None — пустое тело документа `default` (его нет в карте тел)."""
     template = {
         "remarks": "",
         "outbounds": [
@@ -318,8 +318,17 @@ def _v2ray_json_conf() -> V2rayJsonConfig:
     return V2rayJsonConfig(
         template_override=template,
         profiles={DEFAULT_PROFILE_ID: DEFAULT_ROUTING, BS_PROFILE_ID: BS_ROUTING},
-        default_routing=DEFAULT_ROUTING,
+        # EMPTY_PROFILE_ID есть среди документов, но тела у него нет.
+        profile_ids={DEFAULT_PROFILE_ID, BS_PROFILE_ID, EMPTY_PROFILE_ID},
+        default_routing=default_routing,
     )
+
+
+TEMPLATE_ROUTING = {"rules": [{"type": "field", "ip": ["geoip:ru"], "outboundTag": "direct"}]}
+
+
+def _routing(conf: V2rayJsonConfig) -> dict:
+    return conf.config[-1]["routing"]
 
 
 def _routing_domains(conf: V2rayJsonConfig) -> list[str]:
@@ -331,7 +340,7 @@ def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
     xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     assert len(conf.config) == 1
     assert _routing_domains(conf) == ["bs"]
@@ -342,7 +351,7 @@ def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
     xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     cfg = conf.config[-1]
     proxy_tags = [o["tag"] for o in cfg["outbounds"] if o["tag"].startswith("proxy")]
@@ -354,7 +363,7 @@ def test_v2ray_json_non_bs_host_gets_default_routing(xray_stub):
     xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=DEFAULT_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     assert _routing_domains(conf) == ["default"]
 
@@ -368,7 +377,7 @@ def test_host_without_profile_falls_back_to_default_document(xray_stub):
     xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=None)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     assert _routing_domains(conf) == ["default"]
 
@@ -378,9 +387,35 @@ def test_v2ray_json_host_without_nodes_falls_back_to_default_document(xray_stub)
     xray_stub([_host("orphan.example.com", node_ids=[], routing_profile_id=None)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     assert _routing_domains(conf) == ["default"]
+
+
+def test_assigned_profile_with_empty_body_falls_back_to_template_routing(xray_stub):
+    """C1: профиль НАЗНАЧЕН, но его тело пусто → routing общего шаблона, а не `default`.
+
+    Так вело себя дореформенное select_routing для БС-хоста с пустым
+    sub_routing_json_bs. Если рендер перестанет отличать «назначен, но пуст» от
+    «не назначен», хост уедет на непустое тело документа `default` — это и есть
+    расхождение с дореформенным поведением.
+    """
+    xray_stub([_host("empty.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=EMPTY_PROFILE_ID)])
+    conf = _v2ray_json_conf()
+
+    _render(conf, BsContext.empty())
+
+    assert _routing(conf) == TEMPLATE_ROUTING
+
+
+def test_host_without_profile_falls_back_to_template_when_default_is_empty(xray_stub):
+    """Хост без профиля при ПУСТОМ документе `default` — последняя ступень, шаблон."""
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=None)])
+    conf = _v2ray_json_conf(default_routing=None)
+
+    _render(conf, BsContext.empty())
+
+    assert _routing(conf) == TEMPLATE_ROUTING
 
 
 def test_is_bs_never_leaks_into_other_formats(xray_stub):
@@ -388,7 +423,7 @@ def test_is_bs_never_leaks_into_other_formats(xray_stub):
     xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
     conf = _FakeConf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     assert conf.calls[0]["kwargs"] == {}
     assert conf.calls[0]["remark"] == "BS server"
@@ -411,7 +446,7 @@ def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, c
     xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
     conf = conf_factory()
 
-    rendered = _render(conf, _bs_ctx())
+    rendered = _render(conf, BsContext.empty())
 
     assert rendered  # рендер прошёл до конца, а не упал TypeError'ом на лишнем kwarg
 

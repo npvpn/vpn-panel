@@ -105,6 +105,29 @@ def test_empty_or_blank_profile_body_excluded_empty_template_kept():
         assert bodies["profiles"] == {}  # пустые/пробельные тела профилей не попадают в карту
 
 
+def test_profile_ids_include_profiles_with_empty_body():
+    """`profile_ids` — все существующие профили, включая пустые (их нет в "profiles").
+
+    Это единственный способ для рендера отличить «профиль назначен, но пуст» (routing
+    общего шаблона) от «профиля нет» (документ `default`). Шаблон в множество не
+    попадает — он не профиль и хостам не назначается.
+    """
+    engine = _engine()
+    with Session(engine) as db:
+        tpl = _template(db, kind=TEMPLATE_KIND, slug=TEMPLATE_SLUG)
+        _version(db, tpl.id, 1, '{"tpl": true}')
+        empty_profile = _template(db, kind=PROFILE_KIND, slug="empty")
+        _version(db, empty_profile.id, 1, "   ")
+        filled_profile = _template(db, kind=PROFILE_KIND, slug=BS_PROFILE_SLUG)
+        _version(db, filled_profile.id, 1, '{"rules": ["bs"]}')
+        db.commit()
+
+        bodies = get_active_bodies(db)
+
+        assert bodies["profile_ids"] == {empty_profile.id, filled_profile.id}
+        assert empty_profile.id not in bodies["profiles"]
+
+
 def test_default_profile_id_is_reported_even_when_body_is_empty():
     """`default_profile_id` — отдельный ключ именно потому, что при пустом теле документа
     в "profiles" его нет: share.py по этому id достаёт вторую ступень фолбэка, и её

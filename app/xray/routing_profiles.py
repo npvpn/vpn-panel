@@ -31,20 +31,31 @@ def select_routing(
     template_routing: dict,
     profile_routing: dict | None,
     default_routing: dict | None,
+    *,
+    profile_assigned: bool,
 ) -> dict:
     """Секция routing для конфига одного сервера.
 
-    Двухступенчатый фолбэк: профиль хоста → профиль `default` → routing шаблона.
+    Развилка — НЕ «есть ли тело профиля», а «назначен ли хосту профиль вообще»
+    (profile_assigned: routing_profile_id хоста указывает на существующий документ).
+    Аргумент обязателен и keyword-only намеренно: забытый флаг молча вернул бы
+    назначенному пустому профилю фолбэк на `default` — ровно тот дефект, ради
+    которого развилка и появилась.
 
-    Профиль хоста не задан (у хоста NULL в routing_profile_id, либо у назначенного
-    профиля пустое тело) — берётся тело
-    документа `default`. Так сохраняется дореформенное поведение, где обычный
-    хост получал sub_routing_json_default, а routing шаблона был последним
-    рубежом. Пустое тело на любой ступени означает «падать дальше по цепочке»,
-    а не «пустой routing».
+    * профиль назначен → его тело, а при пустом теле — routing общего шаблона.
+      Пустое тело назначенного профиля означает «этой группе серверов routing из
+      шаблона», как до переезда пустой sub_routing_json_bs уводил БС-хост на
+      routing шаблона, а не на sub_routing_json_default;
+    * профиля нет (routing_profile_id IS NULL) → тело документа `default`, а при
+      пустом теле `default` — routing шаблона. Так обычный хост сохраняет
+      дореформенное поведение sub_routing_json_default.
+
+    Пустое тело на любой ступени означает «падать дальше по цепочке», а не «пустой
+    routing»; пустой routing задаётся только тем, что документ назначенного профиля
+    не пуст.
     """
-    if profile_routing is not None:
-        return profile_routing
+    if profile_assigned:
+        return profile_routing if profile_routing is not None else template_routing
     if default_routing is not None:
         return default_routing
     return template_routing

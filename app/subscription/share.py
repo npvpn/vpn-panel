@@ -150,6 +150,7 @@ def generate_subscription(
     # тот же фолбэк, что и раньше для пустых настроек.
     v2ray_template_override = None
     profiles: dict[int, dict] = {}
+    profile_ids: set[int] = set()
     default_routing: dict | None = None
     if db is not None:
         from app.services.xray_templates import get_cached_active_bodies
@@ -173,6 +174,11 @@ def generate_subscription(
             for template_id, raw in bodies.get("profiles", {}).items()
             if (parsed := _safe_json(raw, f"routing profile {template_id}")) is not None
         }
+        # Назначенный профиль с ПУСТЫМ телом в profiles не попадает, поэтому отдельно
+        # несём множество id всех существующих профилей: без него «профиль назначен,
+        # но пуст» неотличим от «профиля нет» и уводит хост на `default` вместо
+        # routing шаблона.
+        profile_ids = set(bodies.get("profile_ids") or ())
         # Вторая ступень фолбэка (NPVPN-2024): хост без собственного профиля —
         # так миграция оставляет все не-БС-хосты — получает тело документа `default`,
         # а не routing общего шаблона. До реформы это был sub_routing_json_default.
@@ -287,6 +293,7 @@ def generate_subscription(
             template_override=v2ray_template_override,
             profiles=profiles,
             default_routing=default_routing,
+            profile_ids=profile_ids,
         )
         if device_limit_text:
             stub_inbound = {

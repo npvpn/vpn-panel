@@ -25,12 +25,18 @@ _SESSION_CACHE_KEY = "_xray_templates"
 
 
 def get_active_bodies(db: Session) -> dict[str, Any]:
-    """{"template": str, "profiles": {template_id: body}, "default_profile_id": int | None}.
+    """{"template": str, "profiles": {id: body}, "profile_ids": set[int], "default_profile_id": int | None}.
 
     В "profiles" попадают только НЕпустые тела: пустое тело означает «фолбэк дальше
-    по цепочке», а не «пустой routing». "default_profile_id" — id документа со slug
-    `default`; он вторая ступень фолбэка в select_routing для хостов без профиля, и
-    отдаётся отдельно именно потому, что при пустом теле в "profiles" его нет.
+    по цепочке», а не «пустой routing». Но «профиля нет» и «профиль есть, но пуст» —
+    РАЗНЫЕ случаи с разным фолбэком (см. select_routing), поэтому рядом отдаётся
+    "profile_ids" — id ВСЕХ существующих routing-профилей, включая документы с пустым
+    телом, которых в "profiles" нет. Без этого множества рендер не отличил бы
+    назначенный пустой профиль от отсутствующего и уводил бы хост на `default`.
+
+    "default_profile_id" — id документа со slug `default`; он вторая ступень фолбэка
+    для хостов БЕЗ профиля, и отдаётся отдельно именно потому, что при пустом теле
+    в "profiles" его нет.
 
     Кэш на сессию БД: /sub/ — горячий путь, лишних запросов на подписку быть не должно.
     """
@@ -55,11 +61,17 @@ def get_active_bodies(db: Session) -> dict[str, Any]:
         )
         .all()
     )
-    bodies: dict[str, Any] = {"template": "", "profiles": {}, "default_profile_id": None}
+    bodies: dict[str, Any] = {
+        "template": "",
+        "profiles": {},
+        "profile_ids": set(),
+        "default_profile_id": None,
+    }
     for template_id, kind, slug, body in rows:
         if kind == TEMPLATE_KIND:
             bodies["template"] = body or ""
             continue
+        bodies["profile_ids"].add(template_id)
         if slug == DEFAULT_PROFILE_SLUG:
             bodies["default_profile_id"] = template_id
         if (body or "").strip():

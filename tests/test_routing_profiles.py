@@ -18,18 +18,33 @@ def test_parse_json_object_rejects_non_object():
 
 def test_select_routing_falls_back_to_template_routing():
     template = {"rules": ["from-template"]}
-    assert select_routing(template, None, None) == template
-    assert select_routing(template, {"rules": ["from-profile"]}, None) == {"rules": ["from-profile"]}
+    assert select_routing(template, None, None, profile_assigned=False) == template
+    assert select_routing(template, {"rules": ["from-profile"]}, None, profile_assigned=True) == {
+        "rules": ["from-profile"]
+    }
 
 
 def test_select_routing_two_step_fallback_through_default_document():
-    """Профиль хоста → профиль `default` → routing шаблона."""
+    """Хост БЕЗ профиля: документ `default` → routing шаблона."""
     template = {"rules": ["from-template"]}
     default = {"rules": ["from-default"]}
     profile = {"rules": ["from-profile"]}
-    # Хост без профиля (нода с NULL / хост без нод) — вторая ступень, а не шаблон.
-    assert select_routing(template, None, default) == default
+    # Хост без профиля (routing_profile_id IS NULL) — вторая ступень, а не шаблон.
+    assert select_routing(template, None, default, profile_assigned=False) == default
     # Профиль хоста задан — он выигрывает у `default`.
-    assert select_routing(template, profile, default) == profile
+    assert select_routing(template, profile, default, profile_assigned=True) == profile
     # Пустое тело `default` (его нет в карте профилей) — последняя ступень, шаблон.
-    assert select_routing(template, None, None) == template
+    assert select_routing(template, None, None, profile_assigned=False) == template
+
+
+def test_assigned_profile_with_empty_body_skips_default_document():
+    """C1: назначенный, но пустой профиль уходит на routing ШАБЛОНА, минуя `default`.
+
+    Так вело себя дореформенное select_routing(..., is_bs=True) с пустым
+    sub_routing_json_bs: пустое тело у назначенного профиля — это «routing из
+    шаблона», а не «как у всех остальных».
+    """
+    template = {"rules": ["from-template"]}
+    default = {"rules": ["from-default"]}
+
+    assert select_routing(template, None, default, profile_assigned=True) == template
