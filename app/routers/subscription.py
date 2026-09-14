@@ -192,7 +192,7 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
     db передаётся генератору как признак «настоящий запрос»: без него v2ray-json
     рендерится дефолтным шаблоном. С ним генератор читает активные тела
     шаблона/routing-профилей (app.services.xray_templates, NPVPN-2024) через процессный
-    кэш; привязка профиля к серверу лежит прямо на хосте (host["routing_profile_id"]).
+    кэш; привязка профиля к серверу лежит прямо на хосте (host["client_config_id"]).
     """
     conf = generate_subscription(
         user=ctx.user,

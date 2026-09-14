@@ -145,7 +145,7 @@ def generate_subscription(
     # Тела шаблона/профилей routing живут в app.services.xray_templates (документы с
     # историей, NPVPN-2024) и читаются через процессный кэш get_cached_active_bodies —
     # без запроса к БД на каждую подписку. Привязка профиля лежит прямо на хосте
-    # (host["routing_profile_id"]), поэтому карта нод больше не нужна. db здесь —
+    # (host["client_config_id"]), поэтому карта нод больше не нужна. db здесь —
     # признак «настоящий запрос»: без него v2ray-json рендерится дефолтным шаблоном,
     # тот же фолбэк, что и раньше для пустых настроек.
     v2ray_template_override = None
@@ -548,9 +548,9 @@ def process_inbounds_and_tags(
                 # хосте. Другие форматы про профили не знают.
                 add_kwargs = {}
                 if isinstance(conf, V2rayJsonConfig):
-                    profile_id = host.get("routing_profile_id")
+                    profile_id = host.get("client_config_id")
                     if profile_id is not None:
-                        add_kwargs["routing_profile_id"] = profile_id
+                        add_kwargs["client_config_id"] = profile_id
 
                 candidate = {
                     "order": host.get("order", 0),

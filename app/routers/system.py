@@ -77,9 +77,9 @@ def modify_hosts(
     try:
         for hosts in modified_hosts.values():
             for host in hosts:
-                xray_templates_service.assert_profile_exists(db, host.routing_profile_id)
+                xray_templates_service.assert_profile_exists(db, host.client_config_id)
     except xray_templates_service.XrayTemplateError as exc:
-        raise HTTPException(status_code=422, detail={"routing_profile_id": str(exc)}) from exc
+        raise HTTPException(status_code=422, detail={"client_config_id": str(exc)}) from exc
 
     try:
         for inbound_tag, hosts in modified_hosts.items():

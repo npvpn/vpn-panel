@@ -152,18 +152,18 @@ def _host(
     node_ids: list[int] | None = None,
     remark: str = "BS server",
     order: int = 0,
-    routing_profile_id: int | None = None,
+    client_config_id: int | None = None,
 ) -> dict:
     """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids.
 
-    routing_profile_id — профиль клиентского routing этого хоста (NPVPN-2024);
+    client_config_id — профиль клиентского routing этого хоста (NPVPN-2024);
     None означает фолбэк на профиль `default`.
     """
     return {
         "remark": remark,
         "address": list(addresses),
         "node_ids": list(node_ids or []),
-        "routing_profile_id": routing_profile_id,
+        "client_config_id": client_config_id,
         "port": 8443,
         "sni": [],
         "host": [],
@@ -293,7 +293,7 @@ def test_hosts_emitted_sorted_by_global_order(monkeypatch):
 
 
 # Профили клиентского routing для v2ray-json-тестов: два id, назначаемых хостам через
-# routing_profile_id — поле, которое раньше заменял булев is_bs.
+# client_config_id — поле, которое раньше заменял булев is_bs.
 DEFAULT_PROFILE_ID = 1
 BS_PROFILE_ID = 2
 # Профиль, который СУЩЕСТВУЕТ и может быть назначен хосту, но его тело пусто —
@@ -337,7 +337,7 @@ def _routing_domains(conf: V2rayJsonConfig) -> list[str]:
 
 def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
     """Профиль БС-хоста доходит до V2rayJsonConfig.add → выбирается его routing."""
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -347,8 +347,8 @@ def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
 
 
 def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
-    """Мульти-адресный (балансируемый) БС-хост → add_balanced(routing_profile_id=...)."""
-    xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
+    """Мульти-адресный (балансируемый) БС-хост → add_balanced(client_config_id=...)."""
+    xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -360,7 +360,7 @@ def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
 
 
 def test_v2ray_json_non_bs_host_gets_default_routing(xray_stub):
-    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=DEFAULT_PROFILE_ID)])
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=DEFAULT_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -374,7 +374,7 @@ def test_host_without_profile_falls_back_to_default_document(xray_stub):
     Такой хост обязан получить routing документа `default`, а не routing общего шаблона:
     до переезда он получал sub_routing_json_default.
     """
-    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=None)])
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=None)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -384,7 +384,7 @@ def test_host_without_profile_falls_back_to_default_document(xray_stub):
 
 def test_v2ray_json_host_without_nodes_falls_back_to_default_document(xray_stub):
     """Хост без привязанных нод и без собственного профиля: фолбэк на документ `default`."""
-    xray_stub([_host("orphan.example.com", node_ids=[], routing_profile_id=None)])
+    xray_stub([_host("orphan.example.com", node_ids=[], client_config_id=None)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -400,7 +400,7 @@ def test_assigned_profile_with_empty_body_falls_back_to_template_routing(xray_st
     «не назначен», хост уедет на непустое тело документа `default` — это и есть
     расхождение с дореформенным поведением.
     """
-    xray_stub([_host("empty.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=EMPTY_PROFILE_ID)])
+    xray_stub([_host("empty.example.com", node_ids=[OTHER_NODE_ID], client_config_id=EMPTY_PROFILE_ID)])
     conf = _v2ray_json_conf()
 
     _render(conf, BsContext.empty())
@@ -410,7 +410,7 @@ def test_assigned_profile_with_empty_body_falls_back_to_template_routing(xray_st
 
 def test_host_without_profile_falls_back_to_template_when_default_is_empty(xray_stub):
     """Хост без профиля при ПУСТОМ документе `default` — последняя ступень, шаблон."""
-    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], routing_profile_id=None)])
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=None)])
     conf = _v2ray_json_conf(default_routing=None)
 
     _render(conf, BsContext.empty())
@@ -420,7 +420,7 @@ def test_host_without_profile_falls_back_to_template_when_default_is_empty(xray_
 
 def test_is_bs_never_leaks_into_other_formats(xray_stub):
     """Другие форматы про профили routing не знают — их conf.add вызывается без них."""
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_PROFILE_ID)])
     conf = _FakeConf()
 
     _render(conf, BsContext.empty())
@@ -429,10 +429,10 @@ def test_is_bs_never_leaks_into_other_formats(xray_stub):
     assert conf.calls[0]["remark"] == "BS server"
 
 
-# _FakeConf.add(**kwargs) молча проглотит лишний routing_profile_id, если isinstance-гвард
+# _FakeConf.add(**kwargs) молча проглотит лишний client_config_id, если isinstance-гвард
 # (`isinstance(conf, V2rayJsonConfig)` в share.py) снять — assert kwargs == {} выше
 # страхует только сам факт "kwargs пустой", но не докажет, что ДРУГИЕ форматы вообще
-# не умеют принять routing_profile_id. Настоящие ClashConfiguration/ClashMetaConfiguration/
+# не умеют принять client_config_id. Настоящие ClashConfiguration/ClashMetaConfiguration/
 # SingBoxConfiguration/OutlineConfiguration.add() такого параметра не имеют — при снятии
 # гварда process_inbounds_and_tags упал бы TypeError'ом (500 на подписке). Прогоняем
 # process_inbounds_and_tags с настоящими классами, чтобы рендер БС-хоста в этих форматах
@@ -443,7 +443,7 @@ def test_is_bs_never_leaks_into_other_formats(xray_stub):
     ids=["clash", "clash_meta", "singbox", "outline"],
 )
 def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, conf_factory):
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], routing_profile_id=BS_PROFILE_ID)])
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_PROFILE_ID)])
     conf = conf_factory()
 
     rendered = _render(conf, BsContext.empty())
@@ -490,7 +490,7 @@ def test_build_bs_context_sets_stub_text_for_blocked_domain_host(fake_crud):
     assert bs.stub_text  # имя сервера-заглушки не пустое
     assert bs.is_blocked(_host("bs.example.com", node_ids=[BS_NODE_ID])) is True
     # Признак routing (раньше bs.is_bs(host)) больше не хранится в BsContext — он
-    # читается отдельно, прямо с хоста (host["routing_profile_id"], NPVPN-2024).
+    # читается отдельно, прямо с хоста (host["client_config_id"], NPVPN-2024).
 
 
 def test_build_bs_context_without_blocks_has_no_stub_text(fake_crud):

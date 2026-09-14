@@ -41,9 +41,7 @@ def _engine(panel_data: dict, hosts: list[tuple[int, list[int]]], bs_node_ids: l
             )
         )
         conn.execute(text("CREATE TABLE nodes (id INTEGER PRIMARY KEY, is_bs BOOLEAN)"))
-        conn.execute(
-            text("CREATE TABLE hosts (id INTEGER PRIMARY KEY, remark VARCHAR(256), routing_profile_id INTEGER)")
-        )
+        conn.execute(text("CREATE TABLE hosts (id INTEGER PRIMARY KEY, remark VARCHAR(256), client_config_id INTEGER)"))
         conn.execute(text("CREATE TABLE host_nodes (host_id INTEGER, node_id INTEGER)"))
         conn.execute(
             text(
@@ -70,7 +68,7 @@ def _engine(panel_data: dict, hosts: list[tuple[int, list[int]]], bs_node_ids: l
             )
         for host_id, node_ids in hosts:
             conn.execute(
-                text("INSERT INTO hosts (id, remark, routing_profile_id) VALUES (:i, :r, NULL)"),
+                text("INSERT INTO hosts (id, remark, client_config_id) VALUES (:i, :r, NULL)"),
                 {"i": host_id, "r": f"host-{host_id}"},
             )
             for node_id in node_ids:
@@ -93,9 +91,7 @@ def _engine_without_panel_row(hosts: list[tuple[int, list[int]]], bs_node_ids: l
             )
         )
         conn.execute(text("CREATE TABLE nodes (id INTEGER PRIMARY KEY, is_bs BOOLEAN)"))
-        conn.execute(
-            text("CREATE TABLE hosts (id INTEGER PRIMARY KEY, remark VARCHAR(256), routing_profile_id INTEGER)")
-        )
+        conn.execute(text("CREATE TABLE hosts (id INTEGER PRIMARY KEY, remark VARCHAR(256), client_config_id INTEGER)"))
         conn.execute(text("CREATE TABLE host_nodes (host_id INTEGER, node_id INTEGER)"))
         conn.execute(
             text(
@@ -118,7 +114,7 @@ def _engine_without_panel_row(hosts: list[tuple[int, list[int]]], bs_node_ids: l
             )
         for host_id, node_ids in hosts:
             conn.execute(
-                text("INSERT INTO hosts (id, remark, routing_profile_id) VALUES (:i, :r, NULL)"),
+                text("INSERT INTO hosts (id, remark, client_config_id) VALUES (:i, :r, NULL)"),
                 {"i": host_id, "r": f"host-{host_id}"},
             )
             for node_id in node_ids:
@@ -171,7 +167,7 @@ def test_hosts_of_bs_nodes_get_bs_profile_and_others_stay_null():
     with engine.begin() as conn:
         migration._migrate_data(_Op(conn))
         bs_id = conn.execute(text("SELECT id FROM xray_templates WHERE slug = 'bs'")).scalar_one()
-        mapping = dict(conn.execute(text("SELECT id, routing_profile_id FROM hosts")).all())
+        mapping = dict(conn.execute(text("SELECT id, client_config_id FROM hosts")).all())
     assert mapping == {1: bs_id, 2: None, 3: bs_id, 4: None}
 
 
@@ -258,20 +254,20 @@ def test_ddl_names_hosts_foreign_key_and_drops_it_before_column():
     Утверждение про upgrade проверяет именно СОЗДАНИЕ констрейнта под явным именем
     (`ADD CONSTRAINT <HOSTS_FK_NAME> FOREIGN KEY`) — просто наличие HOSTS_FK_NAME
     где-то в тексте SQL прошло бы и при `create_foreign_key(None, ...)`, потому что
-    то же имя жёстко зашито в `_drop_routing_profile_column` для DROP FOREIGN KEY.
+    то же имя жёстко зашито в `_drop_client_config_column` для DROP FOREIGN KEY.
     На MySQL такая рассинхронизация (безымянный ADD CONSTRAINT + именованный DROP)
     реально давала бы ERROR 1305 Unknown table constraint.
     """
     migration = _load_migration()
 
-    upgrade_sql = _compiled_mysql_ddl(migration._add_routing_profile_column)
+    upgrade_sql = _compiled_mysql_ddl(migration._add_client_config_column)
     assert f"ADD CONSTRAINT {migration.HOSTS_FK_NAME} FOREIGN KEY" in upgrade_sql
-    assert "ALTER TABLE hosts ADD COLUMN routing_profile_id" in upgrade_sql
+    assert "ALTER TABLE hosts ADD COLUMN client_config_id" in upgrade_sql
 
-    downgrade_sql = _compiled_mysql_ddl(migration._drop_routing_profile_column)
+    downgrade_sql = _compiled_mysql_ddl(migration._drop_client_config_column)
     assert "ALTER TABLE hosts" in downgrade_sql
     drop_fk = downgrade_sql.index(f"DROP FOREIGN KEY {migration.HOSTS_FK_NAME}")
-    drop_column = downgrade_sql.index("DROP COLUMN routing_profile_id")
+    drop_column = downgrade_sql.index("DROP COLUMN client_config_id")
     assert drop_fk < drop_column
 
 
@@ -283,7 +279,7 @@ def test_migrate_data_without_panel_row_does_not_fail_and_creates_row():
         migration._migrate_data(_Op(conn))
         raw = conn.execute(text('SELECT data FROM global_settings WHERE "key" = :k'), {"k": "panel"}).scalar_one()
         bs_id = conn.execute(text("SELECT id FROM xray_templates WHERE slug = 'bs'")).scalar_one()
-        mapping = dict(conn.execute(text("SELECT id, routing_profile_id FROM hosts")).all())
+        mapping = dict(conn.execute(text("SELECT id, client_config_id FROM hosts")).all())
     # Строка создана (upsert = insert), плоских ключей в ней нет — их и не было.
     assert json.loads(raw) == {}
     assert mapping == {1: bs_id}

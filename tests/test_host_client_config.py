@@ -34,18 +34,18 @@ def _profile_id(db):
 
 
 def _host_payload(profile_id: int | None) -> ProxyHostModify:
-    return ProxyHostModify(remark="server", address="example.com", routing_profile_id=profile_id)
+    return ProxyHostModify(remark="server", address="example.com", client_config_id=profile_id)
 
 
-def test_add_host_persists_routing_profile(db):
+def test_add_host_persists_client_config(db):
     from app.db import crud
 
     pid = _profile_id(db)
     hosts = crud.add_host(db, "VLESS_TCP", _host_payload(pid))
-    assert [h.routing_profile_id for h in hosts] == [pid]
+    assert [h.client_config_id for h in hosts] == [pid]
 
 
-def test_update_hosts_keeps_routing_profile(db):
+def test_update_hosts_keeps_client_config(db):
     """Регресс: update_hosts пересоздаёт строки целиком (inbound.hosts = [ProxyHost(...)]).
 
     Поле, не проброшенное в этот конструктор, обнулялось бы при КАЖДОМ сохранении
@@ -56,17 +56,17 @@ def test_update_hosts_keeps_routing_profile(db):
     pid = _profile_id(db)
     crud.add_host(db, "VLESS_TCP", _host_payload(pid))
     hosts = crud.update_hosts(db, "VLESS_TCP", [_host_payload(pid)])
-    assert [h.routing_profile_id for h in hosts] == [pid]
+    assert [h.client_config_id for h in hosts] == [pid]
 
 
-def test_update_hosts_can_clear_routing_profile(db):
+def test_update_hosts_can_clear_client_config(db):
     from app.db import crud
 
     pid = _profile_id(db)
     crud.add_host(db, "VLESS_TCP", _host_payload(pid))
     hosts = crud.update_hosts(db, "VLESS_TCP", [_host_payload(None)])
-    assert [h.routing_profile_id for h in hosts] == [None]
+    assert [h.client_config_id for h in hosts] == [None]
 
 
 def test_host_payload_defaults_to_no_profile():
-    assert ProxyHostModify(remark="server", address="example.com").routing_profile_id is None
+    assert ProxyHostModify(remark="server", address="example.com").client_config_id is None

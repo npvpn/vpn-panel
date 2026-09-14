@@ -66,7 +66,7 @@ def hosts(storage: dict):
                     # Профиль клиентского routing этого хоста (NPVPN-2024). Лежит прямо
                     # в кэше, поэтому share.py не делает ни одного запроса к БД за
                     # привязками на каждую подписку.
-                    "routing_profile_id": host.routing_profile_id,
+                    "client_config_id": host.client_config_id,
                     "port": host.port,
                     "path": host.path if host.path else None,
                     "sni": [i.strip() for i in host.sni.split(",")] if host.sni else [],

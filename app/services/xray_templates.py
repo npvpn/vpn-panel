@@ -239,8 +239,8 @@ def delete_profile(db: Session, template_id: int) -> None:
     # ON DELETE SET NULL в БД возвращает хосты на default (NPVPN-2024: привязка живёт
     # на ProxyHost, а не на Node); в ORM-сессии делаем то же явно, иначе уже
     # загруженные объекты останутся с висячим id.
-    db.query(ProxyHost).filter(ProxyHost.routing_profile_id == template_id).update(
-        {"routing_profile_id": None}, synchronize_session=False
+    db.query(ProxyHost).filter(ProxyHost.client_config_id == template_id).update(
+        {"client_config_id": None}, synchronize_session=False
     )
     db.delete(template)
     db.commit()

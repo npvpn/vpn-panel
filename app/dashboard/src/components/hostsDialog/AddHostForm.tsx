@@ -46,7 +46,7 @@ export const EMPTY_HOST: z.infer<typeof hostItemSchema> = {
   xhttp_extra: "",
   bot_usernames: [],
   node_ids: [],
-  routing_profile_id: null,
+  client_config_id: null,
   order: 0,
   inbound_tag: "",
 };

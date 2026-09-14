@@ -508,7 +508,7 @@ class ProxyHost(Base):
     # (см. select_routing). Живёт на хосте, а не на ноде: хост — это отдельный
     # сервер в подписке, и одна нода может обслуживать несколько хостов с разными
     # конфигами. nodes.is_bs остаётся исключительно про БС-лимит трафика (NPVPN-2024).
-    routing_profile_id = Column(
+    client_config_id = Column(
         Integer, ForeignKey("xray_templates.id", ondelete="SET NULL"), nullable=True, default=None
     )
 

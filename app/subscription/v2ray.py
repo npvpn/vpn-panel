@@ -501,7 +501,7 @@ class V2rayJsonConfig(str):
         # (→ документ `default`): по одной карте тел эти случаи неразличимы.
         self.profile_ids = set(profile_ids or ())
         # Вторая ступень фолбэка: тело документа `default` для хостов БЕЗ профиля
-        # (host.routing_profile_id = NULL).
+        # (host.client_config_id = NULL).
         self.default_routing = default_routing
         self.mux_template = render_template(MUX_TEMPLATE)
         user_agent_data = json.loads(render_template(USER_AGENT_TEMPLATE))
@@ -525,23 +525,23 @@ class V2rayJsonConfig(str):
 
         del user_agent_data, grpc_user_agent_data
 
-    def _assemble_config(self, remarks, outbounds, routing_profile_id=None):
+    def _assemble_config(self, remarks, outbounds, client_config_id=None):
         json_template = json.loads(self.template)
         json_template["remarks"] = remarks
         json_template["outbounds"] = outbounds + json_template["outbounds"]
         json_template["routing"] = select_routing(
             json_template.get("routing", {}),
-            self.profiles.get(routing_profile_id),
+            self.profiles.get(client_config_id),
             self.default_routing,
-            profile_assigned=routing_profile_id in self.profile_ids,
+            profile_assigned=client_config_id in self.profile_ids,
         )
         return json_template
 
-    def add_config(self, remarks, outbounds, routing_profile_id=None):
-        self.config.append(self._assemble_config(remarks, outbounds, routing_profile_id))
+    def add_config(self, remarks, outbounds, client_config_id=None):
+        self.config.append(self._assemble_config(remarks, outbounds, client_config_id))
 
     def add_balanced(
-        self, remark: str, addresses: list, inbound: dict, settings: dict, routing_profile_id: int | None = None
+        self, remark: str, addresses: list, inbound: dict, settings: dict, client_config_id: int | None = None
     ):
         """Multi-address хост → один конфиг с N proxy-outbound + xray-балансировщик."""
         dialer = self.make_dialer_outbound(inbound["fragment_setting"], inbound["noise_setting"])
@@ -552,7 +552,7 @@ class V2rayJsonConfig(str):
         ]
         if dialer:
             outbounds.append(dialer)
-        config = self._assemble_config(remark, outbounds, routing_profile_id)
+        config = self._assemble_config(remark, outbounds, client_config_id)
         self.config.append(apply_host_balancer(config))
 
     def render(self, reverse=False):
@@ -1082,11 +1082,11 @@ class V2rayJsonConfig(str):
 
         return outbound
 
-    def add(self, remark: str, address: str, inbound: dict, settings: dict, routing_profile_id: int | None = None):
+    def add(self, remark: str, address: str, inbound: dict, settings: dict, client_config_id: int | None = None):
         dialer = self.make_dialer_outbound(inbound["fragment_setting"], inbound["noise_setting"])
         dialer_proxy = dialer["tag"] if dialer else ""
         outbound = self._build_proxy_outbound("proxy", address, inbound, settings, dialer_proxy)
         outbounds = [outbound]
         if dialer:
             outbounds.append(dialer)
-        self.add_config(remarks=remark, outbounds=outbounds, routing_profile_id=routing_profile_id)
+        self.add_config(remarks=remark, outbounds=outbounds, client_config_id=client_config_id)

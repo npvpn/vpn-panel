@@ -201,7 +201,7 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
             fingerprint=host.fingerprint,
             xhttp_extra=host.xhttp_extra,
             order=order,
-            routing_profile_id=host.routing_profile_id,
+            client_config_id=host.client_config_id,
             bots=bots,
             nodes=nodes,
         )
@@ -246,7 +246,7 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
             use_sni_as_host=host.use_sni_as_host,
             xhttp_extra=host.xhttp_extra,
             order=order,
-            routing_profile_id=host.routing_profile_id,
+            client_config_id=host.client_config_id,
             bots=_get_bots_by_usernames(db, host.bot_usernames),
             nodes=_get_nodes_by_ids(db, host.node_ids),
         )

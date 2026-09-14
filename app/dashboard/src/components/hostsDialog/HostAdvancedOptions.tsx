@@ -756,7 +756,7 @@ export const HostAdvancedOptions = memo(
           <FormLabel>{t("hostsDialog.routingProfile")}</FormLabel>
           <Controller
             control={control}
-            name={`${hostKey}.${index}.routing_profile_id`}
+            name={`${hostKey}.${index}.client_config_id`}
             render={({ field }) => (
               <Select
                 size="sm"

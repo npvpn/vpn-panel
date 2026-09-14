@@ -1,7 +1,7 @@
 """xray template versions
 
 NPVPN-2024: три плоских ключа клиентского конфига переезжают в документы с
-лентой версий; выбор routing переезжает на `hosts.routing_profile_id` и
+лентой версий; выбор routing переезжает на `hosts.client_config_id` и
 отвязывается от булева nodes.is_bs.
 
 Revision ID: 6f9ee5710f34
@@ -69,10 +69,10 @@ def _write_panel_data(conn, data: dict) -> None:
         conn.execute(sa.insert(gs).values(key="panel", data=payload, created_at=now, updated_at=now))
 
 
-HOSTS_FK_NAME = "fk_hosts_routing_profile_id_xray_templates"
+HOSTS_FK_NAME = "fk_hosts_client_config_id_xray_templates"
 
 
-def _add_routing_profile_column(op_like) -> None:
+def _add_client_config_column(op_like) -> None:
     """Колонка профиля у хоста + ИМЕНОВАННЫЙ FK.
 
     Безымянный sa.ForeignKey внутри add_column MySQL называет сам (hosts_ibfk_N), и
@@ -80,21 +80,21 @@ def _add_routing_profile_column(op_like) -> None:
     column ... needed in a foreign key constraint». На sqlite этого не видно.
     """
     with op_like.batch_alter_table("hosts") as batch_op:
-        batch_op.add_column(sa.Column("routing_profile_id", sa.Integer(), nullable=True))
+        batch_op.add_column(sa.Column("client_config_id", sa.Integer(), nullable=True))
         batch_op.create_foreign_key(
             HOSTS_FK_NAME,
             "xray_templates",
-            ["routing_profile_id"],
+            ["client_config_id"],
             ["id"],
             ondelete="SET NULL",
         )
 
 
-def _drop_routing_profile_column(op_like) -> None:
+def _drop_client_config_column(op_like) -> None:
     """Снять FK и только потом колонку — иначе MySQL отвечает ERROR 1828."""
     with op_like.batch_alter_table("hosts") as batch_op:
         batch_op.drop_constraint(HOSTS_FK_NAME, type_="foreignkey")
-        batch_op.drop_column("routing_profile_id")
+        batch_op.drop_column("client_config_id")
 
 
 def _migrate_data(op_like) -> None:
@@ -133,7 +133,7 @@ def _migrate_data(op_like) -> None:
     # до переезда. Поэтому рендер подписки после миграции не меняется.
     conn.execute(
         sa.text(
-            "UPDATE hosts SET routing_profile_id = :pid WHERE id IN ("
+            "UPDATE hosts SET client_config_id = :pid WHERE id IN ("
             "SELECT hn.host_id FROM host_nodes hn JOIN nodes n ON n.id = hn.node_id "
             "WHERE n.is_bs = 1)"
         ),
@@ -187,12 +187,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=True),
         sa.UniqueConstraint("template_id", "version"),
     )
-    _add_routing_profile_column(op)
+    _add_client_config_column(op)
     _migrate_data(op)
 
 
 def downgrade() -> None:
     _rollback_data(op)
-    _drop_routing_profile_column(op)
+    _drop_client_config_column(op)
     op.drop_table("xray_template_versions")
     op.drop_table("xray_templates")

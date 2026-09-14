@@ -290,7 +290,7 @@ def test_profiles_map_skips_blank_bodies(db):
 
 def test_deleting_profile_resets_bound_hosts(db):
     """NPVPN-2024: привязка живёт на ProxyHost, а не на Node — delete_profile обязан
-    сбрасывать routing_profile_id у хостов, а не у нод (в БД это делает ON DELETE
+    сбрасывать client_config_id у хостов, а не у нод (в БД это делает ON DELETE
     SET NULL у хостового FK, здесь проверяем то же самое в ORM-сессии)."""
     bs_id = _template_id(db, BS_PROFILE_SLUG)
     db.add(ProxyInbound(tag="VLESS_TCP_REALITY"))
@@ -300,12 +300,12 @@ def test_deleting_profile_resets_bound_hosts(db):
             remark="host-1",
             address="1.2.3.4",
             inbound_tag="VLESS_TCP_REALITY",
-            routing_profile_id=bs_id,
+            client_config_id=bs_id,
         )
     )
     db.commit()
     svc.delete_profile(db, bs_id)
-    assert db.query(ProxyHost).one().routing_profile_id is None
+    assert db.query(ProxyHost).one().client_config_id is None
 
 
 def test_template_and_default_profile_cannot_be_deleted(db):
