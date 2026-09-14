@@ -292,6 +292,16 @@ def test_created_config_copies_default_body(db):
     assert json.loads(svc.get_version(db, created["id"], 1).body) == {"dns": {"servers": ["1.1.1.1"]}}
 
 
+def test_created_config_falls_back_to_file_template_when_default_is_empty(db):
+    """Фикстура сеет дефолтный документ с пустым телом (как после миграции без переопределения) —
+    тело версии 1 обязано быть не пустым и не мусором, а реальным файловым шаблоном."""
+    created = svc.create_config(db, "eu", "Европа", _Admin())
+
+    body = json.loads(svc.get_version(db, created["id"], 1).body)
+    assert "outbounds" in body
+    assert "routing" in body
+
+
 def test_duplicate_slug_is_rejected(db):
     svc.create_config(db, "mobile", "Мобильные", _Admin())
     with pytest.raises(svc.XrayTemplateError):
