@@ -11,11 +11,14 @@ Create Date: 2026-09-11 17:42:04.396217
 """
 
 import json
+import logging
 from datetime import datetime
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
+
+logger = logging.getLogger("alembic.runtime.migration")
 
 revision = "6f9ee5710f34"
 down_revision = "03e94a203122"
@@ -41,18 +44,53 @@ def _file_template_body() -> str:
     return render_template(V2RAY_SUBSCRIPTION_TEMPLATE)
 
 
-def _build_body(template_raw: str, routing_raw: str) -> str:
+def _safe_json_object(raw: str, name: str) -> dict | None:
+    """JSON-объект из значения или None, но НИКОГДА исключение.
+
+    Значения плоских ключей не валидировались: `PanelSettingsPayload.validate_json_field`
+    защищал только правки через UI панели, а d7e9f1a2b3c4_move_panel_settings.py скопировал
+    их из `bot_settings.data` как есть. До реформы битый JSON в этих ключах ничего не ронял
+    — `app/subscription/share.py::_safe_json` писал warning и уводил рендер на фолбэк.
+    Миграция обязана вести себя так же: на MySQL DDL не транзакционен, и падение посреди
+    upgrade() оставило бы созданные таблицы при непродвинутом alembic_version — панель не
+    поднялась бы даже после рестарта («Table 'xray_templates' already exists»).
+
+    Семантика повторяет `app/xray/client_configs.py::parse_json_object`, но локально:
+    миграция самодостаточна и не тянет код приложения. Warning нужен, чтобы админ увидел
+    потерянное значение и поправил его руками в редакторе.
+    """
+    if not (raw or "").strip():
+        return None
+    try:
+        value = json.loads(raw)
+    except ValueError as exc:
+        logger.warning("NPVPN-2024: игнорирую битый JSON в %s: %s", name, exc)
+        return None
+    if not isinstance(value, dict):
+        logger.warning("NPVPN-2024: игнорирую %s: ожидался JSON-объект, получен %s", name, type(value).__name__)
+        return None
+    return value
+
+
+def _build_body(template_raw: str, routing_raw: str, routing_key: str) -> str:
     """Самодостаточный конфиг = база с вклеенной секцией routing.
 
-    Пустой routing-ключ означает «этой группе серверов routing из шаблона», то есть
-    ровно шаблон, — поэтому тело берётся как есть, включая пустую строку: тогда
-    работает файловый фолбэк рантайма.
+    Пустой (а равно битый — см. `_safe_json_object`) routing-ключ означает «этой группе
+    серверов routing из шаблона», то есть ровно шаблон, — поэтому тело берётся как есть,
+    включая пустую строку: тогда работает файловый фолбэк рантайма. Битый шаблон тоже
+    остаётся в теле как есть — рантайм отбросит его ровно как до реформы, зато админ
+    увидит своё значение в редакторе и починит.
+
+    Битая база при непустом routing = «шаблон не задан», то есть файловый шаблон: иначе
+    склейка потеряла бы всё, кроме routing.
     """
-    if not (routing_raw or "").strip():
+    routing = _safe_json_object(routing_raw, routing_key)
+    if routing is None:
         return template_raw or ""
-    base_raw = template_raw if (template_raw or "").strip() else _file_template_body()
-    base = json.loads(base_raw)
-    base["routing"] = json.loads(routing_raw)
+    base = _safe_json_object(template_raw, FLAT_TEMPLATE_KEY)
+    if base is None:
+        base = json.loads(_file_template_body())
+    base["routing"] = routing
     return json.dumps(base, ensure_ascii=False)
 
 
@@ -146,7 +184,7 @@ def _migrate_data(op_like) -> None:
             ),
             {
                 "tid": template_id,
-                "body": _build_body(template_raw, str(data.get(routing_key) or "")),
+                "body": _build_body(template_raw, str(data.get(routing_key) or ""), routing_key),
                 "comment": "перенос из настроек панели",
                 "now": now,
             },
@@ -191,10 +229,13 @@ def _rollback_data(op_like) -> None:
     data = _panel_data(conn)
     data[FLAT_TEMPLATE_KEY] = _active_body(conn, "default")
     data[FLAT_ROUTING_KEYS["default"]] = ""
-    bs_body = _active_body(conn, "bs")
+    # Тело документа тоже может не парситься: миграция сохраняет битый шаблон как есть,
+    # чтобы админ увидел своё значение. downgrade() при этом обязан дойти до конца —
+    # тот же класс дефекта, что и в _build_body.
+    bs_body = _safe_json_object(_active_body(conn, "bs"), "тело активной версии документа `bs`")
     bs_routing = ""
-    if bs_body.strip():
-        routing = json.loads(bs_body).get("routing")
+    if bs_body is not None:
+        routing = bs_body.get("routing")
         if routing is not None:
             bs_routing = json.dumps(routing, ensure_ascii=False)
     data[FLAT_ROUTING_KEYS["bs"]] = bs_routing

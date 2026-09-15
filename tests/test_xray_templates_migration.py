@@ -390,3 +390,94 @@ def test_rollback_data_without_panel_row_creates_row():
     assert data["sub_v2ray_json_template"] == ""
     assert data["sub_routing_json_default"] == ""
     assert data["sub_routing_json_bs"] == ""
+
+
+def test_broken_template_key_falls_back_to_file_template_as_base():
+    """Битый шаблон + непустой routing-ключ: до реформы такой хост получал ФАЙЛОВЫЙ
+    шаблон с вклеенным routing (_safe_json в share.py глушил ValueError), — миграция
+    обязана дойти до конца и повторить это, а не упасть посреди upgrade()."""
+    migration = _load_migration()
+    engine = _engine(
+        {
+            "sub_v2ray_json_template": '{"outbounds": [',  # обрезанный JSON
+            "sub_routing_json_default": "",
+            "sub_routing_json_bs": '{"rules": ["bs"]}',
+        },
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        docs = _documents(conn)
+
+    bs_body = json.loads(docs["bs"][1])
+    assert bs_body["routing"] == {"rules": ["bs"]}
+    # База — файловый шаблон, ровно как при пустом ключе.
+    assert "dns" in bs_body
+    assert "log" in bs_body
+
+
+def test_broken_routing_key_keeps_template_body_as_is():
+    """Битый routing-ключ трактуется как пустой: тело документа = шаблон, без склейки."""
+    migration = _load_migration()
+    engine = _engine(
+        {
+            "sub_v2ray_json_template": '{"outbounds": []}',
+            "sub_routing_json_default": "",
+            "sub_routing_json_bs": '{"rules": ',  # обрезанный JSON
+        },
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        docs = _documents(conn)
+
+    assert docs["bs"][1] == '{"outbounds": []}'
+
+
+def test_json_array_value_is_treated_as_broken():
+    """Валидный JSON, но не объект конфига: массив в шаблоне уводит базу на файловый
+    шаблон, массив в routing-ключе трактуется как пустой ключ."""
+    migration = _load_migration()
+    engine = _engine(
+        {
+            "sub_v2ray_json_template": "[1, 2]",
+            "sub_routing_json_default": "[1, 2]",
+            "sub_routing_json_bs": '{"rules": ["bs"]}',
+        },
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        docs = _documents(conn)
+
+    # Массив в routing-ключе = ключ пуст: тело равно шаблону как есть.
+    assert docs["default"][1] == "[1, 2]"
+    # Массив в шаблоне = шаблон не задан: база склейки — файловый шаблон.
+    bs_body = json.loads(docs["bs"][1])
+    assert bs_body["routing"] == {"rules": ["bs"]}
+    assert "dns" in bs_body
+
+
+def test_downgrade_survives_unparsable_bs_document_body():
+    """downgrade() на документе с непарсящимся телом (его туда кладёт сама миграция,
+    сохраняя битый шаблон как есть) обязан дойти до конца, а не упасть на json.loads."""
+    migration = _load_migration()
+    engine = _engine(
+        {
+            "sub_v2ray_json_template": '{"outbounds": [',  # обрезанный JSON
+            "sub_routing_json_default": "",
+            "sub_routing_json_bs": "",
+        },
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        assert _documents(conn)["bs"][1] == '{"outbounds": ['
+        migration._rollback_data(_Op(conn))
+        raw = conn.execute(text('SELECT data FROM global_settings WHERE "key" = :k'), {"k": "panel"}).scalar_one()
+    data = json.loads(raw)
+    assert data["sub_routing_json_bs"] == ""
