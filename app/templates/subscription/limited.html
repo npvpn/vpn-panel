@@ -388,14 +388,14 @@
               </div>
           </div>
       </div>
-
-      <footer class="footer_limited">
-          {% if show_ads %}
-          <p>
-            {% include "_ad_npvpn.html" %}
-          </p>
-          {% endif %}
-      </footer>
     </div>
+
+    {% if show_ads %}
+    <footer class="footer_limited">
+        <p>
+          {% include "_ad_npvpn.html" %}
+        </p>
+      </footer>
+      {% endif %}
   </body>
 </html>

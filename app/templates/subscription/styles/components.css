@@ -222,10 +222,6 @@
     padding: 16px;
     padding-bottom: 25px;
     background-color: var(--white);
-    position: fixed;
-    bottom: 0;
-    left: 50%;
-    transform: translate(-50%);
     display: flex;
     justify-content: center;
     flex-direction: column;
@@ -652,6 +648,15 @@
     width: 100%;
     margin: 0 auto;
     padding: 24px;
+}
+
+/* Реклама у этих страниц не "прибита" fixed-полосой, а идёт в потоке
+   после контента — чтобы её было видно только после скролла (а не сразу),
+   контент должен занимать весь экран целиком. */
+.wrapper:has(+ .footer_limited),
+.wrapper:has(+ .footer) {
+    min-height: 100vh;
+    box-sizing: border-box;
 }
 
 /* плавающее меню */
@@ -1259,6 +1264,13 @@
         position: static;
         height: auto;
         padding: 24px 16px 32px;
+    }
+
+    .footer {
+        position: static;
+        left: auto;
+        bottom: auto;
+        transform: none;
     }
 
     .footer-ad-bar .footer-ad-inner {
