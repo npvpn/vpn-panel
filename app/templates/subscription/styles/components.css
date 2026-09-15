@@ -1213,8 +1213,19 @@
         align-items: flex-start;
     }
 
+    .button-wrapper_revoke.expired-actions {
+        flex-direction: row-reverse;
+        justify-content: flex-end;
+        align-items: center;
+    }
+
+    .button-wrapper_revoke:has(.hint) {
+        gap: 24px;
+    }
+
     .button-wrapper_revoke .hint {
         width: 100%;
+        max-width: 456px;
     }
 
     .button-wrapper_revoke .dark-btn {

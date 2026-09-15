@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ sub_statics }}styles/index.css" />
     <link rel="icon" href="data:," />
     <script defer src="/statics/vendor/js/alpinejs.js"></script>
-    <!-- <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.0/dist/cdn.min.js"></script> -->
+    <script defer src="{{ sub_statics }}scripts/cabinet-link.js"></script>
     <meta http-equiv="refresh" content="60" />
     
     <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
@@ -109,53 +109,46 @@
         <!-- INFO CARD -->
         <div class="info-card">
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">ID</span>
+            <span class="tariff-info">ID</span>
             <span class="tariff-info" x-text="user.username"></span>
           </div>
 
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">Статус</span>
+            <span class="tariff-info">Статус</span>
             <span class="tariff-info" :style="{ color: statusColor }" x-text="statusText"></span>
           </div>
 
           <div class="info-row" x-show="isBsActive">
-            <span class="text-[#7b7b7b] tariff-info">Трафик (белый список)</span>
+            <span class="tariff-info">Трафик (белый список)</span>
             <span class="tariff-info" x-text="bsTrafficText"></span>
           </div>
 
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">Действует до</span>
+            <span class="tariff-info">Действует до</span>
             <span class="tariff-info" x-text="expirationText"></span>
           </div>
 
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">Осталось</span>
+            <span class="tariff-info">Осталось</span>
             <span class="tariff-info" x-text="remainingDays"></span>
           </div>
 
-          <!-- Условный рендеринг строки с устройствами -->
           <div class="info-row" x-show="showDeviceLimit">
-            <span class="text-[#7b7b7b] tariff-info">Кол-во устройств</span>
+            <span class="tariff-info">Кол-во устройств</span>
             <span class="tariff-info" x-text="deviceUsageText"></span>
           </div>
         </div>
 
-        {# Оплата прямо со страницы: Телеграм заблокирован, и это единственная точка
-           продления, до которой клиент с истёкшей подпиской точно доберётся (NPVPN-1848).
-           Показываем независимо от наличия веб-кабинета — кнопка ведёт сразу в форму оплаты,
-           а кабинет требует ещё нескольких шагов. #}
         {% if pay_url or web_url %}
-          {# Одна обёртка на обе кнопки: .button-wrapper_revoke — position: fixed,
-             две такие легли бы ровно друг на друга и видно было бы только нижнюю. #}
-          <div class="button-wrapper_revoke">
+          <div class="button-wrapper_revoke expired-actions">
             {% if pay_url %}
               <a href="{{ pay_url }}/{{ token }}" class="dark-btn" rel="noreferrer">
-                Продлить подписку
+                Оплатить
               </a>
             {% endif %}
 
             {% if web_url or bot_url %}
-              <a href="{{ web_url or bot_url }}" class="{% if pay_url %}light-btn{% else %}dark-btn{% endif %}">
+              <a href="{{ web_url or bot_url }}" class="{% if pay_url %}light-btn{% else %}dark-btn{% endif %}" data-cabinet-link>
                 Войти в личный кабинет
               </a>
             {% endif %}
