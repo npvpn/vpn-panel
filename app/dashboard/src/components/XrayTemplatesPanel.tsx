@@ -24,8 +24,9 @@ import {
   useRadioGroup,
   useToast,
   VStack,
+  chakra,
 } from "@chakra-ui/react";
-import { PlusIcon } from "@heroicons/react/24/outline";
+import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import dayjs from "dayjs";
 import { FC, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -40,8 +41,9 @@ import {
   revertTemplate,
   saveTemplate,
 } from "service/xrayTemplates";
-import { DeleteIcon } from "./DeleteUserModal";
 import { JsonEditor } from "./JsonEditor";
+
+const CloseIcon = chakra(XMarkIcon, { baseStyle: { w: 3.5, h: 3.5 } });
 
 const parseBody = (body: string): any => {
   try {
@@ -70,13 +72,19 @@ const normalizeBody = (body: string): string => {
   return body;
 };
 
-// Строка списка конфигов — радиокнопка, а не Box с onClick. Способ взят из
-// UsageFilter: скрытый нативный <input> внутри <label> + оформление на getRadioProps().
-// Так в таб-порядок и под стрелки список попадает сам, состояние «выбран» читает
-// скринридер, а бейдж и прочая вёрстка внутри строки остаются произвольными (ради них
-// и ушёл <select>). Кнопка удаления намеренно лежит СНАРУЖИ <label>: внутри неё клик
-// заодно переключал бы радио.
-const ConfigListItem: FC<
+// Конфиг — «пилюля» в переносящемся ряду, и при этом радиокнопка, а не Box с onClick.
+// Способ взят из UsageFilter: скрытый нативный <input> внутри <label> + оформление на
+// getRadioProps(). Так группа попадает в таб-порядок одной остановкой, между пилюлями
+// ходят стрелки, состояние «выбран» читает скринридер, а бейдж и крестик внутри пилюли
+// остаются произвольной вёрсткой (ради неё и ушёл <select>).
+//
+// Два состояния намеренно оформлены по-разному, чтобы фокус не выдавал себя за выбор:
+// ВЫБРАН — заливка акцентом (primary.500 + белый текст) в обеих темах; ФОКУС — тонкое
+// кольцо-outline с отступом снаружи пилюли, только по клавиатуре (_focusVisible).
+//
+// Кнопка удаления лежит СНАРУЖИ <label> (позиционируется поверх правого края пилюли):
+// внутри <label> клик по ней заодно переключал бы радио.
+const ConfigPill: FC<
   UseRadioProps & {
     doc: XrayTemplateDocument;
     isDeleting: boolean;
@@ -84,33 +92,48 @@ const ConfigListItem: FC<
   }
 > = ({ doc, isDeleting, onDelete, ...radioProps }) => {
   const { t } = useTranslation();
-  const { getInputProps, getRadioProps } = useRadio(radioProps);
-  const checkedBg = useColorModeValue("gray.100", "gray.700");
+  const { getInputProps, getRadioProps, state } = useRadio(radioProps);
+  const idleBorder = useColorModeValue("gray.300", "gray.600");
+  const idleHoverBg = useColorModeValue("gray.100", "whiteAlpha.200");
+  const focusRing = useColorModeValue("gray.700", "gray.200");
+  const deleteColor = useColorModeValue("gray.500", "gray.400");
+  const isChecked = state.isChecked;
 
   return (
-    <HStack
-      spacing={0}
-      borderTopWidth="1px"
-      _first={{ borderTopWidth: 0 }}
-      align="stretch"
-    >
-      <Box as="label" flexGrow={1} minW={0}>
+    <Box position="relative" display="inline-flex">
+      <Box as="label" maxW="100%">
         <input {...getInputProps()} />
         <HStack
           {...getRadioProps()}
-          h="full"
-          px={3}
-          py={2}
           spacing={2}
+          pl={3}
+          pr={doc.deletable ? 8 : 3}
+          py={1}
+          borderWidth="1px"
+          borderColor={idleBorder}
+          borderRadius="full"
           cursor="pointer"
-          _checked={{ bg: checkedBg }}
-          _focus={{ boxShadow: "outline" }}
+          _hover={{ bg: idleHoverBg }}
+          _checked={{
+            bg: "primary.500",
+            color: "white",
+            borderColor: "primary.500",
+            _hover: { bg: "primary.500" },
+          }}
+          _focusVisible={{
+            outline: "2px solid",
+            outlineColor: focusRing,
+            outlineOffset: "2px",
+          }}
         >
           <Text fontSize="sm" noOfLines={1}>
             {doc.title}
           </Text>
           {!doc.deletable && (
-            <Badge colorScheme="primary" fontSize="0.65rem">
+            <Badge
+              colorScheme={isChecked ? "whiteAlpha" : "primary"}
+              fontSize="0.65rem"
+            >
               {t("panelSettings.xrayTemplates.defaultBadge")}
             </Badge>
           )}
@@ -122,18 +145,25 @@ const ConfigListItem: FC<
             aria-label={`${t("panelSettings.xrayTemplates.deleteConfig")}: ${
               doc.title
             }`}
-            icon={<DeleteIcon />}
+            icon={<CloseIcon />}
             size="xs"
-            alignSelf="center"
-            mr={2}
             variant="ghost"
-            colorScheme="red"
+            borderRadius="full"
+            position="absolute"
+            right="1"
+            top="50%"
+            transform="translateY(-50%)"
+            color={isChecked ? "white" : deleteColor}
+            _hover={{
+              bg: isChecked ? "whiteAlpha.300" : idleHoverBg,
+              color: isChecked ? "white" : "red.500",
+            }}
             isLoading={isDeleting}
             onClick={() => onDelete(doc)}
           />
         </Tooltip>
       )}
-    </HStack>
+    </Box>
   );
 };
 
@@ -340,18 +370,16 @@ export const XrayTemplatesPanel: FC = () => {
         {/* Видов документов больше нет: каждая строка — целый самодостаточный
             конфиг. Дефолтный отличается только тем, что достаётся серверам без
             явного выбора и не удаляется (NPVPN-2024). */}
-        <VStack
+        <Box
           {...getRootProps()}
           aria-label={t("panelSettings.xrayTemplates.config")}
-          align="stretch"
-          spacing={0}
-          maxH="180px"
-          overflowY="auto"
-          borderWidth="1px"
-          borderRadius="md"
+          display="flex"
+          flexWrap="wrap"
+          alignItems="center"
+          gap={2}
         >
           {documents.map((doc) => (
-            <ConfigListItem
+            <ConfigPill
               key={doc.id}
               {...getRadioProps({ value: String(doc.id) })}
               doc={doc}
@@ -359,16 +387,16 @@ export const XrayTemplatesPanel: FC = () => {
               onDelete={handleDelete}
             />
           ))}
-        </VStack>
-        <Button
-          mt={2}
-          size="sm"
-          variant="outline"
-          leftIcon={<PlusIcon width="16px" />}
-          onClick={() => setShowCreateForm((v) => !v)}
-        >
-          {t("panelSettings.xrayTemplates.newConfig")}
-        </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            borderRadius="full"
+            leftIcon={<PlusIcon width="16px" />}
+            onClick={() => setShowCreateForm((v) => !v)}
+          >
+            {t("panelSettings.xrayTemplates.newConfig")}
+          </Button>
+        </Box>
         <Collapse in={showCreateForm} animateOpacity>
           <HStack mt={2}>
             <Input
