@@ -123,7 +123,7 @@ def test_expired_page_shows_pay_button():
     html = _render("expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="")
 
     assert f'href="{_PAY_URL}/{_TOKEN}"' in html
-    assert "Продлить подписку" in html
+    assert "Оплатить" in html
     assert 'href="/statics/subscription/styles/index.css"' in html
 
 
@@ -146,7 +146,7 @@ def test_expired_page_keeps_both_buttons_in_one_wrapper():
 def test_expired_page_without_pay_url_has_no_button():
     html = _render("expired.html", pay_url="", token=_TOKEN, web_url="")
 
-    assert "Продлить подписку" not in html
+    assert "Оплатить" not in html
 
 
 def test_active_page_has_no_pay_button():
@@ -154,4 +154,4 @@ def test_active_page_has_no_pay_button():
     html = _render("index.html", pay_url=_PAY_URL, token=_TOKEN, web_url="")
 
     assert _PAY_URL not in html
-    assert "Продлить подписку" not in html
+    assert "Оплатить" not in html
