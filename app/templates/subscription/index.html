@@ -10,6 +10,7 @@
     <link rel="icon" href="data:,">
     <script defer src="/statics/vendor/js/alpinejs.js"></script>
     <script defer src="/statics/vendor/js/qrcode.min.js"></script>
+    <script defer src="{{ sub_statics }}scripts/cabinet-link.js"></script>
     <script id="devices-data" type="application/json">{{ devices_json | safe }}</script>
     <script>
       const initialDevices = JSON.parse(
@@ -704,6 +705,7 @@ get alternativeApps() {
                   class="light-btn"
                   style="font-family: var(--third-family)"
                   rel="noopener noreferrer"
+                  data-cabinet-link
                 >
                   Войти в личный кабинет
                 </a>
