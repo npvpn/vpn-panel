@@ -44,6 +44,33 @@ def _file_template_body() -> str:
     return render_template(V2RAY_SUBSCRIPTION_TEMPLATE)
 
 
+def _safe_file_template() -> dict | None:
+    """Файловый шаблон как JSON-объект или None, но НИКОГДА исключение.
+
+    Это БОЕВОЙ путь, а не защитное программирование: на проде `sub_v2ray_json_template`
+    пуст при заполненном `sub_routing_json_bs`, поэтому база склейки берётся именно
+    отсюда. Каталог шаблонов там смонтирован томом с хоста, так что файла может не
+    оказаться на месте (пустой том) или он может быть испорчен руками — а `render_template`
+    бросает `TemplateNotFound`, `json.loads` — `ValueError`, и любое из них уронило бы
+    `upgrade()` посреди DDL, оставив панель неподнимаемой (см. `_safe_json_object`).
+
+    None означает «базы нет»: вызывающий сохранит тело как есть, и routing доедет до
+    администратора в редакторе, а не потеряется.
+    """
+    try:
+        value = json.loads(_file_template_body())
+    except Exception as exc:  # noqa: BLE001 — падение здесь дороже любой неточности диагноза
+        logger.warning("NPVPN-2024: файловый шаблон недоступен (%s), сохраняю тело как есть", exc)
+        return None
+    if not isinstance(value, dict):
+        logger.warning(
+            "NPVPN-2024: файловый шаблон должен быть JSON-объектом, получен %s — сохраняю тело как есть",
+            type(value).__name__,
+        )
+        return None
+    return value
+
+
 def _safe_json_object(raw: str, name: str) -> dict | None:
     """JSON-объект из значения или None, но НИКОГДА исключение.
 
@@ -89,7 +116,9 @@ def _build_body(template_raw: str, routing_raw: str, routing_key: str) -> str:
         return template_raw or ""
     base = _safe_json_object(template_raw, FLAT_TEMPLATE_KEY)
     if base is None:
-        base = json.loads(_file_template_body())
+        base = _safe_file_template()
+    if base is None:
+        return template_raw or ""
     base["routing"] = routing
     return json.dumps(base, ensure_ascii=False)
 

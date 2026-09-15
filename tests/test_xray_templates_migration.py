@@ -193,6 +193,59 @@ def test_empty_template_falls_back_to_file_template_as_base():
     assert "log" in bs_body
 
 
+def test_unavailable_file_template_does_not_break_upgrade(monkeypatch):
+    """Файловый шаблон недоступен — upgrade всё равно доходит до конца.
+
+    Это боевой путь, а не экзотика: на проде `sub_v2ray_json_template` пуст при
+    заполненном `sub_routing_json_bs`, поэтому база склейки берётся из файла, а каталог
+    шаблонов смонтирован томом с хоста — том может оказаться пустым. `render_template`
+    бросил бы `TemplateNotFound` посреди DDL, и на MySQL панель осталась бы с созданными
+    таблицами при непродвинутом alembic_version.
+    """
+    migration = _load_migration()
+    monkeypatch.setattr(
+        migration,
+        "_file_template_body",
+        lambda: (_ for _ in ()).throw(RuntimeError("TemplateNotFound: v2ray/default.json")),
+    )
+    engine = _engine(
+        {
+            "sub_v2ray_json_template": "",
+            "sub_routing_json_default": "",
+            "sub_routing_json_bs": '{"rules": ["bs"]}',
+        },
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        docs = _documents(conn)
+
+    # Склеивать не с чем — тело остаётся как есть; рантайм уводит хост на свой фолбэк.
+    assert docs["bs"][1] == ""
+    assert docs["default"][1] == ""
+
+
+def test_file_template_that_is_not_an_object_does_not_break_upgrade(monkeypatch):
+    """Файл распарсился, но это не объект конфига — вклеивать routing некуда."""
+    migration = _load_migration()
+    monkeypatch.setattr(migration, "_file_template_body", lambda: "[1, 2]")
+    engine = _engine(
+        {
+            "sub_v2ray_json_template": "",
+            "sub_routing_json_default": "",
+            "sub_routing_json_bs": '{"rules": ["bs"]}',
+        },
+        hosts=[(1, [10])],
+        bs_node_ids=[10],
+    )
+    with engine.begin() as conn:
+        migration._migrate_data(_Op(conn))
+        docs = _documents(conn)
+
+    assert docs["bs"][1] == ""
+
+
 def test_empty_routing_key_keeps_template_body_as_is():
     """Пустой routing-ключ означал «routing из шаблона» — тело документа и есть шаблон,
     включая пустую строку (тогда в рантайме работает файловый фолбэк)."""
