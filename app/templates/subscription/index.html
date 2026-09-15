@@ -959,10 +959,7 @@ get alternativeApps() {
     {% if show_ads %}
     <div class="footer-ad-bar">
       <p class="footer-ad-inner">
-        Сайт работает на платформе
-        <a href="https://github.com/npvpn/vpn-panel" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: var(--blue);">
-          npvpn
-        </a>
+        {% include "subscription/_ad_npvpn.html" %}
       </p>
     </div>
     {% endif %}
