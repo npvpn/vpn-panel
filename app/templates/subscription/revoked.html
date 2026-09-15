@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ sub_statics }}styles/index.css" />
     <link rel="icon" href="data:," />
     <script defer src="/statics/vendor/js/alpinejs.js"></script>
+    <script defer src="{{ sub_statics }}scripts/cabinet-link.js"></script>
     <meta http-equiv="refresh" content="60" />
     <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
 
@@ -101,32 +102,32 @@
         <!-- INFO CARD -->
         <div class="info-card">
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">ID</span>
+            <span class="tariff-info">ID</span>
             <span class="tariff-info" x-text="user.username"></span>
           </div>
   
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">Статус</span>
+            <span class="tariff-info">Статус</span>
             <span class="tariff-info" :style="{ color: statusColor }" x-text="statusText"></span>
           </div>
   
           <div class="info-row" x-show="isBsActive">
-            <span class="text-[#7b7b7b] tariff-info">Трафик (белый список)</span>
+            <span class="tariff-info">Трафик (белый список)</span>
             <span class="tariff-info" x-text="bsTrafficText"></span>
           </div>
   
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">Действует до</span>
+            <span class="tariff-info">Действует до</span>
             <span class="tariff-info" x-text="expirationText"></span>
           </div>
   
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">Осталось</span>
+            <span class="tariff-info">Осталось</span>
             <span class="tariff-info" x-text="remainingDays"></span>
           </div>
   
           <div class="info-row">
-            <span class="text-[#7b7b7b] tariff-info">Кол-во устройств</span>
+            <span class="tariff-info">Кол-во устройств</span>
             <span class="tariff-info">
               {% if user.device_limit %}{{ devices|length }} из {{ user.device_limit }}{% else %}{{ devices|length }}{% endif %}
             </span>
@@ -148,7 +149,7 @@
                     </p>
                 </div>
             </div>
-            <a href="{{ web_url or bot_url}}" class="dark-btn">
+            <a href="{{ web_url or bot_url}}" class="dark-btn" data-cabinet-link>
               Войти в личный кабинет
             </a>
           {% endif %}
