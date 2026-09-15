@@ -211,6 +211,15 @@
     transform: translate(-50%);
 }
 
+/* Отозванная подписка: реклама, в отличие от .footer на других страницах,
+   не "прибита" полосой ни на одном размере экрана — прячется под скролл. */
+.footer_revoked {
+    position: static;
+    left: auto;
+    bottom: auto;
+    transform: none;
+}
+
 .footer_limited {
     width: 100%;
     text-align: center;
