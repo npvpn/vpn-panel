@@ -283,18 +283,9 @@
 }
 
 .footer-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
     color: var(--blue);
     text-decoration: none;
     transition: opacity 0.2s ease;
-}
-
-.footer-link__external {
-    flex-shrink: 0;
-    width: 0.85em;
-    height: 0.85em;
 }
 
 .devices-list {
