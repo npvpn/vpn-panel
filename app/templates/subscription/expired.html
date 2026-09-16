@@ -139,22 +139,20 @@
           </div>
         </div>
 
-        {% if pay_url or web_url %}
-          <div class="button-wrapper_revoke expired-actions">
-            {% if pay_url %}
-              <a href="{{ pay_url }}/{{ token }}" class="dark-btn" rel="noreferrer">
-                Оплатить
-              </a>
-            {% endif %}
+        <div class="button-wrapper_revoke expired-actions">
+          {% if pay_url %}
+            <a href="{{ pay_url }}/{{ token }}" class="dark-btn" rel="noreferrer">
+              Оплатить
+            </a>
+          {% endif %}
 
-            {% if web_url or bot_url %}
-              <a href="{{ web_url or bot_url }}" class="{% if pay_url %}light-btn{% else %}dark-btn{% endif %}" data-cabinet-link>
-                Войти в личный кабинет
-              </a>
-            {% endif %}
+          {% if web_url or bot_url %}
+            <a href="{{ web_url or bot_url }}" class="{% if pay_url %}light-btn{% else %}dark-btn{% endif %}" data-cabinet-link>
+              Войти в личный кабинет
+            </a>
+          {% endif %}
 
-          </div>
-        {% endif %}
+        </div>
       </div>
     </div>
 
