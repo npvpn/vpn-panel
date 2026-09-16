@@ -17,6 +17,7 @@ from app.utils.system import get_public_ip, get_public_ipv6, readable_size
 from . import *
 
 if TYPE_CHECKING:
+    from app.db import Session
     from app.models.user import UserResponse
 
 from config import (
@@ -80,8 +81,8 @@ def _render(
 ) -> list | str:
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
-    conf передаётся готовым только для v2ray-json (его конструктор принимает
-    шаблон и routing-оверрайды из настроек панели).
+    conf передаётся готовым только для v2ray-json (его конструктор принимает карту
+    документов клиентского конфига из app.services.xray_templates).
     """
     if conf is None:
         factory = CONF_FACTORIES.get(render_format)
@@ -132,29 +133,47 @@ def generate_subscription(
     device_limited_hard: bool = False,
     unsupported_client: bool = False,
     settings: dict | None = None,
-    panel_settings: dict | None = None,
     bs: BsContext | None = None,
+    db: "Session | None" = None,
 ) -> str:
     bs = bs or BsContext.empty()
     from app.models.bot import DEFAULT_BOT_SETTINGS, apply_bot_settings_fallback
-    from app.models.settings import apply_panel_settings_fallback
     from config import USE_CUSTOM_JSON_DEFAULT
 
     resolved_settings = apply_bot_settings_fallback(settings or DEFAULT_BOT_SETTINGS)
-    resolved_panel = apply_panel_settings_fallback(panel_settings)
 
-    from app.xray.bs_routing import parse_json_object
+    # Тела документов клиентского конфига живут в app.services.xray_templates
+    # (документы с историей, NPVPN-2024) и читаются через процессный кэш
+    # get_cached_active_bodies — без запроса к БД на каждую подписку. Привязка лежит
+    # прямо на хосте (host["client_config_id"]), поэтому карта нод больше не нужна.
+    # db здесь — признак «настоящий запрос»: без него v2ray-json рендерится файловым
+    # шаблоном, тот же фолбэк, что и раньше для пустых настроек.
+    client_configs: dict[int, dict] = {}
+    default_config_id: int | None = None
+    if db is not None:
+        from app.services.xray_templates import get_cached_active_bodies
+        from app.xray.client_configs import parse_json_object
 
-    def _safe_json(raw, name):
-        try:
-            return parse_json_object(raw)
-        except ValueError as exc:
-            logger.warning("[sub] ignoring invalid %s: %s", name, exc)
-            return None
+        def _safe_json(raw, name):
+            try:
+                return parse_json_object(raw)
+            except ValueError as exc:
+                logger.warning("[sub] ignoring invalid %s: %s", name, exc)
+                return None
 
-    v2ray_template_override = _safe_json(resolved_panel.get("sub_v2ray_json_template"), "sub_v2ray_json_template")
-    routing_default_override = _safe_json(resolved_panel.get("sub_routing_json_default"), "sub_routing_json_default")
-    routing_bs_override = _safe_json(resolved_panel.get("sub_routing_json_bs"), "sub_routing_json_bs")
+        # Процессный кэш (не db.info): /sub/ — горячий путь, обычный запрос БД на КАЖДУЮ
+        # подписку недопустим (раньше шаблон/routing читались из уже загруженного
+        # panel_settings, без лишнего JOIN). Инвалидируется через
+        # app.services.xray_templates.invalidate при любой записи версии (Task 3).
+        bodies = get_cached_active_bodies()
+        client_configs = {
+            config_id: parsed
+            for config_id, raw in bodies.get("configs", {}).items()
+            if (parsed := _safe_json(raw, f"client config {config_id}")) is not None
+        }
+        # Вторая ступень фолбэка (NPVPN-2024): хост без собственной привязки — так
+        # миграция оставляет все не-БС-хосты — получает документ `default` целиком.
+        default_config_id = bodies.get("default_id")
 
     render_format = config_format
     if config_format == "incy":
@@ -259,11 +278,7 @@ def generate_subscription(
         from app.subscription.sub_stub import JSON_STUB_ADDRESS, JSON_STUB_ID, JSON_STUB_PORT
         from app.subscription.v2ray import V2rayJsonConfig
 
-        conf = V2rayJsonConfig(
-            template_override=v2ray_template_override,
-            routing_default=routing_default_override,
-            routing_bs=routing_bs_override,
-        )
+        conf = V2rayJsonConfig(configs=client_configs, default_id=default_config_id)
         if device_limit_text:
             stub_inbound = {
                 "network": "ws",
@@ -513,11 +528,13 @@ def process_inbounds_and_tags(
                     )
                     continue
 
-                # Пер-серверный routing только для v2ray-json: БС-хост получает
-                # routing_bs, остальные — default. Другие форматы про is_bs не знают.
+                # Пер-серверный конфиг только для v2ray-json: привязка лежит на самом
+                # хосте. Другие форматы про документы конфига не знают.
                 add_kwargs = {}
-                if isinstance(conf, V2rayJsonConfig) and bs.is_bs(host):
-                    add_kwargs["is_bs"] = True
+                if isinstance(conf, V2rayJsonConfig):
+                    config_id = host.get("client_config_id")
+                    if config_id is not None:
+                        add_kwargs["client_config_id"] = config_id
 
                 candidate = {
                     "order": host.get("order", 0),

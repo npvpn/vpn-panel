@@ -3,8 +3,6 @@ from __future__ import annotations
 import sys
 import types
 
-import pytest
-from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -33,15 +31,6 @@ def test_panel_fallback_fills_defaults():
     assert apply_panel_settings_fallback({})["bs_monthly_limit"] == 0
     assert apply_panel_settings_fallback({"bs_monthly_limit": 10})["bs_monthly_limit"] == 10
     assert apply_panel_settings_fallback({"bs_monthly_limit": "nope"})["bs_monthly_limit"] == 0
-
-
-def test_panel_payload_accepts_empty_json_and_rejects_invalid():
-    PanelSettingsPayload.model_validate({"sub_v2ray_json_template": ""})
-    PanelSettingsPayload.model_validate({"sub_v2ray_json_template": '{"dns": {}}'})
-    with pytest.raises(ValidationError):
-        PanelSettingsPayload.model_validate({"sub_v2ray_json_template": "["})
-    with pytest.raises(ValidationError):
-        PanelSettingsPayload.model_validate({"sub_routing_json_default": "[]"})
 
 
 def test_bot_fallback_ignores_legacy_panel_keys():

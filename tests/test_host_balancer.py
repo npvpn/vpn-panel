@@ -80,7 +80,7 @@ def test_apply_host_balancer_handles_missing_routing():
 
 
 def test_apply_host_balancer_does_not_mutate_shared_routing():
-    # select_routing отдаёт один и тот же routing_default во все конфиги (без копии)
+    # общий routing из карты документов может прийти в несколько конфигов без копии
     shared_routing = {"rules": [{"type": "field", "ip": ["geoip:ru"], "outboundTag": "direct"}]}
     single_cfg = {"outbounds": [{"tag": "proxy"}], "routing": shared_routing}
     bal_cfg_1 = {"outbounds": [{"tag": "proxy"}, {"tag": "proxy-1"}], "routing": shared_routing}
@@ -108,7 +108,7 @@ def _make_v2ray_json_config():
     """Инстанс V2rayJsonConfig с минимальным шаблоном.
 
     V2rayJsonConfig.__init__ рендерит mux/user_agent/settings-шаблоны независимо от
-    template_override — если шаблонные зависимости недоступны, тест скипается (как в
+    карты документов — если шаблонные зависимости недоступны, тест скипается (как в
     tests/test_subscription_stubs.py::test_build_v2ray_status_stub_v2ray_json_contains_remark).
     """
     template = {
@@ -122,7 +122,7 @@ def _make_v2ray_json_config():
     try:
         from app.subscription.v2ray import V2rayJsonConfig
 
-        return V2rayJsonConfig(template_override=template)
+        return V2rayJsonConfig(configs={1: template}, default_id=1)
     except Exception as exc:  # тяжёлые шаблонные зависимости недоступны
         pytest.skip(f"v2ray deps unavailable: {exc}")
 

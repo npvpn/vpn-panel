@@ -19,7 +19,10 @@ for _name, _attrs in {
     "app.subscription.funcs": {"get_grpc_gun": None, "get_grpc_multi": None},
     "app.templates": {"render_template": None},
     "app.utils.helpers": {"UUIDEncoder": json.JSONEncoder},
-    "app.xray.bs_routing": {"select_routing": None},
+    "app.xray.client_configs": {
+        "select_config": None,
+        "parse_json_object": None,
+    },
 }.items():
     if _name not in sys.modules:
         _mod = types.ModuleType(_name)

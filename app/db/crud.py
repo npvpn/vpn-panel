@@ -201,6 +201,7 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
             fingerprint=host.fingerprint,
             xhttp_extra=host.xhttp_extra,
             order=order,
+            client_config_id=host.client_config_id,
             bots=bots,
             nodes=nodes,
         )
@@ -245,6 +246,7 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
             use_sni_as_host=host.use_sni_as_host,
             xhttp_extra=host.xhttp_extra,
             order=order,
+            client_config_id=host.client_config_id,
             bots=_get_bots_by_usernames(db, host.bot_usernames),
             nodes=_get_nodes_by_ids(db, host.node_ids),
         )
@@ -2120,12 +2122,6 @@ def get_blocked_bs_node_ids(db: Session, user_id: int) -> set[int]:
     подключена по IP (NPVPN-1652). Инбаунд-теги в Marzban общие для всех нод и для
     матча не годятся. При блоке юзер теряет ноду целиком — глушим все её хосты."""
     rows = db.query(NodeUserBlock.node_id).filter(NodeUserBlock.user_id == user_id).all()
-    return {node_id for (node_id,) in rows}
-
-
-def get_bs_node_ids(db: Session) -> set[int]:
-    """ID всех БС-нод (Node.is_bs=True) — для пер-серверного выбора клиентского routing."""
-    rows = db.query(Node.id).filter(Node.is_bs.is_(True)).all()
     return {node_id for (node_id,) in rows}
 
 

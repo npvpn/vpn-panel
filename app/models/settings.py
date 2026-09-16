@@ -18,9 +18,6 @@ PANEL_SETTING_KEYS: tuple[str, ...] = (
     "bs_monthly_limit",
     "sub_routing_happ",
     "sub_routing_v2raytun",
-    "sub_v2ray_json_template",
-    "sub_routing_json_default",
-    "sub_routing_json_bs",
     "subscription_legacy_secret_keys",
 )
 
@@ -31,9 +28,6 @@ DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "bs_monthly_limit": 0,
     "sub_routing_happ": SUB_ROUTING_HAPP,
     "sub_routing_v2raytun": SUB_ROUTING_V2RAYTUN,
-    "sub_v2ray_json_template": "",
-    "sub_routing_json_default": "",
-    "sub_routing_json_bs": "",
     "subscription_legacy_secret_keys": list(SUBSCRIPTION_LEGACY_SECRET_KEYS),
 }
 
@@ -200,23 +194,7 @@ class PanelSettingsPayload(BaseModel):
     bs_monthly_limit: int = 0
     sub_routing_happ: str = ""
     sub_routing_v2raytun: str = ""
-    sub_v2ray_json_template: str = ""
-    sub_routing_json_default: str = ""
-    sub_routing_json_bs: str = ""
     subscription_legacy_secret_keys: list[str] = Field(default_factory=list)
-
-    @field_validator(
-        "sub_v2ray_json_template",
-        "sub_routing_json_default",
-        "sub_routing_json_bs",
-        mode="before",
-    )
-    @classmethod
-    def validate_json_field(cls, value: Any):
-        from app.xray.bs_routing import parse_json_object
-
-        parse_json_object(value)
-        return value if value is not None else ""
 
     @field_validator("subscription_legacy_secret_keys", mode="before")
     @classmethod
