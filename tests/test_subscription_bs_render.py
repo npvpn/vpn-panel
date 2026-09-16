@@ -9,6 +9,7 @@ jinja2 из app/templates), остальное — настоящие V2rayJsonC
 from __future__ import annotations
 
 import base64
+import copy
 import importlib.util
 import json
 import pathlib
@@ -152,12 +153,18 @@ def _host(
     node_ids: list[int] | None = None,
     remark: str = "BS server",
     order: int = 0,
+    client_config_id: int | None = None,
 ) -> dict:
-    """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids."""
+    """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids.
+
+    client_config_id — документ клиентского конфига этого хоста (NPVPN-2024);
+    None означает фолбэк на документ `default`.
+    """
     return {
         "remark": remark,
         "address": list(addresses),
         "node_ids": list(node_ids or []),
+        "client_config_id": client_config_id,
         "port": 8443,
         "sni": [],
         "host": [],
@@ -210,14 +217,9 @@ def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB):
 
 def _blocked_ctx() -> BsContext:
     return BsContext(
-        bs_node_ids=frozenset({BS_NODE_ID}),
         blocked_node_ids=frozenset({BS_NODE_ID}),
         stub_text=STUB_TEXT,
     )
-
-
-def _bs_ctx() -> BsContext:
-    return BsContext(bs_node_ids=frozenset({BS_NODE_ID}), blocked_node_ids=frozenset(), stub_text="")
 
 
 def test_blocked_domain_host_renders_stub_with_text_address_and_port(xray_stub):
@@ -291,43 +293,78 @@ def test_hosts_emitted_sorted_by_global_order(monkeypatch):
     assert [call["remark"] for call in conf.calls] == ["A2", "B1", "A1"]
 
 
-def _v2ray_json_conf() -> V2rayJsonConfig:
-    template = {
-        "remarks": "",
-        "outbounds": [
-            {"protocol": "freedom", "tag": "direct"},
-            {"protocol": "blackhole", "tag": "block"},
-        ],
-        "routing": {"rules": [{"type": "field", "ip": ["geoip:ru"], "outboundTag": "direct"}]},
-    }
-    return V2rayJsonConfig(
-        template_override=template,
-        routing_default={"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]},
-        routing_bs={"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]},
-    )
+# Документы клиентского конфига для v2ray-json-тестов: id, назначаемые хостам через
+# client_config_id — поле, которое раньше заменял булев is_bs.
+DEFAULT_CONFIG_ID = 1
+BS_CONFIG_ID = 2
+# Документ, который СУЩЕСТВУЕТ и может быть назначен хосту, но его тело пусто —
+# поэтому его нет в карте тел configs.
+EMPTY_CONFIG_ID = 3
+OTHER_NODE_ID = 42
+
+DEFAULT_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["default"]}]}
+BS_ROUTING = {"rules": [{"type": "field", "outboundTag": "direct", "domain": ["bs"]}]}
+TEMPLATE_ROUTING = {"rules": [{"type": "field", "ip": ["geoip:ru"], "outboundTag": "direct"}]}
+
+# Файловый шаблон — последняя ступень фолбэка. В тестах подставляем предсказуемый
+# конфиг вместо app/templates/v2ray/default.json (раньше ту же роль играл параметр
+# template_override, которого у самодостаточных документов уже нет).
+FILE_TEMPLATE = {
+    "remarks": "",
+    "outbounds": [
+        {"protocol": "freedom", "tag": "direct"},
+        {"protocol": "blackhole", "tag": "block"},
+    ],
+    "routing": TEMPLATE_ROUTING,
+}
+
+
+def _config_document(routing: dict) -> dict:
+    """Самодостаточный документ: полный конфиг целиком, а не одна секция routing."""
+    return {**copy.deepcopy(FILE_TEMPLATE), "routing": copy.deepcopy(routing)}
+
+
+def _v2ray_json_conf(*, default_body: bool = True) -> V2rayJsonConfig:
+    """default_body=False — пустое тело документа `default` (его нет в карте тел)."""
+    configs = {BS_CONFIG_ID: _config_document(BS_ROUTING)}
+    if default_body:
+        configs[DEFAULT_CONFIG_ID] = _config_document(DEFAULT_ROUTING)
+    # EMPTY_CONFIG_ID есть среди документов, но тела у него нет — в карту не попадает.
+    conf = V2rayJsonConfig(configs=configs, default_id=DEFAULT_CONFIG_ID)
+    conf._file_template_cache = copy.deepcopy(FILE_TEMPLATE)
+    return conf
+
+
+def _routing(conf: V2rayJsonConfig) -> dict:
+    return conf.config[-1]["routing"]
 
 
 def _routing_domains(conf: V2rayJsonConfig) -> list[str]:
     return [rule.get("domain", [""])[0] for rule in conf.config[-1]["routing"]["rules"]]
 
 
+def _proxy_addresses(assembled_config: dict) -> list[str]:
+    """Адреса всех proxy-outbound'ов (не dialer/direct/block) собранного конфига."""
+    return [o["settings"]["vnext"][0]["address"] for o in assembled_config["outbounds"] if o["tag"].startswith("proxy")]
+
+
 def test_v2ray_json_single_address_bs_host_gets_bs_routing(xray_stub):
-    """is_bs=True доходит до V2rayJsonConfig.add → выбирается routing_bs."""
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
+    """Документ БС-хоста доходит до V2rayJsonConfig.add → рендерится он."""
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     assert len(conf.config) == 1
     assert _routing_domains(conf) == ["bs"]
 
 
 def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
-    """Мульти-адресный (балансируемый) БС-хост → add_balanced(is_bs=True)."""
-    xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID])])
+    """Мульти-адресный (балансируемый) БС-хост → add_balanced(client_config_id=...)."""
+    xray_stub([_host("bs1.example.com", "bs2.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     cfg = conf.config[-1]
     proxy_tags = [o["tag"] for o in cfg["outbounds"] if o["tag"].startswith("proxy")]
@@ -336,30 +373,110 @@ def test_v2ray_json_balanced_bs_host_gets_bs_routing(xray_stub):
 
 
 def test_v2ray_json_non_bs_host_gets_default_routing(xray_stub):
-    xray_stub([_host("plain.example.com", node_ids=[42])])
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=DEFAULT_CONFIG_ID)])
     conf = _v2ray_json_conf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     assert _routing_domains(conf) == ["default"]
 
 
+def test_host_without_config_falls_back_to_default_document(xray_stub):
+    """Прод-состояние: миграция вешает документ только на хосты БС-нод, остальные — NULL.
+
+    Такой хост обязан получить документ `default`, а не файловый шаблон: до переезда
+    он получал шаблон с вклеенным sub_routing_json_default.
+    """
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=None)])
+    conf = _v2ray_json_conf()
+
+    _render(conf, BsContext.empty())
+
+    assert _routing_domains(conf) == ["default"]
+
+
+def test_v2ray_json_host_without_nodes_falls_back_to_default_document(xray_stub):
+    """Хост без привязанных нод и без собственной привязки: фолбэк на документ `default`."""
+    xray_stub([_host("orphan.example.com", node_ids=[], client_config_id=None)])
+    conf = _v2ray_json_conf()
+
+    _render(conf, BsContext.empty())
+
+    assert _routing_domains(conf) == ["default"]
+
+
+def test_two_hosts_sharing_default_document_do_not_leak_outbounds(xray_stub):
+    """Документ `default` в conf.configs — ОБЩИЙ объект: сразу два хоста без своей
+    привязки (client_config_id=None, после миграции — все не-БС-хосты) фолбэком идут
+    на один и тот же документ. Без copy.deepcopy(base) в _assemble_config первый
+    сервер дописал бы свой outbound прямо в объект из карты, и второй сервер получил
+    бы СВОЙ + ЧУЖОЙ outbound (унаследованную точку подключения первого хоста), а
+    карта документов необратимо испортилась бы для всех следующих подписок. Тест
+    ловит именно это: без deepcopy падает и на "чужом outbound", и на мутации карты.
+    """
+    xray_stub(
+        [
+            _host("h1.example.com", node_ids=[OTHER_NODE_ID], remark="H1", order=0, client_config_id=None),
+            _host("h2.example.com", node_ids=[OTHER_NODE_ID], remark="H2", order=1, client_config_id=None),
+        ]
+    )
+    conf = _v2ray_json_conf()
+    default_doc = conf.configs[DEFAULT_CONFIG_ID]
+    outbounds_count_before = len(default_doc["outbounds"])
+
+    _render(conf, BsContext.empty())
+
+    assert len(conf.config) == 2
+    # у каждого сервера — ровно свой proxy-outbound, а не свой+чужой и не чужой вместо своего
+    assert _proxy_addresses(conf.config[0]) == ["h1.example.com"]
+    assert _proxy_addresses(conf.config[1]) == ["h2.example.com"]
+    # документ в карте conf.configs остался нетронутым: outbounds серверов в нём не осели
+    assert len(conf.configs[DEFAULT_CONFIG_ID]["outbounds"]) == outbounds_count_before
+
+
+def test_assigned_config_with_empty_body_falls_back_to_default_document(xray_stub):
+    """Документ НАЗНАЧЕН, но его тело пусто → дефолтный документ.
+
+    У самодостаточных документов пустое тело — это «документ не заполнен», рендерить
+    из него нечего: подмены одной секции больше нет. Поэтому пустое тело и ссылка на
+    удалённый документ ведут одинаково — фолбэком на `default`. Прод после миграции
+    такого состояния не создаёт: пустой sub_routing_json_bs даёт документу `bs` тело
+    самого шаблона, а не пустую строку.
+    """
+    xray_stub([_host("empty.example.com", node_ids=[OTHER_NODE_ID], client_config_id=EMPTY_CONFIG_ID)])
+    conf = _v2ray_json_conf()
+
+    _render(conf, BsContext.empty())
+
+    assert _routing_domains(conf) == ["default"]
+
+
+def test_host_without_config_falls_back_to_file_template_when_default_is_empty(xray_stub):
+    """Хост без привязки при ПУСТОМ документе `default` — последняя ступень, файловый шаблон."""
+    xray_stub([_host("plain.example.com", node_ids=[OTHER_NODE_ID], client_config_id=None)])
+    conf = _v2ray_json_conf(default_body=False)
+
+    _render(conf, BsContext.empty())
+
+    assert _routing(conf) == TEMPLATE_ROUTING
+
+
 def test_is_bs_never_leaks_into_other_formats(xray_stub):
-    """Другие форматы про is_bs не знают — их conf.add вызывается без него."""
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
+    """Другие форматы про документы конфига не знают — их conf.add вызывается без них."""
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
     conf = _FakeConf()
 
-    _render(conf, _bs_ctx())
+    _render(conf, BsContext.empty())
 
     assert conf.calls[0]["kwargs"] == {}
     assert conf.calls[0]["remark"] == "BS server"
 
 
-# _FakeConf.add(**kwargs) молча проглотит лишний is_bs, если isinstance-гвард
+# _FakeConf.add(**kwargs) молча проглотит лишний client_config_id, если isinstance-гвард
 # (`isinstance(conf, V2rayJsonConfig)` в share.py) снять — assert kwargs == {} выше
 # страхует только сам факт "kwargs пустой", но не докажет, что ДРУГИЕ форматы вообще
-# не умеют принять is_bs. Настоящие ClashConfiguration/ClashMetaConfiguration/
-# SingBoxConfiguration/OutlineConfiguration.add() параметра is_bs не имеют — при снятии
+# не умеют принять client_config_id. Настоящие ClashConfiguration/ClashMetaConfiguration/
+# SingBoxConfiguration/OutlineConfiguration.add() такого параметра не имеют — при снятии
 # гварда process_inbounds_and_tags упал бы TypeError'ом (500 на подписке). Прогоняем
 # process_inbounds_and_tags с настоящими классами, чтобы рендер БС-хоста в этих форматах
 # доказуемо не падал (а при регрессии гварда — падал бы).
@@ -369,10 +486,10 @@ def test_is_bs_never_leaks_into_other_formats(xray_stub):
     ids=["clash", "clash_meta", "singbox", "outline"],
 )
 def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, conf_factory):
-    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID])])
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], client_config_id=BS_CONFIG_ID)])
     conf = conf_factory()
 
-    rendered = _render(conf, _bs_ctx())
+    rendered = _render(conf, BsContext.empty())
 
     assert rendered  # рендер прошёл до конца, а не упал TypeError'ом на лишнем kwarg
 
@@ -382,7 +499,6 @@ def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, c
 # подменяем модулем с фейковым crud (Session/User нужны только как аннотации).
 _fake_crud = types.SimpleNamespace(
     get_blocked_bs_node_ids=lambda db, user_id: set(db["blocked"]),
-    get_bs_node_ids=lambda db: set(db["bs"]),
 )
 _stub_module("app.db", {"Session": dict, "crud": _fake_crud})
 _stub_module("app.db.models", {"User": types.SimpleNamespace})
@@ -404,19 +520,20 @@ def fake_crud(monkeypatch):
 def test_build_bs_context_sets_stub_text_for_blocked_domain_host(fake_crud):
     """Баг: раньше stub_text брался от адресного множества → у доменного БС-хоста
     заглушка получала ПУСТОЕ имя. Теперь текст зависит от блоков по node_ids."""
+    db = {"bs": {BS_NODE_ID}, "blocked": {BS_NODE_ID}}
     bs = build_bs_context(
-        {"bs": {BS_NODE_ID}, "blocked": {BS_NODE_ID}},
+        db,
         types.SimpleNamespace(id=1),
         is_revoked=False,
         is_expired=False,
         bot_settings=BS_SETTINGS,
     )
-    assert bs.bs_node_ids == frozenset({BS_NODE_ID})
     assert bs.blocked_node_ids == frozenset({BS_NODE_ID})
     assert bs.has_blocks is True
     assert bs.stub_text  # имя сервера-заглушки не пустое
-    assert bs.is_bs(_host("bs.example.com", node_ids=[BS_NODE_ID])) is True
     assert bs.is_blocked(_host("bs.example.com", node_ids=[BS_NODE_ID])) is True
+    # Признак конфига (раньше bs.is_bs(host)) больше не хранится в BsContext — он
+    # читается отдельно, прямо с хоста (host["client_config_id"], NPVPN-2024).
 
 
 def test_build_bs_context_without_blocks_has_no_stub_text(fake_crud):

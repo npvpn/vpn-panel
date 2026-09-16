@@ -29,6 +29,7 @@ import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
 import { PanelSettings } from "types/PanelSettings";
 import { DeleteIcon } from "./DeleteUserModal";
+import { XrayTemplatesPanel } from "./XrayTemplatesPanel";
 
 const GB_IN_BYTES = 1073741824;
 
@@ -37,9 +38,6 @@ const emptySettings: PanelSettings = {
   bs_monthly_limit: 0,
   sub_routing_happ: "",
   sub_routing_v2raytun: "",
-  sub_v2ray_json_template: "",
-  sub_routing_json_default: "",
-  sub_routing_json_bs: "",
   subscription_legacy_secret_keys: [],
   primary_jwt_secret: "",
 };
@@ -280,61 +278,7 @@ export const PanelSettingsDialog: FC = () => {
                 </VStack>
               </TabPanel>
               <TabPanel px={0}>
-                <VStack spacing={4} align="stretch">
-                  <FormControl>
-                    <FormLabel>
-                      {t("panelSettings.v2rayJsonTemplate")}
-                    </FormLabel>
-                    <Textarea
-                      fontFamily="mono"
-                      minH="180px"
-                      value={settings.sub_v2ray_json_template}
-                      placeholder='{ "dns": {...}, "routing": {...}, ... }'
-                      onChange={(e) =>
-                        updateSettings({
-                          sub_v2ray_json_template: e.target.value,
-                        })
-                      }
-                    />
-                    <FormHelperText>
-                      {t("panelSettings.v2rayJsonTemplateHint")}
-                    </FormHelperText>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>{t("panelSettings.routingDefault")}</FormLabel>
-                    <Textarea
-                      fontFamily="mono"
-                      minH="140px"
-                      value={settings.sub_routing_json_default}
-                      placeholder='{ "domainStrategy": "IPIfNonMatch", "rules": [...] }'
-                      onChange={(e) =>
-                        updateSettings({
-                          sub_routing_json_default: e.target.value,
-                        })
-                      }
-                    />
-                    <FormHelperText>
-                      {t("panelSettings.routingDefaultHint")}
-                    </FormHelperText>
-                  </FormControl>
-                  <FormControl>
-                    <FormLabel>{t("panelSettings.routingBs")}</FormLabel>
-                    <Textarea
-                      fontFamily="mono"
-                      minH="140px"
-                      value={settings.sub_routing_json_bs}
-                      placeholder='{ "domainStrategy": "AsIs", "rules": [...] }'
-                      onChange={(e) =>
-                        updateSettings({
-                          sub_routing_json_bs: e.target.value,
-                        })
-                      }
-                    />
-                    <FormHelperText>
-                      {t("panelSettings.routingBsHint")}
-                    </FormHelperText>
-                  </FormControl>
-                </VStack>
+                <XrayTemplatesPanel />
               </TabPanel>
               <TabPanel px={0}>
                 <VStack spacing={4} align="stretch">

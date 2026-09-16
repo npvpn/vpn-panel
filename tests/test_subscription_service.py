@@ -194,7 +194,7 @@ def test_announce_uses_bs_limit_text_when_nodes_blocked():
     from app.subscription.bs_context import BsContext
     from app.subscription.subscription_service import resolve_announce_text
 
-    bs = BsContext(bs_node_ids=frozenset({7}), blocked_node_ids=frozenset({7}), stub_text="лимит")
+    bs = BsContext(blocked_node_ids=frozenset({7}), stub_text="лимит")
     text = resolve_announce_text(
         object(),
         is_revoked=False,
