@@ -155,14 +155,13 @@
           {% endif %}
         </div>
 
-        {% if show_ads %}
-          <footer class="footer">
-            Сайт работает на платформе
-            <a href="https://github.com/npvpn/vpn-panel" class="footer-link" target="_blank" rel="noopener noreferrer">
-              npvpn
-            </a>
-          </footer>
-        {% endif %}
       </div>
+    </div>
+
+    {% if show_ads %}
+      <footer class="footer footer_revoked">
+        {% include "_ad_npvpn.html" %}
+      </footer>
+    {% endif %}
     </body>
 </html>

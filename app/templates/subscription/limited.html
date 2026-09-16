@@ -389,17 +389,14 @@
               </div>
           </div>
       </div>
-
-      <footer class="footer_limited">
-          {% if show_ads %}
-          <p>
-            Сайт работает на платформе
-            <a href="https://github.com/npvpn/vpn-panel" class="footer-link" target="_blank" rel="noopener noreferrer">
-              npvpn
-            </a>
-          </p>
-          {% endif %}
-      </footer>
     </div>
+
+    {% if show_ads %}
+    <footer class="footer_limited">
+        <p>
+          {% include "_ad_npvpn.html" %}
+        </p>
+      </footer>
+      {% endif %}
   </body>
 </html>
