@@ -121,6 +121,9 @@ class BotSettingsPayload(BaseModel):
     sub_bs_limit_server_text: list[str] = []
     sub_bs_limit_announce_text: str = ""
     show_ads: bool = True
+    sub_address_subset_enabled: bool = False
+    sub_address_subset_size: int = 2
+    sub_address_rotation_days: int = 2
 
     @field_validator(
         "sub_revoked_server_text",

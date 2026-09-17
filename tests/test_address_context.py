@@ -89,3 +89,25 @@ def test_node_without_limit_competes_on_equal_terms():
     for user_id in range(200):
         seen.update(ctx(user_id=user_id, weights=weights).pick(ADDRESSES, NODE_IDS))
     assert "4.4.4.4" in seen
+
+
+def test_managed_payload_carries_subset_settings_through():
+    """Синк админка бота -> панель: ключ не должен молча отбрасываться allowlist'ом."""
+    from app.models.managed import ManagedBotSettingsPayload
+
+    payload = ManagedBotSettingsPayload.model_validate(
+        {
+            "username": "testbot",
+            "bot_url": "https://t.me/testbot",
+            "web_url": "",
+            "sub_support_url": "",
+            "sub_subscription_domain": "",
+            "sub_address_subset_enabled": True,
+            "sub_address_subset_size": 3,
+            "sub_address_rotation_days": 5,
+        }
+    )
+    dumped = payload.model_dump()
+    assert dumped["sub_address_subset_enabled"] is True
+    assert dumped["sub_address_subset_size"] == 3
+    assert dumped["sub_address_rotation_days"] == 5
