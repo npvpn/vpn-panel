@@ -210,6 +210,10 @@ class User(Base):
     bs_extra = Column(BigInteger, nullable=True, default=None)
     bs_extra_period = Column(String(7), nullable=True, default=None)
 
+    # Ручная ротация адресов: саппорт инкрементирует, подмножество меняется немедленно.
+    # Одна колонка вместо таблицы назначений — выбор вычисляется, а не хранится.
+    address_rotation_offset = Column(Integer, nullable=False, default=0, server_default=text("0"))
+
     # * Positive values: User will be deleted after the value of this field in days automatically.
     # * Negative values: User won't be deleted automatically at all.
     # * NULL: Uses global settings.
@@ -592,6 +596,17 @@ class Node(Base):
     is_bs = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     # Лимит трафика у хостера на этот сервер (SI-байты). NULL — лимита нет.
     hosting_traffic_limit_bytes = Column(BigInteger, nullable=True)
+    # Израсходованный NIC-трафик за месяц. Панель его сама не знает: это счётчик
+    # node_exporter, который скрейпит Prometheus. Пишет scripts/prometheus_vpn_nodes_sd.py
+    # из репозитория бота — он единственный видит оба берега (NPVPN-2072).
+    hosting_used_bytes = Column(BigInteger, nullable=True)
+    hosting_used_at = Column(DateTime, nullable=True)
+    weight_snapshots = relationship(
+        "NodeWeightSnapshot",
+        back_populates="node",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class NodeUserUsage(Base):
@@ -638,6 +653,26 @@ class NodeUserBlock(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     period = Column(String(8), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class NodeWeightSnapshot(Base):
+    """Суточный снимок веса ноды = остаток лимита хостера (NPVPN-2072).
+
+    Вес обязан быть постоянным внутри эпохи юзера, иначе подмножество адресов плывёт
+    и у клиента скачут IP. Снимков хранится несколько, потому что ротация размазана по
+    юзерам: каждый берёт тот, что действовал на начало ЕГО эпохи.
+
+    Единственный writer — scripts/prometheus_vpn_nodes_sd.py (репозиторий бота).
+    """
+
+    __tablename__ = "node_weight_snapshots"
+    __table_args__ = (UniqueConstraint("epoch_index", "node_id", name="uq_node_weight_snapshots"),)
+
+    id = Column(Integer, primary_key=True)
+    epoch_index = Column(Integer, nullable=False, index=True)
+    node_id = Column(Integer, ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    weight = Column(BigInteger, nullable=False, default=0)
+    node = relationship("Node", back_populates="weight_snapshots", passive_deletes=True)
 
 
 class NodeUsage(Base):
