@@ -1,7 +1,7 @@
 """npvpn-2072 address subset
 
 Revision ID: d8fad3e7f98b
-Revises: 03e94a203122
+Revises: 6f9ee5710f34
 Create Date: 2026-09-17 20:31:57.503271
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'd8fad3e7f98b'
-down_revision = '03e94a203122'
+down_revision = '6f9ee5710f34'
 branch_labels = None
 depends_on = None
 
