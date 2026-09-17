@@ -458,6 +458,22 @@ def revoke_user_subscription(
     return user
 
 
+@router.post(
+    "/user/{username}/rotate_addresses",
+    response_model=UserResponse,
+    responses={403: responses._403, 404: responses._404},
+)
+def rotate_user_addresses_endpoint(
+    db: Session = Depends(get_db),
+    dbuser: UserResponse = Depends(get_validated_user),
+    admin: Admin = Depends(Admin.get_current),
+):
+    """Выдать юзеру другой набор адресов (жалоба «локация не работает»)."""
+    rotated = crud.rotate_user_addresses(db=db, dbuser=cast(DBUser, dbuser))
+    logger.info(f'User "{rotated.username}" addresses rotated by "{admin.username}"')
+    return UserResponse.model_validate(rotated)
+
+
 @router.get(
     "/users", response_model=UsersResponse, responses={400: responses._400, 403: responses._403, 404: responses._404}
 )

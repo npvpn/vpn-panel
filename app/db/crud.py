@@ -2126,6 +2126,18 @@ def get_blocked_bs_node_ids(db: Session, user_id: int) -> set[int]:
     return {node_id for (node_id,) in rows}
 
 
+def rotate_user_addresses(db: Session, dbuser: User) -> User:
+    """Сменить юзеру набор адресов немедленно, не дожидаясь автоматической ротации.
+
+    Инкремент сдвига меняет эпоху этого юзера, а значит и результат выбора. Таблицы
+    назначений нет, поэтому «ротация» — это одно число (NPVPN-2072).
+    """
+    cast(Any, dbuser).address_rotation_offset = int(dbuser.address_rotation_offset or 0) + 1
+    db.commit()
+    db.refresh(dbuser)
+    return dbuser
+
+
 def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:
     """Веса нод на указанные сутки: ближайший снимок не позже epoch_index.
 
