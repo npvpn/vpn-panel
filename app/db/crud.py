@@ -2152,14 +2152,16 @@ def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:
     )
     if latest is None:
         return {}
+    # Пропущено больше двух суточных проходов — веса недостоверны, выравниваем.
+    # Проверка до выборки строк: на каждом рендере подписки устаревший снимок не
+    # должен стоить лишнего похода в БД (NPVPN-2072).
+    if epoch_index - int(latest) > 2:
+        return {}
     rows = (
         db.query(NodeWeightSnapshot.node_id, NodeWeightSnapshot.weight, NodeWeightSnapshot.epoch_index)
         .filter(NodeWeightSnapshot.epoch_index == latest)
         .all()
     )
-    # Пропущено больше двух суточных проходов — веса недостоверны, выравниваем.
-    if epoch_index - int(latest) > 2:
-        return {}
     return {row.node_id: float(row.weight) for row in rows}
 
 

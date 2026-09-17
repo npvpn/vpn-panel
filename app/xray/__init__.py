@@ -67,6 +67,12 @@ def hosts(storage: dict):
                     # в кэше, поэтому share.py не делает ни одного запроса к БД за
                     # привязками на каждую подписку.
                     "client_config_id": host.client_config_id,
+                    # NPVPN-2072: признак для AddressContext.pick — заданы ли адреса
+                    # нодами (тогда node_ids реально соответствуют address по индексу и
+                    # взвешивание корректно) или статической строкой host.address
+                    # (тогда node_ids — просто все привязанные ноды без порядкового
+                    # соответствия, и взвешивать по ним нельзя).
+                    "addresses_from_nodes": not bool(host.address),
                     "port": host.port,
                     "path": host.path if host.path else None,
                     "sni": [i.strip() for i in host.sni.split(",")] if host.sni else [],

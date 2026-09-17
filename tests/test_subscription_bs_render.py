@@ -154,17 +154,23 @@ def _host(
     remark: str = "BS server",
     order: int = 0,
     client_config_id: int | None = None,
+    addresses_from_nodes: bool = True,
 ) -> dict:
     """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids.
 
     client_config_id — документ клиентского конфига этого хоста (NPVPN-2024);
     None означает фолбэк на документ `default`.
+
+    `addresses_from_nodes=True` по умолчанию: адреса в этих тестах строятся по
+    тому же множеству нод, что и node_ids (как resolve_host_addresses делает при
+    пустом host.address) — см. NPVPN-2072, AddressContext.pick.
     """
     return {
         "remark": remark,
         "address": list(addresses),
         "node_ids": list(node_ids or []),
         "client_config_id": client_config_id,
+        "addresses_from_nodes": addresses_from_nodes,
         "port": 8443,
         "sni": [],
         "host": [],
@@ -738,21 +744,16 @@ def test_subset_size_one_disables_balancer(xray_stub):
 
 
 def test_blocked_bs_host_ignores_subset(xray_stub):
-    """Заблокированный БС-хост становится заглушкой — суженный список не используется."""
+    """Заблокированный БС-хост становится заглушкой — суженный список не используется.
+
+    Это единственный смысл прежнего исключения БС-хостов из сужения (bs.is_bs(host)),
+    который остаётся верным и после его снятия (NPVPN-2024 убрал is_bs из BsContext):
+    заблокированный хост уходит в ветку bs.is_blocked() ДО того, как суженный список
+    вообще попал бы в рендер, так что subset здесь ни на что не влияет."""
     xray_stub([_host(*FOUR_ADDRESSES, node_ids=[BS_NODE_ID])])
-    bs = BsContext(bs_node_ids=frozenset({BS_NODE_ID}), blocked_node_ids=frozenset({BS_NODE_ID}), stub_text=STUB_TEXT)
+    bs = BsContext(blocked_node_ids=frozenset({BS_NODE_ID}), stub_text=STUB_TEXT)
 
     with_subset = json.loads(_render(_v2ray_json_conf(), bs, subset=_subset_ctx(size=1)))
     without = json.loads(_render(_v2ray_json_conf(), bs, subset=AddressContext.disabled()))
 
     assert with_subset == without
-
-
-def test_bs_host_is_not_narrowed_by_subset(xray_stub):
-    """БС-хост (не заблокированный) исключён из сужения — своя пер-юзерная логика."""
-    xray_stub([_host(*FOUR_ADDRESSES, node_ids=[BS_NODE_ID])])
-    bs = BsContext(bs_node_ids=frozenset({BS_NODE_ID}), blocked_node_ids=frozenset(), stub_text="")
-
-    rendered = json.loads(_render(_v2ray_json_conf(), bs, subset=_subset_ctx(size=2)))
-
-    assert _balanced_addresses(rendered) == list(FOUR_ADDRESSES)

@@ -501,7 +501,11 @@ def process_inbounds_and_tags(
                 # меньшем числе нод — БС-лимит считается агрегатом по юзеру
                 # (aggregate_bs_usage), а не по ноде, поэтому учёт не ломается.
                 if address_list:
-                    address_list = subset.pick(address_list, host.get("node_ids") or [])
+                    address_list = subset.pick(
+                        address_list,
+                        host.get("node_ids") or [],
+                        addresses_from_nodes=bool(host.get("addresses_from_nodes")),
+                    )
                 balanced = isinstance(conf, V2rayJsonConfig) and address_list and len(address_list) > 1
                 if address_list and not balanced:
                     salt = secrets.token_hex(8)

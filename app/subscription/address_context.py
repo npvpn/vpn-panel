@@ -41,17 +41,20 @@ class AddressContext:
         """Контекст без сужения (флаг выключен, revoked/expired-подписка)."""
         return cls(user_id=0, size=0, epoch=0, weights={}, enabled=False)
 
-    def pick(self, addresses: Sequence[str], node_ids: Sequence[int]) -> list[str]:
-        """Подмножество адресов хоста. Порядок исходного списка сохраняется."""
+    def pick(self, addresses: Sequence[str], node_ids: Sequence[int], *, addresses_from_nodes: bool) -> list[str]:
+        """Подмножество адресов хоста. Порядок исходного списка сохраняется.
+
+        `addresses_from_nodes` обязан прийти снаружи (из того же места, что и
+        node_ids — см. host["addresses_from_nodes"] в app/xray/__init__.py), а не
+        выводиться из совпадения длин `addresses`/`node_ids`: у легаси-хоста со
+        статическим host.address адреса заданы строкой, а нод за ним может стоять
+        сколько угодно — длины могут случайно совпасть, но соответствие «адрес ↔
+        нода» при этом отсутствует, и взвешивание по чужим нодам было бы шумом.
+        """
         if not self.enabled or self.size <= 0 or len(addresses) <= self.size:
             return list(addresses)
 
-        # Соответствие «адрес ↔ нода» держится только на равной длине списков:
-        # resolve_host_addresses и resolve_host_node_ids строят их по одному
-        # множеству нод. У легаси-хоста со статическим host.address адреса заданы
-        # строкой, а нод за ним может стоять сколько угодно — тогда взвешивать
-        # нечем, и выбор идёт по самим адресам с равными весами.
-        if len(node_ids) == len(addresses):
+        if addresses_from_nodes and node_ids:
             candidates = list(weighted_candidates(self.weights, node_ids).items())
             chosen = set(pick_keys(self.user_id, candidates, self.size, self.epoch))
             return [addr for addr, node_id in zip(addresses, node_ids) if node_id in chosen]
