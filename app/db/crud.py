@@ -27,6 +27,7 @@ from app.db.models import (
     NodeUserBlock,
     NodeUserBsUsage,
     NodeUserUsage,
+    NodeWeightSnapshot,
     NotificationReminder,
     Proxy,
     ProxyHost,
@@ -2123,6 +2124,31 @@ def get_blocked_bs_node_ids(db: Session, user_id: int) -> set[int]:
     матча не годятся. При блоке юзер теряет ноду целиком — глушим все её хосты."""
     rows = db.query(NodeUserBlock.node_id).filter(NodeUserBlock.user_id == user_id).all()
     return {node_id for (node_id,) in rows}
+
+
+def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:
+    """Веса нод на указанные сутки: ближайший снимок не позже epoch_index.
+
+    Точного снимка может не быть (скрипт или Prometheus лежали), поэтому берём
+    последний доступный более ранний. Насколько он устарел — решает вызывающий код
+    (NPVPN-2072).
+    """
+    latest = (
+        db.query(func.max(NodeWeightSnapshot.epoch_index))
+        .filter(NodeWeightSnapshot.epoch_index <= epoch_index)
+        .scalar()
+    )
+    if latest is None:
+        return {}
+    rows = (
+        db.query(NodeWeightSnapshot.node_id, NodeWeightSnapshot.weight, NodeWeightSnapshot.epoch_index)
+        .filter(NodeWeightSnapshot.epoch_index == latest)
+        .all()
+    )
+    # Пропущено больше двух суточных проходов — веса недостоверны, выравниваем.
+    if epoch_index - int(latest) > 2:
+        return {}
+    return {row.node_id: float(row.weight) for row in rows}
 
 
 def create_notification_reminder(
