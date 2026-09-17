@@ -12,6 +12,7 @@ from app.db.models import User
 from app.dependencies import get_validated_sub, validate_dates
 from app.models.user import SubscriptionUserResponse, UserResponse
 from app.services.panel_settings import get_panel_settings
+from app.subscription.address_context_builder import build_address_context
 from app.subscription.bot_settings import resolve_bot_settings
 from app.subscription.bs_context_builder import build_bs_context
 from app.subscription.headers import build_content_disposition, get_routing_header
@@ -149,6 +150,7 @@ def build_render_context(
     # Хосты заблокированной БС-ноды (матч по связям host→nodes) остаются в подписке на
     # своих местах, но рендерятся как мёртвые заглушки (см. generate_subscription).
     bs = build_bs_context(db, dbuser, is_revoked=is_revoked, is_expired=is_expired, bot_settings=bot_settings)
+    subset = build_address_context(db, dbuser, is_revoked=is_revoked, is_expired=is_expired, bot_settings=bot_settings)
     announce_text = resolve_announce_text(
         user,
         is_revoked=is_revoked,
@@ -182,6 +184,7 @@ def build_render_context(
         bot_settings=bot_settings,
         panel_settings=panel_settings,
         bs=bs,
+        subset=subset,
         response_headers=response_headers,
     )
 
@@ -207,6 +210,7 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
         settings=ctx.bot_settings,
         bs=ctx.bs,
         db=db,
+        subset=ctx.subset,
     )
     return Response(content=conf, media_type=plan.media_type, headers=ctx.response_headers)
 
