@@ -461,6 +461,14 @@ export const UserDialog: FC<UserDialogProps> = () => {
     useDashboard.setState({ revokeSubscriptionUser: editingUser });
   };
 
+  const handleRotateAddresses = () => {
+    useDashboard.setState({ rotateAddressesUser: editingUser });
+  };
+
+  const handleOpenAddressPins = () => {
+    useDashboard.setState({ addressPinsUser: editingUser });
+  };
+
   const disabled = loading;
   const isOnHold = userStatus === "on_hold";
 
@@ -992,7 +1000,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
                   <Grid
                     templateColumns={{
                       base: "repeat(2, 1fr)",
-                      md: "40px 40px 1fr 1fr 1fr",
+                      md: "40px 40px 1fr 1fr 1fr 1fr 1fr",
                     }}
                     gap={2}
                     w="full"
@@ -1043,6 +1051,16 @@ export const UserDialog: FC<UserDialogProps> = () => {
                     <GridItem>
                       <Button onClick={openDevices} size="sm" w="full">
                         {t("userDialog.devicesButton")}
+                      </Button>
+                    </GridItem>
+                    <GridItem>
+                      <Button onClick={handleRotateAddresses} size="sm" w="full">
+                        {t("userDialog.rotateAddresses")}
+                      </Button>
+                    </GridItem>
+                    <GridItem>
+                      <Button onClick={handleOpenAddressPins} size="sm" w="full">
+                        {t("userDialog.addressPins")}
                       </Button>
                     </GridItem>
                   </Grid>

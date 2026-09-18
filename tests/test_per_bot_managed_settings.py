@@ -103,6 +103,37 @@ def test_full_push_overwrites_new_managed_fields(db):
     assert settings["bs_extra_reset_pool_on_prolong"] is True
 
 
+def test_address_subset_fields_survive_push_to_read_roundtrip(db):
+    # NPVPN-2072: критичный путь push -> merge -> чтение настройки. Без этих трёх
+    # ключей в BOT_MANAGED_JSON_FIELDS они валидируются, но не попадают в
+    # BotSettings.data, и resolve_bot_settings всегда отдаёт дефолт enabled=False —
+    # включить фичу из админки бота невозможно.
+    bot = Bot(username="synced_bot", admin_sync_enabled=True)
+    db.add(bot)
+    db.flush()
+    db.add(BotSettings(bot_id=bot.id, data={}))
+    db.commit()
+
+    svc.apply_managed_bot_push(
+        db,
+        svc.BOT_SETTINGS_KEY,
+        42,
+        data={
+            **MANAGED_DATA,
+            "sub_address_subset_enabled": True,
+            "sub_address_subset_size": 5,
+            "sub_address_rotation_days": 7,
+        },
+        version="v1",
+        source="telegram",
+    )
+
+    settings = db.query(BotSettings).filter(BotSettings.bot_id == bot.id).one().data
+    assert settings["sub_address_subset_enabled"] is True
+    assert settings["sub_address_subset_size"] == 5
+    assert settings["sub_address_rotation_days"] == 7
+
+
 def test_first_push_creates_enabled_bot_and_later_uses_stable_source_id(db):
     svc.apply_managed_bot_push(
         db,

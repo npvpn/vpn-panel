@@ -60,6 +60,9 @@ BOT_MANAGED_JSON_FIELDS = frozenset(
         "sub_device_limit_server_text",
         "sub_unsupported_client_server_text",
         "sub_bs_limit_server_text",
+        "sub_address_subset_enabled",
+        "sub_address_subset_size",
+        "sub_address_rotation_days",
     }
 )
 BOT_MANAGED_SETTINGS_FIELDS = BOT_MANAGED_IDENTITY_FIELDS | BOT_MANAGED_JSON_FIELDS

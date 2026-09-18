@@ -61,6 +61,8 @@ type DashboardStateType = {
   } | null;
   resetUsageUser: User | null;
   revokeSubscriptionUser: User | null;
+  rotateAddressesUser: User | null;
+  addressPinsUser: User | null;
   isEditingCore: boolean;
   onCreateUser: (isOpen: boolean) => void;
   onEditingUser: (user: User | null) => void;
@@ -86,6 +88,7 @@ type DashboardStateType = {
   onShowingNodesUsage: (isShowingNodesUsage: boolean) => void;
   resetDataUsage: (user: User) => Promise<void>;
   revokeSubscription: (user: User) => Promise<void>;
+  rotateAddresses: (user: User) => Promise<void>;
 };
 
 const fetchUsers = (query: FilterType): Promise<User[]> => {
@@ -140,6 +143,8 @@ export const useDashboard = create(
     isShowingNodesUsage: false,
     resetUsageUser: null,
     revokeSubscriptionUser: null,
+    rotateAddressesUser: null,
+    addressPinsUser: null,
     filters: {
       search: "",
       limit: getUsersPerPageLimitSize(),
@@ -297,6 +302,14 @@ export const useDashboard = create(
         method: "POST",
       }).then((user) => {
         set({ revokeSubscriptionUser: null, editingUser: user });
+        get().refetchUsers();
+      });
+    },
+    rotateAddresses: (user) => {
+      return fetch(`/user/${user.username}/rotate_addresses`, {
+        method: "POST",
+      }).then((user) => {
+        set({ rotateAddressesUser: null, editingUser: user });
         get().refetchUsers();
       });
     },

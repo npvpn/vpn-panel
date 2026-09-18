@@ -46,6 +46,9 @@ class ManagedBotSettingsPayload(BaseModel):
     sub_device_limit_server_text: list[str] | None = None
     sub_unsupported_client_server_text: list[str] | None = None
     sub_bs_limit_server_text: list[str] | None = None
+    sub_address_subset_enabled: bool | None = None
+    sub_address_subset_size: int | None = None
+    sub_address_rotation_days: int | None = None
     model_config = ConfigDict(extra="forbid")
 
     @field_validator("username")
