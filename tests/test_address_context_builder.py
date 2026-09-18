@@ -44,11 +44,57 @@ def test_disabled_flag_short_circuits_without_touching_weights(monkeypatch):
         return {}
 
     monkeypatch.setattr(crud, "get_weight_snapshot", fake_get_weight_snapshot)
+    monkeypatch.setattr(crud, "get_active_pins", lambda *a, **k: {})
     ctx = build_address_context(
         None, _StubUser(id=1), is_revoked=False, is_expired=False, bot_settings={"sub_address_subset_enabled": False}
     )
     assert ctx.enabled is False
     assert called is False
+
+
+def test_disabled_flag_still_queries_pins_exactly_once(monkeypatch):
+    """Закрепление должно работать и при выключенной фиче — но не ценой лишних
+    запросов: один дешёвый индексный запрос на рендер, не больше."""
+    calls = 0
+
+    def fake_get_active_pins(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return {}
+
+    monkeypatch.setattr(crud, "get_weight_snapshot", lambda *a, **k: {})
+    monkeypatch.setattr(crud, "get_active_pins", fake_get_active_pins)
+    build_address_context(
+        None, _StubUser(id=1), is_revoked=False, is_expired=False, bot_settings={"sub_address_subset_enabled": False}
+    )
+    assert calls == 1
+
+
+def test_pin_applies_when_subset_flag_disabled():
+    """Закрепление — явное ручное действие саппорта/отладки, оно не должно
+    глохнуть от выключенного флага автовыбора: иначе инструмент бесполезен
+    именно там, где нужен — пока фича ещё не раскатана."""
+    from app.subscription.address_context import AddressContext
+
+    ADDRESSES = ["1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"]
+    NODE_IDS = [11, 22, 33, 44]
+
+    ctx = AddressContext(user_id=1, size=0, epoch=0, weights={}, enabled=False, pins={9: [33]})
+    picked = ctx.pick(ADDRESSES, NODE_IDS, addresses_from_nodes=True, host_id=9)
+    assert picked == ["3.3.3.3"]
+
+
+def test_disabled_flag_without_pins_unchanged(monkeypatch):
+    """Фича выключена и пинов нет: выдача ровно прежняя, побайтово."""
+    ADDRESSES = ["1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"]
+    NODE_IDS = [11, 22, 33, 44]
+
+    monkeypatch.setattr(crud, "get_weight_snapshot", lambda *a, **k: {})
+    monkeypatch.setattr(crud, "get_active_pins", lambda *a, **k: {})
+    ctx = build_address_context(
+        None, _StubUser(id=1), is_revoked=False, is_expired=False, bot_settings={"sub_address_subset_enabled": False}
+    )
+    assert ctx.pick(ADDRESSES, NODE_IDS, addresses_from_nodes=True, host_id=9) == ADDRESSES
 
 
 def test_revoked_or_expired_disables_regardless_of_flag(monkeypatch):

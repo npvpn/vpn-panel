@@ -31,18 +31,32 @@ def build_address_context(
     is_expired: bool,
     bot_settings: dict,
 ) -> AddressContext:
-    """Контекст сужения адресов. Для revoked/expired сужение не применяется."""
+    """Контекст сужения адресов и закреплений (NPVPN-2072).
+
+    Для revoked/expired ни автовыбор, ни закрепления не применяются — своя логика
+    выдачи, пин туда не лезет.
+
+    Закрепление же работает НЕЗАВИСИМО от `sub_address_subset_enabled`: это явное
+    ручное действие саппорта/отладки (адресно, со сроком годности, с автором), а
+    не автоматика — выключенный флаг сужения не должен его глушить. Иначе
+    инструмент бесполезен именно там, где нужен: фича ещё не раскатана.
+    """
     if is_revoked or is_expired:
         return AddressContext.disabled()
+
+    user_id = cast(int, dbuser.id)
+    # Один дешёвый индексный запрос на каждый рендер подписки — вне зависимости от
+    # флага сужения, закрепления могут быть выставлены и при выключенной фиче.
+    pins = crud.get_active_pins(db, user_id, datetime.now(UTC))
+
     if not bot_settings.get("sub_address_subset_enabled"):
-        return AddressContext.disabled()
+        return AddressContext(user_id=user_id, size=0, epoch=0, weights={}, enabled=False, pins=pins)
 
     size = int(bot_settings.get("sub_address_subset_size") or 0)
     if size <= 0:
-        return AddressContext.disabled()
+        return AddressContext(user_id=user_id, size=0, epoch=0, weights={}, enabled=False, pins=pins)
 
     period_days = max(1, int(bot_settings.get("sub_address_rotation_days") or 1))
-    user_id = cast(int, dbuser.id)
     offset = int(dbuser.address_rotation_offset or 0)
     today = day_index(datetime.now(UTC))
 
@@ -61,8 +75,6 @@ def build_address_context(
             user_id,
             snapshot_day,
         )
-
-    pins = crud.get_active_pins(db, user_id, datetime.now(UTC))
 
     return AddressContext(
         user_id=user_id,
