@@ -310,9 +310,12 @@ def revoke_subscription_device(
 @router.get("/{token}/info", response_model=SubscriptionUserResponse)
 def user_subscription_info(
     dbuser: UserResponse = Depends(get_validated_sub),
+    db: Session = Depends(get_db),
 ):
     """Retrieves detailed information about the user's subscription."""
-    return dbuser
+    data = SubscriptionUserResponse.model_validate(dbuser)
+    data.devices_used = crud.count_user_devices(db, cast(User, dbuser))
+    return data
 
 
 @router.get("/{token}/usage")
