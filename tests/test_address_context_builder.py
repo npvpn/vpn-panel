@@ -69,6 +69,7 @@ def test_revoked_or_expired_disables_regardless_of_flag(monkeypatch):
 
 def test_enabled_context_carries_weights_through(monkeypatch):
     monkeypatch.setattr(crud, "get_weight_snapshot", lambda *a, **k: {5: 300.0})
+    monkeypatch.setattr(crud, "get_active_pins", lambda *a, **k: {})
     ctx = build_address_context(None, _StubUser(id=1), is_revoked=False, is_expired=False, bot_settings=BOT_SETTINGS)
     assert ctx.enabled is True
     assert ctx.weights == {5: 300.0}
@@ -76,6 +77,7 @@ def test_enabled_context_carries_weights_through(monkeypatch):
 
 def test_warns_when_enabled_but_snapshot_empty(monkeypatch, caplog):
     monkeypatch.setattr(crud, "get_weight_snapshot", lambda *a, **k: {})
+    monkeypatch.setattr(crud, "get_active_pins", lambda *a, **k: {})
     with caplog.at_level(logging.WARNING, logger="app.subscription.address_context_builder"):
         build_address_context(None, _StubUser(id=7), is_revoked=False, is_expired=False, bot_settings=BOT_SETTINGS)
 
@@ -86,7 +88,15 @@ def test_warns_when_enabled_but_snapshot_empty(monkeypatch, caplog):
 
 def test_no_warning_when_snapshot_present(monkeypatch, caplog):
     monkeypatch.setattr(crud, "get_weight_snapshot", lambda *a, **k: {5: 100.0})
+    monkeypatch.setattr(crud, "get_active_pins", lambda *a, **k: {})
     with caplog.at_level(logging.WARNING, logger="app.subscription.address_context_builder"):
         build_address_context(None, _StubUser(id=7), is_revoked=False, is_expired=False, bot_settings=BOT_SETTINGS)
 
     assert caplog.records == []
+
+
+def test_pins_carry_through(monkeypatch):
+    monkeypatch.setattr(crud, "get_weight_snapshot", lambda *a, **k: {5: 300.0})
+    monkeypatch.setattr(crud, "get_active_pins", lambda *a, **k: {9: [1, 2]})
+    ctx = build_address_context(None, _StubUser(id=1), is_revoked=False, is_expired=False, bot_settings=BOT_SETTINGS)
+    assert ctx.pins == {9: [1, 2]}

@@ -56,6 +56,9 @@ def hosts(storage: dict):
 
             storage[inbound_tag] = [
                 {
+                    # NPVPN-2072: id хоста — сопоставить с UserNodePin.host_id при
+                    # закреплении нод в AddressContext.pick.
+                    "id": host.id,
                     "remark": host.remark,
                     "address": resolve_host_addresses(host),
                     # Привязанные ноды хоста: по ним определяется БС-признак и БС-блокировки

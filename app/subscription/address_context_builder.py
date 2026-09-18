@@ -62,10 +62,13 @@ def build_address_context(
             snapshot_day,
         )
 
+    pins = crud.get_active_pins(db, user_id, datetime.now(UTC))
+
     return AddressContext(
         user_id=user_id,
         size=size,
         epoch=epoch,
         weights=weights,
         enabled=True,
+        pins=pins,
     )

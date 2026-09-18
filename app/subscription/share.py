@@ -505,6 +505,7 @@ def process_inbounds_and_tags(
                         address_list,
                         host.get("node_ids") or [],
                         addresses_from_nodes=bool(host.get("addresses_from_nodes")),
+                        host_id=host.get("id"),
                     )
                 balanced = isinstance(conf, V2rayJsonConfig) and address_list and len(address_list) > 1
                 if address_list and not balanced:

@@ -39,6 +39,7 @@ from app.db.models import (
     System,
     User,
     UserDevice,
+    UserNodePin,
     UserTemplate,
     UserUsageResetLogs,
     master_inbounds_association,
@@ -2166,6 +2167,27 @@ def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:
         .all()
     )
     return {row.node_id: float(row.weight) for row in rows}
+
+
+def get_active_pins(db: Session, user_id: int, now: datetime) -> dict[int, list[int]]:
+    """Активные закрепления нод юзера: host_id -> node_ids (NPVPN-2072).
+
+    Одним запросом на весь рендер подписки (горячий путь), не по хосту.
+    Уникальности (user_id, host_id) на уровне БД нет намеренно — истёкшие пины
+    остаются как история, по одной паре их может накопиться много. Берём только
+    строки с expires_at > now и, если на пару (user_id, host_id) их несколько,
+    самую свежую по created_at.
+    """
+    rows = (
+        db.query(UserNodePin)
+        .filter(UserNodePin.user_id == user_id, UserNodePin.expires_at > now)
+        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
+        .all()
+    )
+    pins: dict[int, list[int]] = {}
+    for row in rows:
+        pins[cast(int, row.host_id)] = list(cast(list[int], row.node_ids))
+    return pins
 
 
 def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int, payload: list[dict]) -> None:

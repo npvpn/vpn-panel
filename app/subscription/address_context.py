@@ -7,7 +7,7 @@ address_context_builder.py.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from statistics import median
 
 from app.xray.address_policy import pick_keys
@@ -35,13 +35,21 @@ class AddressContext:
     epoch: int
     weights: Mapping[int, float]
     enabled: bool
+    pins: Mapping[int, Sequence[int]] = field(default_factory=dict)
 
     @classmethod
     def disabled(cls) -> AddressContext:
         """Контекст без сужения (флаг выключен, revoked/expired-подписка)."""
         return cls(user_id=0, size=0, epoch=0, weights={}, enabled=False)
 
-    def pick(self, addresses: Sequence[str], node_ids: Sequence[int], *, addresses_from_nodes: bool) -> list[str]:
+    def pick(
+        self,
+        addresses: Sequence[str],
+        node_ids: Sequence[int],
+        *,
+        addresses_from_nodes: bool,
+        host_id: int | None = None,
+    ) -> list[str]:
         """Подмножество адресов хоста. Порядок исходного списка сохраняется.
 
         `addresses_from_nodes` обязан прийти снаружи (из того же места, что и
@@ -50,7 +58,21 @@ class AddressContext:
         статическим host.address адреса заданы строкой, а нод за ним может стоять
         сколько угодно — длины могут случайно совпасть, но соответствие «адрес ↔
         нода» при этом отсутствует, и взвешивание по чужим нодам было бы шумом.
+
+        Закрепление (`pins`) заменяет автовыбор целиком для своего хоста, но
+        применяется как ПЕРЕСЕЧЕНИЕ с фактическими node_ids хоста, а не как
+        буквальный приказ: закреплённую ноду могли отвязать от хоста или удалить,
+        и слепое исполнение пина оставило бы юзера без адресов вовсе — а этот
+        инвариант жёстче любого закрепления. Пустое пересечение равносильно
+        отсутствию пина (обычный автовыбор). Для легаси-хоста со статическим
+        адресом (addresses_from_nodes=False) закреплять нечего — соответствия
+        «адрес ↔ нода» там нет по построению.
         """
+        if addresses_from_nodes and host_id is not None and host_id in self.pins:
+            pinned = set(self.pins[host_id]) & set(node_ids)
+            if pinned:
+                return [addr for addr, node_id in zip(addresses, node_ids) if node_id in pinned]
+
         if not self.enabled or self.size <= 0 or len(addresses) <= self.size:
             return list(addresses)
 

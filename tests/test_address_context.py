@@ -112,6 +112,31 @@ def test_node_without_limit_competes_on_equal_terms():
     assert "4.4.4.4" in seen
 
 
+def test_pin_replaces_computed_subset():
+    """Закрепление заменяет автовыбор целиком — что задано, то и выдаётся."""
+    ctx = AddressContext(user_id=42, size=2, epoch=0, weights={}, enabled=True, pins={7: [33]})
+    picked = ctx.pick(ADDRESSES, NODE_IDS, addresses_from_nodes=True, host_id=7)
+    assert picked == ["3.3.3.3"]
+
+
+def test_pin_applies_only_to_its_host():
+    ctx = AddressContext(user_id=42, size=2, epoch=0, weights={}, enabled=True, pins={7: [33]})
+    assert len(ctx.pick(ADDRESSES, NODE_IDS, addresses_from_nodes=True, host_id=99)) == 2
+
+
+def test_pin_to_missing_node_falls_back_to_autochoice():
+    """Закреплённой ноды больше нет у хоста — юзер не остаётся без адресов."""
+    ctx = AddressContext(user_id=42, size=2, epoch=0, weights={}, enabled=True, pins={7: [777]})
+    assert len(ctx.pick(ADDRESSES, NODE_IDS, addresses_from_nodes=True, host_id=7)) == 2
+
+
+def test_pin_ignored_for_static_address_host():
+    """У легаси-хоста соответствия «адрес ↔ нода» нет, закреплять нечего."""
+    ctx = AddressContext(user_id=42, size=2, epoch=0, weights={}, enabled=True, pins={7: [33]})
+    picked = ctx.pick(ADDRESSES, NODE_IDS, addresses_from_nodes=False, host_id=7)
+    assert len(picked) == 2
+
+
 def test_managed_payload_carries_subset_settings_through():
     """Синк админка бота -> панель: ключ не должен молча отбрасываться allowlist'ом."""
     from app.models.managed import ManagedBotSettingsPayload
