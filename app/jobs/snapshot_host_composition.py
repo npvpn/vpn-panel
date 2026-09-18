@@ -30,10 +30,13 @@ from app import logger, scheduler
 from app.db import GetDB, crud
 from app.db.models import ProxyHost
 from app.subscription.address_context_builder import day_index
+from app.xray.address_policy import ARCHIVE_RETENTION_DAYS
 from app.xray.host_addresses import resolve_host_addresses, resolve_host_node_ids
 from config import JOB_SNAPSHOT_HOST_COMPOSITION_INTERVAL
 
-RETENTION_DAYS = 90
+# Тот же горизонт, что и у остального архива журнала NPVPN-2072 (M4) — единый
+# источник в app/xray/address_policy.py, не отдельное число.
+RETENTION_DAYS = ARCHIVE_RETENTION_DAYS
 
 
 def _host_payload(host: ProxyHost) -> list[dict]:
@@ -41,7 +44,7 @@ def _host_payload(host: ProxyHost) -> list[dict]:
 
     Когда адреса приходят от нод (host.address пуст), resolve_host_addresses и
     resolve_host_node_ids построены на одном и том же множестве нод в одном и том
-    же порядке (см. host_addresses._visible_nodes) — zip корректно спаривает их.
+    же порядке (см. host_addresses.visible_nodes) — zip корректно спаривает их.
 
     Когда адрес статический (host.address задан, обычно маскировка под домен),
     соответствия "адрес <-> нода" нет по построению: одна строка адреса может

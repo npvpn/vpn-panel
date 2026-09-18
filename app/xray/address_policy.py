@@ -93,3 +93,28 @@ def epoch_start_day(user_id: int, day_index: int, period_days: int) -> int:
     period = max(1, period_days)
     smear = _smear(user_id, period)
     return (day_index + smear) // period * period - smear
+
+
+# Единственный источник горизонта архива журнала NPVPN-2072 (M4): дальше этого
+# числа дней назад восстановление всё равно невозможно, поэтому все горизонты,
+# завязанные на "сколько журнал живёт", обязаны совпадать с ним.
+#
+# Используется В ПАНЕЛИ (тот же источник, не копия числа):
+# - app/jobs/snapshot_host_composition.py: RETENTION_DAYS — сколько хранить
+#   HostCompositionSnapshot;
+# - app/services/address_history.py: MAX_PIN_TTL_DAYS — пин с TTL дальше этого
+#   горизонта пережил бы собственную историю;
+# - app/dashboard/src/components/AddressPinModal.tsx: MAX_TTL_DAYS — тот же
+#   потолок в форме создания пина, но уже НЕ тот же источник (TS не может
+#   импортировать Python-константу), поэтому число там продублировано вручную
+#   и должно меняться синхронно с этим.
+#
+# НЕ используется напрямую в этом же значении ботом: ADDRESS_SNAPSHOT_RETENTION_DAYS
+# (src/conf/env.dist, telegram_bot) хранит retention NodeWeightSnapshot — другой
+# таблицы, в другом репозитории/процессе, который панель не может импортировать.
+# Дефолт там тоже 90 и должен браться отсюда СМЫСЛОВО (если меняете 90 здесь —
+# обновите дефолт и там), но технически это два независимых числа: разъезд не
+# ломает честность журнала (reconstruct и так помечает день "unknown" при
+# отсутствии нужного снимка), а только сужает окно, за которое auto-источник
+# восстановим.
+ARCHIVE_RETENTION_DAYS = 90

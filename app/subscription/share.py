@@ -14,6 +14,7 @@ from app import xray
 from app.subscription.address_context import AddressContext
 from app.subscription.bs_context import ZERO_STUB, BsContext, StubEndpoint
 from app.utils.system import get_public_ip, get_public_ipv6, readable_size
+from app.xray.host_addresses import host_allowed_for_bot
 
 from . import *
 
@@ -471,7 +472,7 @@ def process_inbounds_and_tags(
             format_variables.update({"TRANSPORT": inbound["network"]})
             for host in xray.hosts.get(tag, []):
                 allowed_bot_usernames = host.get("bot_usernames") or []
-                if allowed_bot_usernames and user_bot_username and user_bot_username not in allowed_bot_usernames:
+                if not host_allowed_for_bot(allowed_bot_usernames, user_bot_username):
                     continue
 
                 host_inbound = inbound.copy()
