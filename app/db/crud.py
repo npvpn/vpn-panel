@@ -7,6 +7,8 @@ from enum import Enum
 from typing import Any, cast
 
 from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session, joinedload
 from sqlalchemy.sql.functions import coalesce
@@ -20,6 +22,7 @@ from app.db.models import (
     BotSettings,
     CascadeRoute,
     GlobalSetting,
+    HostCompositionSnapshot,
     ManagedSetting,
     NextPlan,
     Node,
@@ -2163,6 +2166,58 @@ def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:
         .all()
     )
     return {row.node_id: float(row.weight) for row in rows}
+
+
+def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int, payload: list[dict]) -> None:
+    """Идемпотентная запись состава хоста на сутки (NPVPN-2072).
+
+    Первая запись дня выигрывает: при конфликте (epoch_index, host_id) строка НЕ
+    перезаписывается — состав на эти сутки уже зафиксирован, переписать его задним
+    числом значит соврать в истории расследований. Джоба ходит раз в час именно
+    ради этого — идемпотентность делает лишние проходы бесплатными.
+
+    Эквивалент "ON DUPLICATE KEY UPDATE epoch_index = epoch_index" из бота
+    (scripts/prometheus_vpn_nodes_sd.py), но через SQLAlchemy Core, диалект-зависимо:
+    панель крутится на MySQL в проде и на SQLite в тестах, а не на Postgres, как бот.
+    """
+    values = {"epoch_index": epoch_index, "host_id": host_id, "payload": payload}
+    stmt: Any
+    if db.bind is not None and db.bind.dialect.name == "mysql":
+        mysql_stmt = mysql_insert(HostCompositionSnapshot).values(**values)
+        # Условный UPDATE, который ничего не меняет — тот же трюк, что в боте.
+        stmt = mysql_stmt.on_duplicate_key_update(epoch_index=mysql_stmt.inserted.epoch_index)
+    else:
+        sqlite_stmt = sqlite_insert(HostCompositionSnapshot).values(**values)
+        stmt = sqlite_stmt.on_conflict_do_nothing(index_elements=["epoch_index", "host_id"])
+    db.execute(stmt)
+    db.commit()
+
+
+def get_host_composition(db: Session, epoch_index: int) -> dict[int, list[dict]]:
+    """Состав всех хостов на указанные сутки: host_id -> [{"node_id", "address"}, ...].
+
+    В отличие от get_weight_snapshot — точный снимок за epoch_index, без подбора
+    ближайшего более раннего: состав нужен для расследования "что видел юзер в дату
+    X", подмена суток чужим снимком там была бы не деградацией, а искажением ответа
+    (NPVPN-2072).
+    """
+    rows = (
+        db.query(HostCompositionSnapshot.host_id, HostCompositionSnapshot.payload)
+        .filter(HostCompositionSnapshot.epoch_index == epoch_index)
+        .all()
+    )
+    return {row.host_id: row.payload for row in rows}
+
+
+def prune_host_composition_snapshots(db: Session, epoch_index: int, retention_days: int) -> None:
+    """Чистит снимки состава старше архивного горизонта расследований (NPVPN-2072).
+
+    Тот же горизонт (90 дней), что применяется к снимкам весов на стороне бота.
+    """
+    db.query(HostCompositionSnapshot).filter(HostCompositionSnapshot.epoch_index < epoch_index - retention_days).delete(
+        synchronize_session=False
+    )
+    db.commit()
 
 
 def create_notification_reminder(

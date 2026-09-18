@@ -256,6 +256,10 @@ JOB_REVIEW_BS_NODES_INTERVAL = config("JOB_REVIEW_BS_NODES_INTERVAL", cast=int, 
 JOB_SEND_NOTIFICATIONS_INTERVAL = config("JOB_SEND_NOTIFICATIONS_INTERVAL", cast=int, default=30)
 JOB_CLEANUP_NODE_USER_USAGE_INTERVAL = config("JOB_CLEANUP_NODE_USER_USAGE_INTERVAL", cast=int, default=3600)
 NODE_USER_USAGE_CLEANUP_BATCH_SIZE = config("NODE_USER_USAGE_CLEANUP_BATCH_SIZE", cast=int, default=50000)
+# Раз в час, а не раз в сутки: суточная джоба, пропущенная из-за рестарта/деплоя,
+# теряла бы день истории безвозвратно — запись снимка идемпотентна в пределах
+# суток, поэтому лишние проходы ничего не стоят (NPVPN-2072).
+JOB_SNAPSHOT_HOST_COMPOSITION_INTERVAL = config("JOB_SNAPSHOT_HOST_COMPOSITION_INTERVAL", cast=int, default=3600)
 
 # review job: пороги для диагностического лога [review][on_hold][slow] (секунды)
 SLOW_USER_TOTAL_THRESHOLD = config("SLOW_USER_TOTAL_THRESHOLD", cast=float, default=1.0)
