@@ -91,6 +91,10 @@ type PinnableHost = {
 };
 
 const HISTORY_DAYS = 14;
+// Тот же горизонт, что MAX_PIN_TTL_DAYS (app/services/address_history.py) и
+// ARCHIVE_RETENTION_DAYS (app/xray/address_policy.py) — единственный источник
+// там, но TS не может импортировать Python-константу (M4, NPVPN-2072), так
+// что число здесь продублировано вручную и должно меняться синхронно с ними.
 const MAX_TTL_DAYS = 90;
 const DEFAULT_TTL_DAYS = 7;
 
@@ -482,7 +486,13 @@ export const AddressPinModal: FC = () => {
                             </Text>
                             <Text fontSize="xs" color="gray.500">
                               {t("addressPins.expiresAt")}:{" "}
-                              {dayjs(pin.expires_at).format("YYYY-MM-DD HH:mm")}
+                              {/* M2, NPVPN-2072: PinResponse.expires_at приходит naive UTC
+                                  (app/services/address_history.py), а голый dayjs(...)
+                                  трактует такую строку как ЛОКАЛЬНОЕ время — известные
+                                  грабли проекта с таймзонами. dayjs.utc(...).local()
+                                  явно парсит как UTC и уже потом конвертирует в часовой
+                                  пояс браузера. */}
+                              {dayjs.utc(pin.expires_at).local().format("YYYY-MM-DD HH:mm")}
                             </Text>
                             <Text fontSize="xs" color="gray.500">
                               {t("addressPins.createdBy")}: {pin.created_by}
@@ -558,9 +568,18 @@ export const AddressPinModal: FC = () => {
                                     maxW="45%"
                                     noOfLines={1}
                                   >
-                                    {host.node_ids.length
-                                      ? host.node_ids.join(", ")
-                                      : "-"}
+                                    {/* M1, NPVPN-2072: раньше здесь печатался ТОЛЬКО
+                                        node_ids. У легаси-хоста со статическим адресом
+                                        node_ids всегда пуст (соответствия "адрес <-> нода"
+                                        там нет по построению), и строка читалась как
+                                        "адресов не было", хотя эндпоинт отдаёт их в
+                                        addresses. Показываем адреса — они информативнее
+                                        для саппорта и заполнены в обеих ветках. */}
+                                    {host.addresses.length
+                                      ? host.addresses.join(", ")
+                                      : host.node_ids.length
+                                        ? host.node_ids.join(", ")
+                                        : "-"}
                                   </Text>
                                 </>
                               ) : (
