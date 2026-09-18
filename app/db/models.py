@@ -675,6 +675,50 @@ class NodeWeightSnapshot(Base):
     node = relationship("Node", back_populates="weight_snapshots", passive_deletes=True)
 
 
+class HostCompositionSnapshot(Base):
+    """Суточный снимок состава хоста: какие ноды и адреса он в этот день представлял.
+
+    Нужен, чтобы восстановить выдачу задним числом. Снимок, а не журнал событий:
+    состав меняется четырьмя разными путями (привязка нод, статус ноды, её адрес,
+    статическая строка host.address), и инструментировать каждый — четыре способа
+    забыть один из них (NPVPN-2072).
+    """
+
+    __tablename__ = "host_composition_snapshots"
+    __table_args__ = (UniqueConstraint("epoch_index", "host_id", name="uq_host_composition_snapshots"),)
+
+    id = Column(Integer, primary_key=True)
+    epoch_index = Column(Integer, nullable=False, index=True)
+    host_id = Column(Integer, ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False, index=True)
+    # [{"node_id": int, "address": str}, ...] в порядке выдачи.
+    payload = Column(JSON, nullable=False)
+    host = relationship("ProxyHost", passive_deletes=True)
+
+
+class UserNodePin(Base):
+    """Закрепление конкретных нод за юзером в пределах одного хоста (NPVPN-2072).
+
+    Заменяет автовыбор целиком: для этого хоста юзер получает ровно заданные ноды.
+    Срок годности обязателен — пин ставят на время разбирательства и забывают снять,
+    а через год никто не вспомнит, почему юзер сидит на странных нодах.
+
+    Истёкшие строки не удаляются: они и есть история закреплений для журнала.
+    """
+
+    __tablename__ = "user_node_pins"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    host_id = Column(Integer, ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_ids = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    created_by = Column(String(64), nullable=False)
+    note = Column(String(500), nullable=True)
+    user = relationship("User", passive_deletes=True)
+    host = relationship("ProxyHost", passive_deletes=True)
+
+
 class NodeUsage(Base):
     __tablename__ = "node_usages"
     __table_args__ = (UniqueConstraint("created_at", "node_id"),)
