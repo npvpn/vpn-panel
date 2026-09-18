@@ -26,9 +26,20 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
+from app import xray  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.crud import write_host_composition_snapshot  # noqa: E402
-from app.db.models import Bot, Node, NodeWeightSnapshot, ProxyHost, ProxyInbound, User, UserNodePin  # noqa: E402
+from app.db.models import (  # noqa: E402
+    Bot,
+    Node,
+    NodeWeightSnapshot,
+    Proxy,
+    ProxyHost,
+    ProxyInbound,
+    User,
+    UserNodePin,
+)
+from app.models.proxy import ProxyTypes  # noqa: E402
 from app.services.address_history import day_start_at, list_pinnable_hosts, reconstruct  # noqa: E402
 from app.subscription.address_context import weighted_candidates  # noqa: E402
 from app.xray.address_policy import pick_keys  # noqa: E402
@@ -91,11 +102,44 @@ def _make_bot(db, username: str) -> Bot:
     return bot
 
 
-def test_reconstructs_auto_assignment_from_snapshots(db):
+class _FakeXrayConfig:
+    """Минимальная замена app.xray.config для песочницы (tests/conftest.py
+    ставит app.xray заглушкой БЕЗ .config — реальный app/xray/__init__.py в
+    ней не выполняется)."""
+
+    def __init__(self, inbounds_by_protocol: dict) -> None:
+        self.inbounds_by_protocol = inbounds_by_protocol
+
+
+def _grant_inbound_access(
+    monkeypatch, db, user: User, hosts: list[ProxyHost], *, proxy_type: ProxyTypes = ProxyTypes.VLESS
+) -> None:
+    """Даёт юзеру доступ к инбаундам перечисленных хостов (C2, NPVPN-2072).
+
+    `User.inbounds` (app/db/models.py) читает теги из `xray.config.inbounds_by_protocol`
+    — живого xray_config.json, а не из ProxyInbound в БД. В песочнице такого
+    конфига нет вовсе (tests/conftest.py стабит app.xray пустым пакетом), поэтому
+    заводим Proxy нужного протокола и монкейпатчим САМ АТРИБУТ `xray.config`
+    (не его поле — он изначально отсутствует), как будто теги перечисленных
+    хостов зарегистрированы в живом конфиге. Без этого reconstruct отфильтровал
+    бы ВСЕ хосты C2-фильтром по инбаундам — тест ничего не проверил бы про сам
+    фильтр."""
+    db.add(Proxy(user_id=user.id, type=proxy_type, settings={}))
+    db.commit()
+    monkeypatch.setattr(
+        xray,
+        "config",
+        _FakeXrayConfig({proxy_type: [{"tag": host.inbound_tag} for host in hosts]}),
+        raising=False,
+    )
+
+
+def test_reconstructs_auto_assignment_from_snapshots(db, monkeypatch):
     """Без пина ответ собирается хешем по снимкам весов и состава за те сутки."""
-    _make_user(db)
+    user = _make_user(db)
     nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
     host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
 
     payload = [{"node_id": n.id, "address": n.address} for n in nodes]
     write_host_composition_snapshot(db, DAY, host.id, payload)
@@ -124,11 +168,12 @@ def test_reconstructs_auto_assignment_from_snapshots(db):
     assert len(assignment.addresses) == 2
 
 
-def test_pin_wins_over_recomputation(db):
+def test_pin_wins_over_recomputation(db, monkeypatch):
     """Пин, активный на ту дату, и есть ответ — пересчёт не применяется."""
-    _make_user(db)
+    user = _make_user(db)
     nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
     host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
 
     payload = [{"node_id": n.id, "address": n.address} for n in nodes]
     write_host_composition_snapshot(db, DAY, host.id, payload)
@@ -159,11 +204,12 @@ def test_pin_wins_over_recomputation(db):
     assert assignment.addresses == [pinned_node.address]
 
 
-def test_expired_pin_does_not_affect_later_dates(db):
+def test_expired_pin_does_not_affect_later_dates(db, monkeypatch):
     """Истёкший пин виден в своей дате и не влияет на последующие."""
-    _make_user(db)
+    user = _make_user(db)
     nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 3)]
     host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
 
     payload = [{"node_id": n.id, "address": n.address} for n in nodes]
     # Состав неизменен оба дня.
@@ -195,10 +241,10 @@ def test_expired_pin_does_not_affect_later_dates(db):
     assert set(on_later_day[0].node_ids) == {n.id for n in nodes}
 
 
-def test_missing_snapshot_reports_unknown_rather_than_guessing(db):
+def test_missing_snapshot_reports_unknown_rather_than_guessing(db, monkeypatch):
     """Снимка за дату нет — честно сообщаем, что восстановить нельзя, а не молчим
     пустым списком и не подсовываем правдоподобную догадку."""
-    _make_user(db)
+    user = _make_user(db)
     nodes_a = [_make_node(db, f"a{i}", f"9.9.9.{i}") for i in range(1, 5)]
     host_missing_composition = _make_host(db, nodes=nodes_a)
     # Намеренно НЕ пишем снимок состава для этого хоста на DAY.
@@ -209,6 +255,7 @@ def test_missing_snapshot_reports_unknown_rather_than_guessing(db):
         db, DAY, host_missing_weights.id, [{"node_id": n.id, "address": n.address} for n in nodes_b]
     )
     db.commit()
+    _grant_inbound_access(monkeypatch, db, user, [host_missing_composition, host_missing_weights])
     # Состав есть, но снимка весов на DAY нет, а 4 адреса > size(2) — реальное
     # сужение было бы, угадывать веса нельзя.
 
@@ -240,7 +287,7 @@ def test_day_start_at_roundtrips_with_day_index():
     assert day_index(start + timedelta(days=1)) == day + 1
 
 
-def test_hides_hosts_restricted_to_other_bots(db):
+def test_hides_hosts_restricted_to_other_bots(db, monkeypatch):
     """История не должна показывать юзеру локации, которые ему в принципе не
     могли достаться: тот же фильтр по bot_usernames, что и рендер подписки
     (app/subscription/share.py). Хост, привязанный только к чужому боту,
@@ -248,7 +295,7 @@ def test_hides_hosts_restricted_to_other_bots(db):
     остаться."""
     bot_a = _make_bot(db, "bot_a")
     bot_b = _make_bot(db, "bot_b")
-    _make_user(db, bot=bot_a)
+    user = _make_user(db, bot=bot_a)
 
     nodes_restricted = [_make_node(db, f"r{i}", f"7.7.7.{i}") for i in range(1, 3)]
     host_for_bot_b = _make_host(db, nodes=nodes_restricted, remark="only-bot-b", bots=[bot_b])
@@ -259,6 +306,7 @@ def test_hides_hosts_restricted_to_other_bots(db):
     for host, nodes in ((host_for_bot_b, nodes_restricted), (host_unrestricted, nodes_open)):
         write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
     db.commit()
+    _grant_inbound_access(monkeypatch, db, user, [host_for_bot_b, host_unrestricted])
 
     result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
     host_ids = {a.host_id for a in result}
@@ -267,16 +315,193 @@ def test_hides_hosts_restricted_to_other_bots(db):
     assert host_for_bot_b.id not in host_ids
 
 
-def test_disabled_flag_shows_full_composition_not_a_guessed_subset(db):
+def test_hides_hosts_outside_users_inbounds(db, monkeypatch):
+    """C2 (Critical, финальное ревью, NPVPN-2072): триальный/неоплативший юзер
+    с урезанными excluded_inbounds не должен увидеть в истории локацию
+    исключённого тега — тот же источник, что и рендер подписки читает
+    (User.inbounds, app/db/models.py, учитывает Proxy.excluded_inbounds)."""
+    user = _make_user(db)
+    nodes_visible = [_make_node(db, f"v{i}", f"5.5.5.{i}") for i in range(1, 3)]
+    host_visible = _make_host(db, nodes=nodes_visible, remark="visible")
+    nodes_excluded = [_make_node(db, f"e{i}", f"4.4.4.{i}") for i in range(1, 3)]
+    host_excluded = _make_host(db, nodes=nodes_excluded, remark="excluded")
+
+    for host, nodes in ((host_visible, nodes_visible), (host_excluded, nodes_excluded)):
+        write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
+    db.commit()
+
+    # Оба тега зарегистрированы в xray.config (т.е. у юзера в принципе есть
+    # прокси этого протокола), но host_excluded попадает в excluded_inbounds
+    # прокси юзера — именно так живая выдача режет доступ неоплатившим.
+    _grant_inbound_access(monkeypatch, db, user, [host_visible, host_excluded])
+    proxy = db.query(Proxy).filter(Proxy.user_id == user.id).one()
+    excluded_inbound = db.query(ProxyInbound).filter(ProxyInbound.tag == host_excluded.inbound_tag).one()
+    proxy.excluded_inbounds = [excluded_inbound]
+    db.commit()
+
+    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    host_ids = {a.host_id for a in result}
+
+    assert host_visible.id in host_ids
+    assert host_excluded.id not in host_ids
+
+
+def test_hides_hosts_for_protocol_without_any_proxy(db, monkeypatch):
+    """C2: тег зарегистрирован в xray.config, но у юзера ВООБЩЕ нет прокси
+    этого протокола (не создан, а не просто исключён) — живая выдача такой
+    хост тоже не рендерит (`for protocol, tags in inbounds.items(): settings =
+    proxies.get(protocol); if not settings: continue`, app/subscription/share.py)."""
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"2.2.2.{i}") for i in range(1, 3)]
+    host = _make_host(db, nodes=nodes, remark="no-proxy-for-protocol")
+    write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
+    db.commit()
+
+    # Тег присутствует в конфиге, но Proxy для юзера НЕ создаём вовсе.
+    monkeypatch.setattr(xray, "config", _FakeXrayConfig({ProxyTypes.VLESS: [{"tag": host.inbound_tag}]}), raising=False)
+
+    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+
+    assert result == []
+
+
+def test_disabled_host_hidden_from_history(db, monkeypatch):
+    """M3 (финальное ревью, NPVPN-2072): reconstruct фильтрует is_disabled так
+    же, как джоба снимков (snapshot_host_composition.py: `.filter(ProxyHost.
+    is_disabled.isnot(True))`) — иначе выключенный хост со старым снимком (со
+    времён до выключения) показался бы как нечто, что юзер мог бы получить
+    СЕГОДНЯШНИМ запросом."""
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"3.3.3.{i}") for i in range(1, 3)]
+    host = _make_host(db, nodes=nodes, remark="disabled-host")
+    write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
+    db.commit()
+    _grant_inbound_access(monkeypatch, db, user, [host])
+
+    host.is_disabled = True
+    db.commit()
+
+    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+
+    assert result == []
+
+
+def test_rotation_after_day_makes_auto_epoch_unknown(db, monkeypatch):
+    """C1 (Critical, финальное ревью, NPVPN-2072): кнопка «Перемешать» не
+    должна задним числом фальсифицировать историю. Ротация (address_rotation_
+    offset_at) случилась ПОСЛЕ day_index — offset, действовавший В day_index,
+    неизвестен (это могло быть более раннее значение, а известна только
+    ПОСЛЕДНЯЯ ротация), поэтому epoch для pick_keys не восстановим — весь
+    auto-ответ уходит в "unknown", а не пересчитывается СЕГОДНЯШНИМ offset."""
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
+
+    payload = [{"node_id": n.id, "address": n.address} for n in nodes]
+    write_host_composition_snapshot(db, DAY, host.id, payload)
+    for node, weight in zip(nodes, (10.0, 20.0, 5.0, 1.0), strict=True):
+        db.add(NodeWeightSnapshot(epoch_index=DAY, node_id=node.id, weight=weight))
+    db.commit()
+
+    user.address_rotation_offset = 1
+    user.address_rotation_offset_at = day_start_at(DAY + 1).replace(tzinfo=None)
+    db.commit()
+
+    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+
+    assert len(result) == 1
+    assignment = result[0]
+    assert assignment.source == "unknown"
+    assert assignment.restorable is False
+    assert assignment.node_ids == []
+    assert assignment.addresses == []
+
+
+def test_rotation_before_day_keeps_auto_restorable(db, monkeypatch):
+    """C1: ротация ДО этих суток — offset уже был текущим значением весь
+    day_index, эпоха восстановима как обычно (с ЭТИМ offset, не с нулевым)."""
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
+
+    payload = [{"node_id": n.id, "address": n.address} for n in nodes]
+    write_host_composition_snapshot(db, DAY, host.id, payload)
+    weights = {nodes[0].id: 10.0, nodes[1].id: 20.0, nodes[2].id: 5.0, nodes[3].id: 1.0}
+    for node_id, weight in weights.items():
+        db.add(NodeWeightSnapshot(epoch_index=DAY, node_id=node_id, weight=weight))
+    db.commit()
+
+    user.address_rotation_offset = 1
+    user.address_rotation_offset_at = day_start_at(DAY - 1).replace(tzinfo=None)
+    db.commit()
+
+    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+
+    assert len(result) == 1
+    assignment = result[0]
+    assert assignment.source == "auto"
+    assert assignment.restorable is True
+
+    # period_days=1 => _smear==0 => epoch_for(..., offset=1) == DAY + 1: сверяем
+    # с реальным pick_keys на ЭТОЙ эпохе (не DAY, offset=0), чтобы доказать, что
+    # offset действительно учтён, а не просто проигнорирован.
+    node_ids = [n.id for n in nodes]
+    candidates = list(weighted_candidates(weights, node_ids).items())
+    expected_nodes = set(pick_keys(USER_ID, candidates, 2, DAY + 1))
+    assert set(assignment.node_ids) == expected_nodes
+
+
+def test_pin_restorable_even_when_rotation_gates_auto(db, monkeypatch):
+    """C1: ветка пина не зависит от offset/epoch вовсе — пин обязан остаться
+    restorable=True даже в сутки, для которых auto-ответ того же хоста ушёл
+    бы в unknown из-за C1-гейта."""
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
+
+    payload = [{"node_id": n.id, "address": n.address} for n in nodes]
+    write_host_composition_snapshot(db, DAY, host.id, payload)
+
+    pinned_node = nodes[0]
+    db.add(
+        UserNodePin(
+            user_id=USER_ID,
+            host_id=host.id,
+            node_ids=[pinned_node.id],
+            created_at=day_start_at(DAY),
+            expires_at=day_start_at(DAY + 5),
+            created_by="support",
+        )
+    )
+    db.commit()
+
+    user.address_rotation_offset = 1
+    user.address_rotation_offset_at = day_start_at(DAY + 1).replace(tzinfo=None)
+    db.commit()
+
+    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+
+    assert len(result) == 1
+    assignment = result[0]
+    assert assignment.source == "pin"
+    assert assignment.restorable is True
+    assert assignment.node_ids == [pinned_node.id]
+
+
+def test_disabled_flag_shows_full_composition_not_a_guessed_subset(db, monkeypatch):
     """Критический регресс: sub_address_subset_enabled=False — юзеру шёл ПОЛНЫЙ
     состав хоста (см. build_address_context: size обнуляется независимо от
     sub_address_subset_size). Дефолт бота — enabled=False, size=2 (см.
     app/models/bot.py), то есть это состояние ЛЮБОГО бота, который фичу не
     включал. История обязана показать все адреса, а не выдумать сужение до
     size=2, которого в реальности не было."""
-    _make_user(db)
+    user = _make_user(db)
     nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
     host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
 
     payload = [{"node_id": n.id, "address": n.address} for n in nodes]
     write_host_composition_snapshot(db, DAY, host.id, payload)
@@ -295,13 +520,14 @@ def test_disabled_flag_shows_full_composition_not_a_guessed_subset(db):
     assert set(assignment.addresses) == {n.address for n in nodes}
 
 
-def test_pin_applies_even_when_subset_flag_disabled(db):
+def test_pin_applies_even_when_subset_flag_disabled(db, monkeypatch):
     """Пины не зависят от sub_address_subset_enabled — то же решение, что уже
     реализовано в build_address_context (закрепление — административное
     действие саппорта для отладки именно там, где фича ещё выключена)."""
-    _make_user(db)
+    user = _make_user(db)
     nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
     host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
 
     payload = [{"node_id": n.id, "address": n.address} for n in nodes]
     write_host_composition_snapshot(db, DAY, host.id, payload)
@@ -389,3 +615,24 @@ def test_pinnable_hosts_returns_full_node_set_not_a_subset(db):
     assert result[0].host_id == host.id
     assert {n.node_id for n in result[0].nodes} == {n.id for n in nodes}
     assert {n.name for n in result[0].nodes} == {n.name for n in nodes}
+
+
+def test_pinnable_hosts_excludes_disabled_nodes(db):
+    """I2 (финальное ревью, NPVPN-2072): форма закрепления не должна предлагать
+    disabled-ноду — в живую выдачу такая нода не попадает (_visible_nodes,
+    app/xray/host_addresses.py), пин на неё создался бы, прошёл валидацию и
+    молча не работал бы (AddressContext.pick пересекает пин с фактическим
+    составом, где disabled-ноды нет — пересечение пустое)."""
+    from app.models.node import NodeStatus
+
+    user = _make_user(db)
+    live_node = _make_node(db, "live", "4.4.4.1")
+    disabled_node = _make_node(db, "disabled", "4.4.4.2")
+    disabled_node.status = NodeStatus.disabled
+    db.commit()
+    host = _make_host(db, nodes=[live_node, disabled_node], remark="mixed")
+
+    result = list_pinnable_hosts(db, user)
+
+    assert len(result) == 1
+    assert {n.node_id for n in result[0].nodes} == {live_node.id}

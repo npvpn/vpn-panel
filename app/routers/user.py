@@ -52,6 +52,7 @@ from app.subscription.address_context_builder import _EPOCH_ORIGIN, day_index
 from app.subscription.bot_settings import resolve_bot_settings
 from app.utils import report, responses
 from app.utils.request_context import request_id_var
+from app.xray.host_addresses import resolve_host_node_ids
 from config import SYNC_INBOUNDS_DB_CHUNK_SIZE, SYNC_INBOUNDS_MAX_CONCURRENCY
 
 router = APIRouter(tags=["User"], prefix="/api", responses={401: responses._401})
@@ -509,7 +510,14 @@ def create_user_pin_endpoint(
         # по построению (см. AddressContext.pick), закреплять там нечего.
         raise HTTPException(status_code=400, detail="Host has a static address, nothing to pin by node")
 
-    host_node_ids = {node.id for node in host.nodes}
+    # resolve_host_node_ids, не host.nodes целиком (I2, NPVPN-2072): в выдачу
+    # идут только _visible_nodes хоста (app/xray/host_addresses.py) — disabled
+    # ноды туда не попадают. Пин на disabled-ноду раньше проходил валидацию,
+    # отдавал 200 и молча не работал (AddressContext.pick пересекает пин с
+    # ФАКТИЧЕСКИМ составом, где disabled-ноды тоже нет — пересечение пустое,
+    # тихий откат к автовыбору). Теперь disabled-нода просто попадает в
+    # unknown_nodes и получает внятный 400 вместо тихого no-op.
+    host_node_ids = set(resolve_host_node_ids(host))
     unknown_nodes = [node_id for node_id in payload.node_ids if node_id not in host_node_ids]
     if unknown_nodes:
         raise HTTPException(status_code=400, detail=f"Nodes not attached to this host: {unknown_nodes}")
