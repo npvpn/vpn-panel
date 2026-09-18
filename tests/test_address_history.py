@@ -265,3 +265,67 @@ def test_hides_hosts_restricted_to_other_bots(db):
 
     assert host_unrestricted.id in host_ids
     assert host_for_bot_b.id not in host_ids
+
+
+def test_disabled_flag_shows_full_composition_not_a_guessed_subset(db):
+    """Критический регресс: sub_address_subset_enabled=False — юзеру шёл ПОЛНЫЙ
+    состав хоста (см. build_address_context: size обнуляется независимо от
+    sub_address_subset_size). Дефолт бота — enabled=False, size=2 (см.
+    app/models/bot.py), то есть это состояние ЛЮБОГО бота, который фичу не
+    включал. История обязана показать все адреса, а не выдумать сужение до
+    size=2, которого в реальности не было."""
+    _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    host = _make_host(db, nodes=nodes)
+
+    payload = [{"node_id": n.id, "address": n.address} for n in nodes]
+    write_host_composition_snapshot(db, DAY, host.id, payload)
+    db.commit()
+    # Намеренно НЕТ снимка весов — при выключенном флаге они и не должны
+    # понадобиться: сужения нет, значит и весов не спрашиваем.
+
+    disabled_settings = {**BOT_SETTINGS, "sub_address_subset_enabled": False}
+    result = reconstruct(db, USER_ID, DAY, disabled_settings)
+
+    assert len(result) == 1
+    assignment = result[0]
+    assert assignment.source == "auto"
+    assert assignment.restorable is True
+    assert set(assignment.node_ids) == {n.id for n in nodes}
+    assert set(assignment.addresses) == {n.address for n in nodes}
+
+
+def test_pin_applies_even_when_subset_flag_disabled(db):
+    """Пины не зависят от sub_address_subset_enabled — то же решение, что уже
+    реализовано в build_address_context (закрепление — административное
+    действие саппорта для отладки именно там, где фича ещё выключена)."""
+    _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    host = _make_host(db, nodes=nodes)
+
+    payload = [{"node_id": n.id, "address": n.address} for n in nodes]
+    write_host_composition_snapshot(db, DAY, host.id, payload)
+    db.commit()
+
+    pinned_node = nodes[1]
+    db.add(
+        UserNodePin(
+            user_id=USER_ID,
+            host_id=host.id,
+            node_ids=[pinned_node.id],
+            created_at=day_start_at(DAY),
+            expires_at=day_start_at(DAY + 5),
+            created_by="support",
+        )
+    )
+    db.commit()
+
+    disabled_settings = {**BOT_SETTINGS, "sub_address_subset_enabled": False}
+    result = reconstruct(db, USER_ID, DAY, disabled_settings)
+
+    assert len(result) == 1
+    assignment = result[0]
+    assert assignment.source == "pin"
+    assert assignment.restorable is True
+    assert assignment.node_ids == [pinned_node.id]
+    assert assignment.addresses == [pinned_node.address]

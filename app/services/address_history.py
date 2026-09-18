@@ -93,15 +93,33 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
        с фактическим составом хоста за эти сутки (та же семантика пересечения,
        что в AddressContext.pick — закреплённая нода могла с тех пор отвязаться
        от хоста).
-    2. Иначе — вычисляем эпоху юзера на эти сутки (epoch_for с его
-       address_rotation_offset), берём снимок весов на начало этой эпохи и
-       прогоняем тот же pick_keys, что работает в живой выдаче — источник
-       "auto".
+    2. Иначе — если `sub_address_subset_enabled` включён, вычисляем эпоху
+       юзера на эти сутки (epoch_for с его address_rotation_offset), берём
+       снимок весов на начало этой эпохи и прогоняем тот же pick_keys, что
+       работает в живой выдаче — источник "auto". Если флаг ВЫКЛЮЧЕН —
+       сужения не было (см. build_address_context: при выключенном флаге
+       size обнуляется независимо от sub_address_subset_size), юзеру шёл
+       ПОЛНЫЙ состав хоста — источник "auto", но без урезания.
     3. Если снимка СОСТАВА хоста за эти сутки нет вовсе — восстановить нечего
        (мы даже не знаем, какие ноды/адреса стояли за хостом): "unknown".
        Если снимка ВЕСОВ за эти сутки нет, а сужение в этот день было бы
-       фактическим (адресов больше, чем размер подмножества) — тоже "unknown":
-       угадывать веса значило бы выдавать может-быть-правду за факт.
+       фактическим (флаг включён И адресов больше размера подмножества) —
+       тоже "unknown": угадывать веса значило бы выдавать может-быть-правду
+       за факт.
+
+    Флаг `sub_address_subset_enabled` гасит ТОЛЬКО автовыбор. Пины проверяются
+    ДО флага и от него не зависят вовсе — это то же решение, что уже
+    реализовано в build_address_context: закрепление — явное административное
+    действие саппорта для отладки именно там, где фича сужения ещё не
+    включена, и выключенный флаг не должен его глушить.
+
+    Допущение (смешанный payload): если в снимке состава для хоста часть
+    записей содержит node_id, а часть — None (в теории не должно возникать,
+    т.к. _host_payload пишет соответствие consistently: либо все None для
+    статического host.address, либо все int для нодового), выбор уходит в
+    ветку "по адресу без нод" (addresses_from_nodes=False, как и в
+    AddressContext.pick) — и активный пин для такого хоста молча
+    игнорируется, потому что пересекать node_id пина было бы не с чем.
 
     Хост показывается юзеру, только если он ему вообще мог достаться — тот же
     фильтр по привязке хоста к боту юзера, что и рендер подписки (см.
@@ -142,11 +160,23 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
     ]
     pins_on_day = crud.get_pins_covering_day(db, user_id, day_start, day_end)
 
+    # Флаг гасит ТОЛЬКО автовыбор — та же развилка, что в build_address_context
+    # (app/subscription/address_context_builder.py): при выключенном
+    # sub_address_subset_enabled size обнуляется НЕЗАВИСИМО от значения
+    # sub_address_subset_size (дефолт бота — enabled=False, size=2, см.
+    # app/models/bot.py — это состояние ЛЮБОГО бота, который фичу не включал).
+    # Пины при этом проверяются раньше и не зависят от флага вовсе — они
+    # применяются даже когда фича выключена (см. ruling в
+    # build_address_context: закрепление — явное административное действие
+    # для отладки именно там, где фичи ещё нет).
+    enabled = bool(bot_settings.get("sub_address_subset_enabled"))
     period_days = max(1, int(bot_settings.get("sub_address_rotation_days") or 1))
-    size = int(bot_settings.get("sub_address_subset_size") or 0)
+    size = int(bot_settings.get("sub_address_subset_size") or 0) if enabled else 0
     epoch = epoch_for(user_id, day_index, period_days, offset)
     snapshot_day = epoch_start_day(user_id, day_index, period_days)
-    weights = crud.get_weight_snapshot(db, snapshot_day)
+    # Как и build_address_context — весами не интересуемся, если сужения не
+    # будет и так (флаг выключен или size<=0): лишний поход в БД не нужен.
+    weights = crud.get_weight_snapshot(db, snapshot_day) if size > 0 else {}
 
     results: list[HostAssignment] = []
     for host in hosts:
