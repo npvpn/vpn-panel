@@ -71,9 +71,13 @@ def snapshot_host_composition() -> None:
         for host in hosts:
             crud.write_host_composition_snapshot(db, epoch, host.id, _host_payload(host))
 
-        # write_host_composition_snapshot сама не коммитит — один коммит на весь
-        # проход (десятки хостов), а не по одному на хост: prune делает свой DELETE
-        # и коммитит разом всё, что накопилось в транзакции выше.
+        # write_host_composition_snapshot сама не коммитит — коммитим здесь, один
+        # раз на весь проход (десятки хостов), а не по одному на хост. КОММИТ
+        # ЗДЕСЬ, А НЕ В prune: подчистка — отдельная по смыслу обязанность (и может
+        # начать жить своим расписанием), падение в ней не должно откатывать уже
+        # состоявшуюся запись снимков (NPVPN-2072).
+        db.commit()
+
         crud.prune_host_composition_snapshots(db, epoch, RETENTION_DAYS)
 
     logger.info(f"[snapshot_host_composition] done hosts={len(hosts)} epoch={epoch} dt={time.monotonic() - t0:.2f}s")

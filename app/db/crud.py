@@ -2186,9 +2186,13 @@ def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int,
     (см. `_host_payload` в app/jobs/snapshot_host_composition.py и комментарий в
     `AddressContext.pick` про то же самое несоответствие).
 
-    Не коммитит сама: вызывающий код (джоба снимка обходит десятки хостов за
-    проход) копит изменения и коммитит один раз за проход, а не на каждый хост —
-    N лишних round-trip'ов к БД в джобе, которая ходит каждый час, того не стоят.
+    Не коммитит сама: обходит десятки хостов за проход, и коммит на каждый хост
+    был бы лишним round-trip'ом в джобе, которая ходит каждый час. Коммитить
+    накопленные вставки — забота ВЫЗЫВАЮЩЕГО кода (см. snapshot_host_composition
+    в app/jobs/snapshot_host_composition.py: там один явный db.commit() сразу
+    после цикла записи, ДО вызова prune_host_composition_snapshots — коммит
+    снимков не должен зависеть от того, удастся ли не связанная с ним по смыслу
+    подчистка).
     """
     values = {"epoch_index": epoch_index, "host_id": host_id, "payload": payload}
     stmt: Any
@@ -2222,6 +2226,13 @@ def prune_host_composition_snapshots(db: Session, epoch_index: int, retention_da
     """Чистит снимки состава старше архивного горизонта расследований (NPVPN-2072).
 
     Тот же горизонт (90 дней), что применяется к снимкам весов на стороне бота.
+
+    Коммитит САМА и ТОЛЬКО своё удаление — самодостаточна умышленно, а не как
+    побочный эффект. Это НЕ распространяется на чужие изменения, накопленные в той
+    же сессии до вызова (например, снимки из write_host_composition_snapshot):
+    их обязан закоммитить тот, кто их писал, до того, как отдать сессию сюда —
+    иначе падение подчистки (лок, таймаут) откатывает молча ещё и запись, которая
+    с подчисткой по смыслу не связана.
     """
     db.query(HostCompositionSnapshot).filter(HostCompositionSnapshot.epoch_index < epoch_index - retention_days).delete(
         synchronize_session=False

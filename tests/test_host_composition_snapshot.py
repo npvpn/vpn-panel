@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import sys
 import types
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import UTC, datetime
 
 import pytest
 
@@ -30,7 +31,9 @@ from app.db.crud import (  # noqa: E402
     write_host_composition_snapshot,
 )
 from app.db.models import HostCompositionSnapshot, Node, ProxyHost, ProxyInbound  # noqa: E402
+from app.jobs import snapshot_host_composition as job_module  # noqa: E402
 from app.jobs.snapshot_host_composition import _host_payload  # noqa: E402
+from app.subscription.address_context_builder import day_index  # noqa: E402
 from app.xray.host_addresses import resolve_host_addresses, resolve_host_node_ids  # noqa: E402
 
 if sys.modules.get("app.subscription.share") is _share_stub:
@@ -162,3 +165,42 @@ def test_static_address_host_has_no_node_correlation(db):
     write_host_composition_snapshot(db, 10, host.id, payload)
 
     assert get_host_composition(db, 10) == {host.id: payload}
+
+
+def test_write_commits_independently_of_prune_failure(db, monkeypatch):
+    """Регресс: коммит снимков не должен зависеть от подчистки.
+
+    После правки N+1 (batched selectinload + один коммит на проход) коммит был
+    спрятан ВНУТРИ prune_host_composition_snapshots — то есть если бы подчистка
+    упала (лок, таймаут) ДО своего db.commit(), вся ещё не закоммиченная запись
+    снимков ушла бы в откат молча. Правильная версия джобы коммитит записи сама,
+    сразу после цикла, ДО вызова prune — падение подчистки уже не может задеть
+    то, что закоммичено раньше.
+
+    Ловим это, вызывая настоящую snapshot_host_composition() (через GetDB,
+    подменённую на тестовую сессию) с подчисткой, которая гарантированно падает
+    ДО своего commit. После падения явно делаем db.rollback() — имитация худшего
+    случая (GetDB откатывает при SQLAlchemyError) — и проверяем, что запись всё
+    равно на месте: rollback() после commit() отменяет только новую транзакцию,
+    начавшуюся после коммита, а не то, что уже было зафиксировано.
+    """
+    node = _make_node(db, "nl-1", "1.2.3.4")
+    host = _make_host(db, nodes=[node])
+
+    @contextmanager
+    def fake_getdb():
+        yield db
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("подчистка упала до своего commit")
+
+    monkeypatch.setattr(job_module, "GetDB", fake_getdb)
+    monkeypatch.setattr(job_module.crud, "prune_host_composition_snapshots", boom)
+
+    with pytest.raises(RuntimeError):
+        job_module.snapshot_host_composition()
+
+    db.rollback()
+
+    epoch = day_index(datetime.now(UTC))
+    assert get_host_composition(db, epoch) == {host.id: [{"node_id": node.id, "address": "1.2.3.4"}]}
