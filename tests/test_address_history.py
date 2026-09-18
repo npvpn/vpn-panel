@@ -557,7 +557,7 @@ def test_pin_applies_even_when_subset_flag_disabled(db, monkeypatch):
     assert assignment.addresses == [pinned_node.address]
 
 
-def test_pinnable_hosts_scoped_to_users_bot(db):
+def test_pinnable_hosts_scoped_to_users_bot(db, monkeypatch):
     """Юзер бота A видит свои локации и не видит локации, разрешённые только
     боту B — тот же фильтр по bot_usernames, что и в reconstruct/рендере
     подписки. Иначе саппорт мог бы создать закрепление на локацию, которая
@@ -570,7 +570,8 @@ def test_pinnable_hosts_scoped_to_users_bot(db):
     host_a = _make_host(db, nodes=nodes_a, remark="only-bot-a", bots=[bot_a])
 
     nodes_b = [_make_node(db, f"b{i}", f"8.8.8.{i}") for i in range(1, 3)]
-    _make_host(db, nodes=nodes_b, remark="only-bot-b", bots=[bot_b])
+    host_b = _make_host(db, nodes=nodes_b, remark="only-bot-b", bots=[bot_b])
+    _grant_inbound_access(monkeypatch, db, user, [host_a, host_b])
 
     result = list_pinnable_hosts(db, user)
     host_ids = {h.host_id for h in result}
@@ -578,7 +579,7 @@ def test_pinnable_hosts_scoped_to_users_bot(db):
     assert host_ids == {host_a.id}
 
 
-def test_pinnable_hosts_excludes_static_address_hosts(db):
+def test_pinnable_hosts_excludes_static_address_hosts(db, monkeypatch):
     """Легаси-хост со статическим адресом (address != "") не попадает в
     список: соответствия "адрес ↔ нода" там нет по построению, POST /pins
     его и так отклонит 400-й — показывать в форме то, что заведомо будет
@@ -593,6 +594,7 @@ def test_pinnable_hosts_excludes_static_address_hosts(db):
     static_host = ProxyHost(remark="static-legacy", address="static.example.com", inbound_tag="static-tag")
     db.add(static_host)
     db.commit()
+    _grant_inbound_access(monkeypatch, db, user, [node_based_host, static_host])
 
     result = list_pinnable_hosts(db, user)
     host_ids = {h.host_id for h in result}
@@ -601,13 +603,14 @@ def test_pinnable_hosts_excludes_static_address_hosts(db):
     assert static_host.id not in host_ids
 
 
-def test_pinnable_hosts_returns_full_node_set_not_a_subset(db):
+def test_pinnable_hosts_returns_full_node_set_not_a_subset(db, monkeypatch):
     """Список нод локации — полный состав хоста, а не подмножество, которое
     когда-либо выбрал автовыбор/пин: форма закрепления обязана предлагать
     выбор из ВСЕХ нод хоста."""
     user = _make_user(db)
     nodes = [_make_node(db, f"n{i}", f"4.4.4.{i}") for i in range(1, 6)]
     host = _make_host(db, nodes=nodes, remark="five-nodes")
+    _grant_inbound_access(monkeypatch, db, user, [host])
 
     result = list_pinnable_hosts(db, user)
 
@@ -617,7 +620,7 @@ def test_pinnable_hosts_returns_full_node_set_not_a_subset(db):
     assert {n.name for n in result[0].nodes} == {n.name for n in nodes}
 
 
-def test_pinnable_hosts_excludes_disabled_nodes(db):
+def test_pinnable_hosts_excludes_disabled_nodes(db, monkeypatch):
     """I2 (финальное ревью, NPVPN-2072): форма закрепления не должна предлагать
     disabled-ноду — в живую выдачу такая нода не попадает (_visible_nodes,
     app/xray/host_addresses.py), пин на неё создался бы, прошёл валидацию и
@@ -631,8 +634,38 @@ def test_pinnable_hosts_excludes_disabled_nodes(db):
     disabled_node.status = NodeStatus.disabled
     db.commit()
     host = _make_host(db, nodes=[live_node, disabled_node], remark="mixed")
+    _grant_inbound_access(monkeypatch, db, user, [host])
 
     result = list_pinnable_hosts(db, user)
 
     assert len(result) == 1
     assert {n.node_id for n in result[0].nodes} == {live_node.id}
+
+
+def test_pinnable_hosts_excludes_hosts_outside_users_inbounds(db, monkeypatch):
+    """Не предлагать для закрепления недоступные юзеру локации (дополнение к
+    C2, финальное ревью, NPVPN-2072): юзер с excluded_inbounds, исключающими
+    тег локации, не должен увидеть её в форме создания закрепления. Иначе
+    саппорт создал бы пин, получил 200, увидел его во вкладке «Закрепления»
+    как действующий — а в подписке этой локации нет вовсе, пин не применится
+    никогда. Тот же по сути дефект, что чинили по I2 для disabled-нод, только
+    уровнем выше: там отсекалась нода, здесь — целая локация."""
+    user = _make_user(db)
+    nodes_visible = [_make_node(db, f"v{i}", f"5.5.5.{i}") for i in range(1, 3)]
+    host_visible = _make_host(db, nodes=nodes_visible, remark="visible")
+    nodes_excluded = [_make_node(db, f"e{i}", f"4.4.4.{i}") for i in range(1, 3)]
+    host_excluded = _make_host(db, nodes=nodes_excluded, remark="excluded")
+
+    # Оба тега зарегистрированы в xray.config, но host_excluded попадает в
+    # excluded_inbounds прокси юзера.
+    _grant_inbound_access(monkeypatch, db, user, [host_visible, host_excluded])
+    proxy = db.query(Proxy).filter(Proxy.user_id == user.id).one()
+    excluded_inbound = db.query(ProxyInbound).filter(ProxyInbound.tag == host_excluded.inbound_tag).one()
+    proxy.excluded_inbounds = [excluded_inbound]
+    db.commit()
+
+    result = list_pinnable_hosts(db, user)
+    host_ids = {h.host_id for h in result}
+
+    assert host_visible.id in host_ids
+    assert host_excluded.id not in host_ids

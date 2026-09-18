@@ -122,12 +122,22 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
     """Локации, которые реально мог получить этот юзер, с полным составом нод —
     источник данных для формы создания закрепления (`POST /user/{username}/pins`).
 
-    Два фильтра, оба обязательны:
-    1. Хост привязан к боту юзера (или ни к какому конкретному боту) — та же
-       логика, что в `reconstruct`/рендере подписки: иначе саппорт увидел бы
-       и мог бы закрепить локацию ЧУЖОГО бота, которая этому юзеру никогда не
-       достанется.
-    2. У хоста нет статического `address` (`not host.address` — пустая строка
+    ТРИ фильтра, все обязательны — те же условия «доступна ли эта локация
+    этому юзеру», что в `reconstruct` (см. его докстринг) и в рендере
+    подписки, а не переизобретённая здесь копия (I4-урок фичи, финальное
+    ревью):
+    1. Хост привязан к боту юзера (или ни к какому конкретному боту,
+       `host_allowed_for_bot`) — иначе саппорт увидел бы и мог бы закрепить
+       локацию ЧУЖОГО бота, которая этому юзеру никогда не достанется.
+    2. Тег инбаунда хоста входит в эффективные инбаунды юзера
+       (`_visible_inbound_tags`, тот же источник, что и в `reconstruct`) —
+       без него форма предложила бы локацию, которой у юзера нет ни в проксях
+       нужного протокола, ни за вычетом `excluded_inbounds`. Саппорт создал бы
+       пин, получил 200, увидел его во вкладке «Закрепления» как действующий
+       — а в подписке этой локации нет вовсе, пин не применится никогда. Тот
+       же по сути дефект, что чинили по I2 для disabled-нод, только уровнем
+       выше: там отсекалась одна нода, здесь — целая локация.
+    3. У хоста нет статического `address` (`not host.address` — пустая строка
        у "адресного" хоста означает "адреса берутся из нод", см.
        `app/xray/__init__.py: addresses_from_nodes`). У легаси-хостов со
        статическим адресом соответствия "адрес ↔ нода" нет по построению —
@@ -140,6 +150,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
     пин, который тут же молча не сработает.
     """
     user_bot_username = dbuser.bot_username
+    visible_tags = _visible_inbound_tags(dbuser)
     hosts = db.query(ProxyHost).filter(ProxyHost.address == "").order_by(ProxyHost.id).all()
     return [
         PinnableHost(
@@ -148,7 +159,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
             nodes=[PinnableNode(node_id=cast(int, node.id), name=cast(str, node.name)) for node in visible_nodes(host)],
         )
         for host in hosts
-        if host_allowed_for_bot(host.bot_usernames, user_bot_username)
+        if host_allowed_for_bot(host.bot_usernames, user_bot_username) and host.inbound_tag in visible_tags
     ]
 
 
