@@ -28,7 +28,7 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.db.base import Base  # noqa: E402
 from app.db.crud import write_host_composition_snapshot  # noqa: E402
-from app.db.models import Node, NodeWeightSnapshot, ProxyHost, ProxyInbound, User, UserNodePin  # noqa: E402
+from app.db.models import Bot, Node, NodeWeightSnapshot, ProxyHost, ProxyInbound, User, UserNodePin  # noqa: E402
 from app.services.address_history import day_start_at, reconstruct  # noqa: E402
 from app.subscription.address_context import weighted_candidates  # noqa: E402
 from app.xray.address_policy import pick_keys  # noqa: E402
@@ -61,24 +61,34 @@ def _make_node(db, name: str, address: str, node_id: int | None = None) -> Node:
     return node
 
 
-def _make_host(db, *, nodes: list[Node]) -> ProxyHost:
+def _make_host(db, *, nodes: list[Node], remark: str = "host-remark", bots: list[Bot] | None = None) -> ProxyHost:
     inbound_tag = f"tag-{db.query(ProxyInbound).count()}"
     db.add(ProxyInbound(tag=inbound_tag))
     db.commit()
-    host = ProxyHost(remark="host-remark", address="", inbound_tag=inbound_tag)
+    host = ProxyHost(remark=remark, address="", inbound_tag=inbound_tag)
     host.nodes = nodes
+    if bots:
+        host.bots = bots
     db.add(host)
     db.commit()
     db.refresh(host)
     return host
 
 
-def _make_user(db, user_id: int = USER_ID) -> User:
-    user = User(id=user_id, username=f"u{user_id}", address_rotation_offset=0)
+def _make_user(db, user_id: int = USER_ID, *, bot: Bot | None = None) -> User:
+    user = User(id=user_id, username=f"u{user_id}", address_rotation_offset=0, bot=bot)
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
+
+
+def _make_bot(db, username: str) -> Bot:
+    bot = Bot(username=username)
+    db.add(bot)
+    db.commit()
+    db.refresh(bot)
+    return bot
 
 
 def test_reconstructs_auto_assignment_from_snapshots(db):
@@ -228,3 +238,30 @@ def test_day_start_at_roundtrips_with_day_index():
     assert day_index(start) == day
     assert day_index(start + timedelta(hours=23, minutes=59)) == day
     assert day_index(start + timedelta(days=1)) == day + 1
+
+
+def test_hides_hosts_restricted_to_other_bots(db):
+    """История не должна показывать юзеру локации, которые ему в принципе не
+    могли достаться: тот же фильтр по bot_usernames, что и рендер подписки
+    (app/subscription/share.py). Хост, привязанный только к чужому боту,
+    обязан выпасть из ответа; хост без ограничений (bot_usernames пуст) —
+    остаться."""
+    bot_a = _make_bot(db, "bot_a")
+    bot_b = _make_bot(db, "bot_b")
+    _make_user(db, bot=bot_a)
+
+    nodes_restricted = [_make_node(db, f"r{i}", f"7.7.7.{i}") for i in range(1, 3)]
+    host_for_bot_b = _make_host(db, nodes=nodes_restricted, remark="only-bot-b", bots=[bot_b])
+
+    nodes_open = [_make_node(db, f"o{i}", f"6.6.6.{i}") for i in range(1, 3)]
+    host_unrestricted = _make_host(db, nodes=nodes_open, remark="open-to-all")
+
+    for host, nodes in ((host_for_bot_b, nodes_restricted), (host_unrestricted, nodes_open)):
+        write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
+    db.commit()
+
+    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    host_ids = {a.host_id for a in result}
+
+    assert host_unrestricted.id in host_ids
+    assert host_for_bot_b.id not in host_ids

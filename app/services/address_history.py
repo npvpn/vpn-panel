@@ -102,16 +102,45 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
        Если снимка ВЕСОВ за эти сутки нет, а сужение в этот день было бы
        фактическим (адресов больше, чем размер подмножества) — тоже "unknown":
        угадывать веса значило бы выдавать может-быть-правду за факт.
+
+    Хост показывается юзеру, только если он ему вообще мог достаться — тот же
+    фильтр по привязке хоста к боту юзера, что и рендер подписки (см.
+    `generate_v2ray_links` / `app/subscription/share.py`, где хост
+    отбрасывается, если у него задан непустой список `bot_usernames` и юзер
+    привязан к другому боту). Без этого фильтра в мультибот-инсталляции
+    история показала бы юзеру локации чужого бота как "автовыбор" с
+    конкретными нодами — то самое правдоподобное вранье, которого весь этот
+    модуль обязан избегать.
+
+    Источник данных для фильтра — ТЕКУЩАЯ привязка хоста к боту
+    (`ProxyHost.bots`), не историческая: снимок состава её не хранит, а
+    рендер подписки тоже всегда смотрит на текущую конфигурацию, а не на
+    снимок на день рендера. Если привязку хоста к боту меняли ПОСЛЕ
+    `day_index` — история отразит сегодняшнюю принадлежность, а не тогдашнюю
+    (тот хост, что тогда показывался юзеру, но с тех пор переехал к другому
+    боту, из истории исчезнет; и наоборот, хост, привязанный к боту юзера
+    только сегодня, задним числом покажется так, будто был доступен всегда).
+    Это ограничение источника — панель принадлежность хост↔бот не снимает
+    посуточно, только адреса/веса.
     """
     day_start = day_start_at(day_index)
     day_end = day_start_at(day_index + 1)
 
-    composition = crud.get_host_composition(db, day_index)
-    hosts = db.query(ProxyHost).order_by(ProxyHost.id).all()
-    pins_on_day = crud.get_pins_covering_day(db, user_id, day_start, day_end)
-
     dbuser = db.query(User).filter(User.id == user_id).first()
     offset = int(getattr(dbuser, "address_rotation_offset", 0) or 0) if dbuser else 0
+    user_bot_username = dbuser.bot_username if dbuser else None
+
+    composition = crud.get_host_composition(db, day_index)
+    all_hosts = db.query(ProxyHost).order_by(ProxyHost.id).all()
+    # Та же логика, что и в рендере подписки: пустой bot_usernames = хост
+    # доступен всем ботам, отсеивать не надо; юзер без своего бота видит хосты
+    # как раньше (краевой случай рендера — намеренно воспроизведён без изменений).
+    hosts = [
+        host
+        for host in all_hosts
+        if not (host.bot_usernames and user_bot_username and user_bot_username not in host.bot_usernames)
+    ]
+    pins_on_day = crud.get_pins_covering_day(db, user_id, day_start, day_end)
 
     period_days = max(1, int(bot_settings.get("sub_address_rotation_days") or 1))
     size = int(bot_settings.get("sub_address_subset_size") or 0)
@@ -150,8 +179,11 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
                 continue
 
         # Автовыбор. Если подмножество не режет список (фича выключена в
-        # today-конфиге или адресов и так не больше size) — веса не нужны,
-        # выдаём состав как есть, честно и без всяких допущений.
+        # today-конфиге или адресов и так не больше size) — ответ полностью
+        # определён СОСТАВОМ и не зависит от весов вовсе (см. pick_keys: при
+        # len(candidates) <= n он просто возвращает все ключи). Объявлять его
+        # "не восстановимо" из-за отсутствующего снимка весов было бы ложной
+        # скромностью — веса тут ни при чём, выдаём состав как есть.
         if size <= 0 or len(addresses_all) <= size:
             results.append(
                 HostAssignment(
