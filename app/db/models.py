@@ -213,6 +213,13 @@ class User(Base):
     # Ручная ротация адресов: саппорт инкрементирует, подмножество меняется немедленно.
     # Одна колонка вместо таблицы назначений — выбор вычисляется, а не хранится.
     address_rotation_offset = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    # Момент ПОСЛЕДНЕЙ ротации (NPVPN-2072, C1). Не история всех ротаций — одно
+    # значение, как и сам offset. Нужен журналу (app/services/address_history.py:
+    # reconstruct), чтобы не подставлять СЕГОДНЯШНИЙ offset в эпоху прошлых суток:
+    # инкремент offset задним числом меняет эпоху ВСЕХ дней, поэтому дни до этой
+    # метки честно помечаются "не восстановимо", а не пересчитываются неверно.
+    # NULL = ротаций не было вовсе (offset всегда был текущим — 0 изначально).
+    address_rotation_offset_at = Column(DateTime, nullable=True, default=None)
 
     # * Positive values: User will be deleted after the value of this field in days automatically.
     # * Negative values: User won't be deleted automatically at all.
@@ -601,12 +608,12 @@ class Node(Base):
     # из репозитория бота — он единственный видит оба берега (NPVPN-2072).
     hosting_used_bytes = Column(BigInteger, nullable=True)
     hosting_used_at = Column(DateTime, nullable=True)
-    weight_snapshots = relationship(
-        "NodeWeightSnapshot",
-        back_populates="node",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
+    # NodeWeightSnapshot больше НЕ связана FK-каскадом с этой таблицей (I3,
+    # NPVPN-2072) — снимок это архив журнала (app/services/address_history.py),
+    # который обязан пережить удаление ноды, поэтому и ORM-relationship сюда не
+    # заводим: cascade="all, delete-orphan" стёр бы архив вместе с нодой, а
+    # именно это I3 и запрещает. Node.id, оставшийся в снимке после удаления
+    # ноды, — не баг, ожидаемый "висячий" идентификатор архивной записи.
 
 
 class NodeUserUsage(Base):
@@ -663,6 +670,16 @@ class NodeWeightSnapshot(Base):
     юзерам: каждый берёт тот, что действовал на начало ЕГО эпохи.
 
     Единственный writer — scripts/prometheus_vpn_nodes_sd.py (репозиторий бота).
+
+    node_id НАРОЧНО без FK (I3, NPVPN-2072): это архивная запись журнала
+    (app/services/address_history.py), а не текущее состояние. Удаление ноды не
+    должно стирать её прошлые веса — иначе локация просто ИСЧЕЗАЕТ из истории
+    без пометки, и недостача читается саппортом как "такого не было", хотя
+    правда в том, что запись стёрлась вместе с нодой. Поэтому node_id может
+    "повиснуть" (ссылаться на уже удалённую ноду) — reconstruct умеет работать
+    с этим: снимок весов ищется по (epoch_index, node_id) независимо от того,
+    жива ли ещё сама Node. Индекс на node_id сохранён (нужен для выборок),
+    просто без ограничения ссылочной целостности.
     """
 
     __tablename__ = "node_weight_snapshots"
@@ -670,9 +687,8 @@ class NodeWeightSnapshot(Base):
 
     id = Column(Integer, primary_key=True)
     epoch_index = Column(Integer, nullable=False, index=True)
-    node_id = Column(Integer, ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_id = Column(Integer, nullable=False, index=True)
     weight = Column(BigInteger, nullable=False, default=0)
-    node = relationship("Node", back_populates="weight_snapshots", passive_deletes=True)
 
 
 class HostCompositionSnapshot(Base):
@@ -682,6 +698,13 @@ class HostCompositionSnapshot(Base):
     состав меняется четырьмя разными путями (привязка нод, статус ноды, её адрес,
     статическая строка host.address), и инструментировать каждый — четыре способа
     забыть один из них (NPVPN-2072).
+
+    host_id НАРОЧНО без FK (I3, NPVPN-2072) — та же причина, что у
+    NodeWeightSnapshot.node_id: это архив журнала, а CASCADE на удалении хоста
+    стёр бы снимки состава вместе с ним, и локация молча ИСЧЕЗЛА бы из истории
+    вместо явной пометки "хост удалён". host_id может "повиснуть", это
+    ожидаемо — reconstruct читает снимок по (epoch_index, host_id) и не требует
+    живого ProxyHost. Индекс на host_id сохранён, ссылочная целостность — нет.
     """
 
     __tablename__ = "host_composition_snapshots"
@@ -689,12 +712,11 @@ class HostCompositionSnapshot(Base):
 
     id = Column(Integer, primary_key=True)
     epoch_index = Column(Integer, nullable=False, index=True)
-    host_id = Column(Integer, ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False, index=True)
+    host_id = Column(Integer, nullable=False, index=True)
     # [{"node_id": int | None, "address": str}, ...] в порядке выдачи. node_id = None
     # для статического host.address: там нет соответствия "адрес <-> нода" по
     # построению (см. app/jobs/snapshot_host_composition.py:_host_payload).
     payload = Column(JSON, nullable=False)
-    host = relationship("ProxyHost", passive_deletes=True)
 
 
 class UserNodePin(Base):

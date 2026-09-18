@@ -21,13 +21,12 @@ def upgrade() -> None:
         'host_composition_snapshots',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('epoch_index', sa.Integer(), nullable=False),
+        # Без ForeignKeyConstraint (I3, NPVPN-2072, финальное ревью): архив
+        # журнала обязан пережить удаление хоста — FK с CASCADE стирал бы
+        # снимки состава вместе с ним, и локация молча исчезала бы из истории
+        # вместо явной пометки. host_id намеренно может "повиснуть".
         sa.Column('host_id', sa.Integer(), nullable=False),
         sa.Column('payload', sa.JSON(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ['host_id'], ['hosts.id'],
-            name='fk_host_composition_snapshots_host_id_hosts',
-            ondelete='CASCADE',
-        ),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('epoch_index', 'host_id', name='uq_host_composition_snapshots'),
     )

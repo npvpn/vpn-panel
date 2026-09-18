@@ -34,6 +34,14 @@ def test_user_has_rotation_offset_with_default():
     assert column.server_default is not None
 
 
+def test_user_has_rotation_offset_timestamp():
+    """C1 (финальное ревью, NPVPN-2072): без метки момента последней ротации
+    журнал не может отличить "offset всегда был таким" от "offset менялся" —
+    см. app/services/address_history.py:reconstruct."""
+    column = User.__table__.columns["address_rotation_offset_at"]
+    assert column.nullable is True
+
+
 def test_weight_snapshot_is_unique_per_epoch_and_node():
     constraints = {
         tuple(sorted(col.name for col in constraint.columns))
@@ -43,6 +51,10 @@ def test_weight_snapshot_is_unique_per_epoch_and_node():
     assert ("epoch_index", "node_id") in constraints
 
 
-def test_weight_snapshot_cascades_from_node():
-    fk = next(iter(NodeWeightSnapshot.__table__.columns["node_id"].foreign_keys))
-    assert fk.ondelete == "CASCADE"
+def test_weight_snapshot_node_id_has_no_fk():
+    """I3 (финальное ревью, NPVPN-2072): архив журнала обязан пережить
+    удаление ноды. Раньше node_id был FK с CASCADE — удаление Node стирало
+    веса вместе с ней, и reconstruct задним числом подставлял бы МЕДИАНУ
+    вместо реального веса (weighted_candidates), выдавая уверенный неверный
+    ответ. Теперь node_id — обычная колонка без ссылочной целостности."""
+    assert not NodeWeightSnapshot.__table__.columns["node_id"].foreign_keys

@@ -2135,8 +2135,14 @@ def rotate_user_addresses(db: Session, dbuser: User) -> User:
 
     Инкремент сдвига меняет эпоху этого юзера, а значит и результат выбора. Таблицы
     назначений нет, поэтому «ротация» — это одно число (NPVPN-2072).
+
+    Проставляем время последней ротации (C1, NPVPN-2072): без него журнал
+    (app/services/address_history.py: reconstruct) не может отличить "offset
+    всегда был таким" от "offset менялся, старые сутки жили с другим значением"
+    — и задним числом переписал бы эпоху всех прошлых суток текущим offset.
     """
     cast(Any, dbuser).address_rotation_offset = int(dbuser.address_rotation_offset or 0) + 1
+    cast(Any, dbuser).address_rotation_offset_at = datetime.utcnow()
     db.commit()
     db.refresh(dbuser)
     return dbuser

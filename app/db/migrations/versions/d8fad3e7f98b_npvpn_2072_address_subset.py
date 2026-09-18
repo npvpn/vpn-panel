@@ -21,13 +21,13 @@ def upgrade() -> None:
         'node_weight_snapshots',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('epoch_index', sa.Integer(), nullable=False),
+        # Без ForeignKeyConstraint (I3, NPVPN-2072, финальное ревью): это архив
+        # журнала, а не текущее состояние. FK с CASCADE стёр бы веса вместе с
+        # удалённой нодой, и локация молча исчезла бы из истории вместо явной
+        # пометки. node_id намеренно может "повиснуть" — reconstruct читает
+        # снимок по (epoch_index, node_id), живая Node ему не нужна.
         sa.Column('node_id', sa.Integer(), nullable=False),
         sa.Column('weight', sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ['node_id'], ['nodes.id'],
-            name='fk_node_weight_snapshots_node_id_nodes',
-            ondelete='CASCADE',
-        ),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('epoch_index', 'node_id', name='uq_node_weight_snapshots'),
     )
@@ -40,9 +40,14 @@ def upgrade() -> None:
     op.add_column(
         'users', sa.Column('address_rotation_offset', sa.Integer(), server_default=sa.text('0'), nullable=False)
     )
+    # Момент ПОСЛЕДНЕЙ ротации (C1, NPVPN-2072, финальное ревью): без него
+    # журнал не может отличить "offset всегда был таким" от "offset менялся"
+    # и задним числом переписал бы эпоху прошлых суток текущим значением.
+    op.add_column('users', sa.Column('address_rotation_offset_at', sa.DateTime(), nullable=True))
 
 
 def downgrade() -> None:
+    op.drop_column('users', 'address_rotation_offset_at')
     op.drop_column('users', 'address_rotation_offset')
     op.drop_column('nodes', 'hosting_used_at')
     op.drop_column('nodes', 'hosting_used_bytes')
