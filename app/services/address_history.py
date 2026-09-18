@@ -84,6 +84,60 @@ class PinResponse(BaseModel):
     note: str | None = None
 
 
+class PinnableNode(BaseModel):
+    node_id: int
+    name: str
+
+
+class PinnableHost(BaseModel):
+    """Локация, которую можно закрепить этому юзеру (NPVPN-2072): полный
+    состав нод, а не только уже выбранное подмножество — форма закрепления
+    должна предлагать выбор из ВСЕХ нод хоста, а не из того, что видно в
+    истории за какие-то конкретные сутки."""
+
+    host_id: int
+    remark: str
+    nodes: list[PinnableNode]
+
+
+def host_allowed_for_bot(bot_usernames: list[str], user_bot_username: str | None) -> bool:
+    """Тот же фильтр «хост ↔ бот юзера», что и в рендере подписки
+    (`app/subscription/share.py`) и в `reconstruct` ниже — пустой
+    `bot_usernames` значит «хост доступен любому боту», отсеивать не надо.
+    Единая функция, чтобы условие не разъезжалось по местам, где оно нужно
+    (третий вызывающий — `list_pinnable_hosts`)."""
+    return not (bot_usernames and user_bot_username and user_bot_username not in bot_usernames)
+
+
+def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
+    """Локации, которые реально мог получить этот юзер, с полным составом нод —
+    источник данных для формы создания закрепления (`POST /user/{username}/pins`).
+
+    Два фильтра, оба обязательны:
+    1. Хост привязан к боту юзера (или ни к какому конкретному боту) — та же
+       логика, что в `reconstruct`/рендере подписки: иначе саппорт увидел бы
+       и мог бы закрепить локацию ЧУЖОГО бота, которая этому юзеру никогда не
+       достанется.
+    2. У хоста нет статического `address` (`not host.address` — пустая строка
+       у "адресного" хоста означает "адреса берутся из нод", см.
+       `app/xray/__init__.py: addresses_from_nodes`). У легаси-хостов со
+       статическим адресом соответствия "адрес ↔ нода" нет по построению —
+       `POST /pins` и так отклонит такой host_id 400-й, показывать его в
+       форме, которая заведомо будет отклонена, незачем.
+    """
+    user_bot_username = dbuser.bot_username
+    hosts = db.query(ProxyHost).filter(ProxyHost.address == "").order_by(ProxyHost.id).all()
+    return [
+        PinnableHost(
+            host_id=cast(int, host.id),
+            remark=cast(str, host.remark),
+            nodes=[PinnableNode(node_id=cast(int, node.id), name=cast(str, node.name)) for node in host.nodes],
+        )
+        for host in hosts
+        if host_allowed_for_bot(host.bot_usernames, user_bot_username)
+    ]
+
+
 def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -> list[HostAssignment]:
     """Восстанавливает выдачу адресов юзеру за сутки `day_index` по всем хостам.
 
@@ -165,14 +219,11 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
 
     composition = crud.get_host_composition(db, day_index)
     all_hosts = db.query(ProxyHost).order_by(ProxyHost.id).all()
-    # Та же логика, что и в рендере подписки: пустой bot_usernames = хост
-    # доступен всем ботам, отсеивать не надо; юзер без своего бота видит хосты
-    # как раньше (краевой случай рендера — намеренно воспроизведён без изменений).
-    hosts = [
-        host
-        for host in all_hosts
-        if not (host.bot_usernames and user_bot_username and user_bot_username not in host.bot_usernames)
-    ]
+    # Та же логика, что и в рендере подписки и в list_pinnable_hosts: пустой
+    # bot_usernames = хост доступен всем ботам, отсеивать не надо; юзер без
+    # своего бота видит хосты как раньше (краевой случай рендера — намеренно
+    # воспроизведён без изменений).
+    hosts = [host for host in all_hosts if host_allowed_for_bot(host.bot_usernames, user_bot_username)]
     pins_on_day = crud.get_pins_covering_day(db, user_id, day_start, day_end)
 
     # Флаг гасит ТОЛЬКО автовыбор — та же развилка, что в build_address_context

@@ -29,7 +29,7 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.crud import write_host_composition_snapshot  # noqa: E402
 from app.db.models import Bot, Node, NodeWeightSnapshot, ProxyHost, ProxyInbound, User, UserNodePin  # noqa: E402
-from app.services.address_history import day_start_at, reconstruct  # noqa: E402
+from app.services.address_history import day_start_at, list_pinnable_hosts, reconstruct  # noqa: E402
 from app.subscription.address_context import weighted_candidates  # noqa: E402
 from app.xray.address_policy import pick_keys  # noqa: E402
 
@@ -329,3 +329,63 @@ def test_pin_applies_even_when_subset_flag_disabled(db):
     assert assignment.restorable is True
     assert assignment.node_ids == [pinned_node.id]
     assert assignment.addresses == [pinned_node.address]
+
+
+def test_pinnable_hosts_scoped_to_users_bot(db):
+    """Юзер бота A видит свои локации и не видит локации, разрешённые только
+    боту B — тот же фильтр по bot_usernames, что и в reconstruct/рендере
+    подписки. Иначе саппорт мог бы создать закрепление на локацию, которая
+    этому юзеру никогда не достанется."""
+    bot_a = _make_bot(db, "bot_a")
+    bot_b = _make_bot(db, "bot_b")
+    user = _make_user(db, bot=bot_a)
+
+    nodes_a = [_make_node(db, f"a{i}", f"9.9.9.{i}") for i in range(1, 3)]
+    host_a = _make_host(db, nodes=nodes_a, remark="only-bot-a", bots=[bot_a])
+
+    nodes_b = [_make_node(db, f"b{i}", f"8.8.8.{i}") for i in range(1, 3)]
+    _make_host(db, nodes=nodes_b, remark="only-bot-b", bots=[bot_b])
+
+    result = list_pinnable_hosts(db, user)
+    host_ids = {h.host_id for h in result}
+
+    assert host_ids == {host_a.id}
+
+
+def test_pinnable_hosts_excludes_static_address_hosts(db):
+    """Легаси-хост со статическим адресом (address != "") не попадает в
+    список: соответствия "адрес ↔ нода" там нет по построению, POST /pins
+    его и так отклонит 400-й — показывать в форме то, что заведомо будет
+    отклонено, незачем."""
+    user = _make_user(db)
+
+    nodes = [_make_node(db, f"n{i}", f"5.5.5.{i}") for i in range(1, 3)]
+    node_based_host = _make_host(db, nodes=nodes, remark="node-based")
+
+    db.add(ProxyInbound(tag="static-tag"))
+    db.commit()
+    static_host = ProxyHost(remark="static-legacy", address="static.example.com", inbound_tag="static-tag")
+    db.add(static_host)
+    db.commit()
+
+    result = list_pinnable_hosts(db, user)
+    host_ids = {h.host_id for h in result}
+
+    assert node_based_host.id in host_ids
+    assert static_host.id not in host_ids
+
+
+def test_pinnable_hosts_returns_full_node_set_not_a_subset(db):
+    """Список нод локации — полный состав хоста, а не подмножество, которое
+    когда-либо выбрал автовыбор/пин: форма закрепления обязана предлагать
+    выбор из ВСЕХ нод хоста."""
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"4.4.4.{i}") for i in range(1, 6)]
+    host = _make_host(db, nodes=nodes, remark="five-nodes")
+
+    result = list_pinnable_hosts(db, user)
+
+    assert len(result) == 1
+    assert result[0].host_id == host.id
+    assert {n.node_id for n in result[0].nodes} == {n.id for n in nodes}
+    assert {n.name for n in result[0].nodes} == {n.name for n in nodes}

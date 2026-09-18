@@ -40,7 +40,14 @@ from app.models.user import (
     UsersUsagesResponse,
     UserUsagesResponse,
 )
-from app.services.address_history import DayAssignments, PinCreate, PinResponse, reconstruct
+from app.services.address_history import (
+    DayAssignments,
+    PinCreate,
+    PinnableHost,
+    PinResponse,
+    list_pinnable_hosts,
+    reconstruct,
+)
 from app.subscription.address_context_builder import _EPOCH_ORIGIN, day_index
 from app.subscription.bot_settings import resolve_bot_settings
 from app.utils import report, responses
@@ -573,6 +580,29 @@ def list_user_pins_endpoint(
         )
         for row in rows
     ]
+
+
+@router.get(
+    "/user/{username}/pinnable_hosts",
+    response_model=list[PinnableHost],
+    responses={403: responses._403, 404: responses._404},
+)
+def list_user_pinnable_hosts_endpoint(
+    db: Session = Depends(get_db),
+    dbuser: UserResponse = Depends(get_validated_user),
+    admin: Admin = Depends(Admin.get_current),
+):
+    """Локации, которые реально мог получить этот юзер, с полным составом нод —
+    источник данных для формы закрепления (см. `app.services.address_history.list_pinnable_hosts`).
+
+    Пер-юзерный, а не общий список хостов панели: закрепление ставится юзеру,
+    значит выбирать доступные локации нужно из того, что юзер реально может
+    получить (та же фильтрация по боту, что и в рендере подписки и в
+    `address_history.reconstruct`), иначе саппорт создал бы закрепление
+    локации чужого бота, которое никогда не применится.
+    """
+    db_user = cast(DBUser, dbuser)
+    return list_pinnable_hosts(db, db_user)
 
 
 @router.get(
