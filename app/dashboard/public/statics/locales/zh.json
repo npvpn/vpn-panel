@@ -375,7 +375,6 @@
   "addressPins.title": "地址固定与历史记录",
   "addressPins.tabPins": "固定",
   "addressPins.tabHistory": "历史",
-  "addressPins.createUnavailable": "此界面暂不支持创建新的固定——目前无法在此查看主机的完整节点列表，请让工程师添加该能力。",
   "addressPins.pinsLoadError": "加载固定失败",
   "addressPins.pinsEmpty": "没有生效中的固定",
   "addressPins.nodeIds": "节点 ID",
@@ -392,5 +391,18 @@
   "addressPins.unknownHost": "主机 #{{hostId}}",
   "addressPins.source.pin": "已固定",
   "addressPins.source.auto": "自动选择",
-  "addressPins.source.unknown": "未知"
+  "addressPins.source.unknown": "未知",
+  "addressPins.newPin": "新建固定",
+  "addressPins.host": "位置",
+  "addressPins.hostPlaceholder": "选择一个位置",
+  "addressPins.nodes": "节点",
+  "addressPins.hostHasNoNodes": "该位置当前没有关联任何节点。",
+  "addressPins.ttlDays": "天数",
+  "addressPins.ttlDaysHint": "必须大于 0 且不超过 {{max}}。",
+  "addressPins.notePlaceholder": "备注（可选）",
+  "addressPins.createPin": "固定",
+  "addressPins.pinCreated": "固定已创建",
+  "addressPins.pinCreateError": "创建固定失败，请重试。",
+  "addressPins.pinnableHostsLoadError": "加载位置失败",
+  "addressPins.noPinnableHosts": "该用户没有可供固定的节点位置。"
 }

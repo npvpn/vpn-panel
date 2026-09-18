@@ -379,7 +379,6 @@
   "addressPins.title": "پین‌ها و تاریخچه آدرس",
   "addressPins.tabPins": "پین‌ها",
   "addressPins.tabHistory": "تاریخچه",
-  "addressPins.createUnavailable": "ایجاد پین جدید از این صفحه هنوز در دسترس نیست — راهی برای دیدن لیست کامل نودهای یک هاست وجود ندارد. از توسعه‌دهنده بخواهید آن را اضافه کند.",
   "addressPins.pinsLoadError": "بارگذاری پین‌ها ناموفق بود",
   "addressPins.pinsEmpty": "پین فعالی وجود ندارد",
   "addressPins.nodeIds": "شناسه نودها",
@@ -396,5 +395,18 @@
   "addressPins.unknownHost": "هاست #{{hostId}}",
   "addressPins.source.pin": "پین‌شده",
   "addressPins.source.auto": "انتخاب خودکار",
-  "addressPins.source.unknown": "نامشخص"
+  "addressPins.source.unknown": "نامشخص",
+  "addressPins.newPin": "پین جدید",
+  "addressPins.host": "مکان",
+  "addressPins.hostPlaceholder": "یک مکان انتخاب کنید",
+  "addressPins.nodes": "نودها",
+  "addressPins.hostHasNoNodes": "در حال حاضر هیچ نودی به این مکان متصل نیست.",
+  "addressPins.ttlDays": "روز",
+  "addressPins.ttlDaysHint": "باید بزرگ‌تر از ۰ و حداکثر {{max}} باشد.",
+  "addressPins.notePlaceholder": "یادداشت اختیاری",
+  "addressPins.createPin": "پین کردن",
+  "addressPins.pinCreated": "پین ایجاد شد",
+  "addressPins.pinCreateError": "ایجاد پین انجام نشد، لطفاً دوباره امتحان کنید.",
+  "addressPins.pinnableHostsLoadError": "بارگذاری مکان‌ها ناموفق بود",
+  "addressPins.noPinnableHosts": "این کاربر هیچ مکان قابل پین‌ کردنی ندارد."
 }

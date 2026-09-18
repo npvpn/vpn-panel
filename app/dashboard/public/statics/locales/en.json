@@ -453,7 +453,6 @@
   "addressPins.title": "Address Pins & History",
   "addressPins.tabPins": "Pins",
   "addressPins.tabHistory": "History",
-  "addressPins.createUnavailable": "Creating new pins from this screen isn't available yet — there is no way to look up a host's full node list here. Ask an engineer to add it.",
   "addressPins.pinsLoadError": "Failed to load pins",
   "addressPins.pinsEmpty": "No active pins",
   "addressPins.nodeIds": "Node IDs",
@@ -470,5 +469,18 @@
   "addressPins.unknownHost": "Host #{{hostId}}",
   "addressPins.source.pin": "Pinned",
   "addressPins.source.auto": "Auto-selected",
-  "addressPins.source.unknown": "Unknown"
+  "addressPins.source.unknown": "Unknown",
+  "addressPins.newPin": "New pin",
+  "addressPins.host": "Location",
+  "addressPins.hostPlaceholder": "Select a location",
+  "addressPins.nodes": "Nodes",
+  "addressPins.hostHasNoNodes": "This location currently has no nodes attached.",
+  "addressPins.ttlDays": "Days",
+  "addressPins.ttlDaysHint": "Must be greater than 0 and no more than {{max}}.",
+  "addressPins.notePlaceholder": "Optional note",
+  "addressPins.createPin": "Pin",
+  "addressPins.pinCreated": "Pin created",
+  "addressPins.pinCreateError": "Failed to create pin, please try again.",
+  "addressPins.pinnableHostsLoadError": "Failed to load locations",
+  "addressPins.noPinnableHosts": "This user has no node-based locations available to pin."
 }

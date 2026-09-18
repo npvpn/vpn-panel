@@ -454,7 +454,6 @@
   "addressPins.title": "Закрепления и история выдачи",
   "addressPins.tabPins": "Закрепления",
   "addressPins.tabHistory": "История",
-  "addressPins.createUnavailable": "Создание новых закреплений здесь пока недоступно — нет способа получить полный список нод хоста в этом экране. Попросите разработчика добавить его.",
   "addressPins.pinsLoadError": "Не удалось загрузить закрепления",
   "addressPins.pinsEmpty": "Действующих закреплений нет",
   "addressPins.nodeIds": "ID нод",
@@ -471,5 +470,18 @@
   "addressPins.unknownHost": "Хост #{{hostId}}",
   "addressPins.source.pin": "Закреплено",
   "addressPins.source.auto": "Автовыбор",
-  "addressPins.source.unknown": "Неизвестно"
+  "addressPins.source.unknown": "Неизвестно",
+  "addressPins.newPin": "Новое закрепление",
+  "addressPins.host": "Локация",
+  "addressPins.hostPlaceholder": "Выберите локацию",
+  "addressPins.nodes": "Ноды",
+  "addressPins.hostHasNoNodes": "К этой локации сейчас не привязано ни одной ноды.",
+  "addressPins.ttlDays": "Дней",
+  "addressPins.ttlDaysHint": "Должно быть больше 0 и не больше {{max}}.",
+  "addressPins.notePlaceholder": "Необязательная заметка",
+  "addressPins.createPin": "Закрепить",
+  "addressPins.pinCreated": "Закрепление создано",
+  "addressPins.pinCreateError": "Не удалось создать закрепление, попробуйте ещё раз.",
+  "addressPins.pinnableHostsLoadError": "Не удалось загрузить локации",
+  "addressPins.noPinnableHosts": "У этого пользователя нет доступных для закрепления локаций."
 }

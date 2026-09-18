@@ -3,8 +3,13 @@ import {
   AlertIcon,
   Badge,
   Box,
+  Button,
+  Checkbox,
+  CheckboxGroup,
   Divider,
   Flex,
+  FormControl,
+  FormLabel,
   HStack,
   IconButton,
   Modal,
@@ -13,6 +18,13 @@ import {
   ModalContent,
   ModalHeader,
   ModalOverlay,
+  NumberDecrementStepper,
+  NumberIncrementStepper,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  Select,
+  SimpleGrid,
   Spinner,
   Tab,
   TabList,
@@ -20,6 +32,7 @@ import {
   TabPanels,
   Tabs,
   Text,
+  Textarea,
   Tooltip,
   VStack,
   chakra,
@@ -28,7 +41,7 @@ import {
 import { MapPinIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { useDashboard } from "contexts/DashboardContext";
 import dayjs from "dayjs";
-import { FC, useCallback, useEffect, useState } from "react";
+import { FC, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
 import { Icon } from "./Icon";
@@ -66,7 +79,20 @@ type DayAssignments = {
   hosts: HostAssignment[];
 };
 
+type PinnableNode = {
+  node_id: number;
+  name: string;
+};
+
+type PinnableHost = {
+  host_id: number;
+  remark: string;
+  nodes: PinnableNode[];
+};
+
 const HISTORY_DAYS = 14;
+const MAX_TTL_DAYS = 90;
+const DEFAULT_TTL_DAYS = 7;
 
 const sourceColorScheme = (source: AssignmentSource): string => {
   if (source === "pin") return "purple";
@@ -88,6 +114,19 @@ export const AddressPinModal: FC = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
+  const [pinnableHosts, setPinnableHosts] = useState<PinnableHost[]>([]);
+  const [pinnableHostsLoading, setPinnableHostsLoading] = useState(false);
+  const [pinnableHostsError, setPinnableHostsError] = useState<string | null>(
+    null
+  );
+
+  const [selectedHostId, setSelectedHostId] = useState<string>("");
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [ttlDays, setTtlDays] = useState<string>(String(DEFAULT_TTL_DAYS));
+  const [note, setNote] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   // Признаки для отображения хостов без имени (нет пересечения с историей).
   const remarkByHostId = new Map<number, string>();
   history.forEach((day) => {
@@ -96,6 +135,9 @@ export const AddressPinModal: FC = () => {
         remarkByHostId.set(host.host_id, host.remark);
       }
     });
+  });
+  pinnableHosts.forEach((host) => {
+    remarkByHostId.set(host.host_id, host.remark);
   });
 
   const loadPins = useCallback(() => {
@@ -125,13 +167,32 @@ export const AddressPinModal: FC = () => {
       .finally(() => setHistoryLoading(false));
   }, [user, t]);
 
+  const loadPinnableHosts = useCallback(() => {
+    if (!user) return;
+    setPinnableHostsLoading(true);
+    setPinnableHostsError(null);
+    fetch(`/user/${user.username}/pinnable_hosts`, { method: "GET" })
+      .then((res: PinnableHost[]) => setPinnableHosts(res || []))
+      .catch(() => {
+        setPinnableHostsError(t("addressPins.pinnableHostsLoadError"));
+      })
+      .finally(() => setPinnableHostsLoading(false));
+  }, [user, t]);
+
   useEffect(() => {
     if (user) {
       loadPins();
       loadHistory();
+      loadPinnableHosts();
     } else {
       setPins([]);
       setHistory([]);
+      setPinnableHosts([]);
+      setSelectedHostId("");
+      setSelectedNodeIds([]);
+      setTtlDays(String(DEFAULT_TTL_DAYS));
+      setNote("");
+      setCreateError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -171,6 +232,65 @@ export const AddressPinModal: FC = () => {
     return remark ? remark : t("addressPins.unknownHost", { hostId });
   };
 
+  const selectedHost = useMemo(
+    () =>
+      pinnableHosts.find((host) => String(host.host_id) === selectedHostId) ||
+      null,
+    [pinnableHosts, selectedHostId]
+  );
+
+  const onSelectHost = (hostId: string) => {
+    setSelectedHostId(hostId);
+    setSelectedNodeIds([]);
+    setCreateError(null);
+  };
+
+  const ttlDaysNumber = Number(ttlDays);
+  const ttlDaysValid =
+    Number.isFinite(ttlDaysNumber) &&
+    ttlDaysNumber > 0 &&
+    ttlDaysNumber <= MAX_TTL_DAYS;
+  const canCreatePin =
+    !!selectedHostId && selectedNodeIds.length > 0 && ttlDaysValid;
+
+  const createPin = () => {
+    if (!user || !canCreatePin) return;
+    setCreating(true);
+    setCreateError(null);
+    fetch(`/user/${user.username}/pins`, {
+      method: "POST",
+      body: {
+        host_id: Number(selectedHostId),
+        node_ids: selectedNodeIds.map(Number),
+        ttl_days: ttlDaysNumber,
+        note: note.trim() ? note.trim() : undefined,
+      },
+    })
+      .then((pin: PinResponse) => {
+        setPins((prev) => [
+          ...prev.filter((p) => p.host_id !== pin.host_id),
+          pin,
+        ]);
+        setSelectedHostId("");
+        setSelectedNodeIds([]);
+        setTtlDays(String(DEFAULT_TTL_DAYS));
+        setNote("");
+        toast({
+          title: t("addressPins.pinCreated"),
+          status: "success",
+          isClosable: true,
+          position: "top",
+          duration: 3000,
+        });
+      })
+      .catch((err: any) => {
+        setCreateError(
+          err?.response?._data?.detail || t("addressPins.pinCreateError")
+        );
+      })
+      .finally(() => setCreating(false));
+  };
+
   return (
     <Modal isCentered isOpen={!!user} onClose={onClose} size="2xl">
       <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
@@ -200,12 +320,139 @@ export const AddressPinModal: FC = () => {
               <Tab>{t("addressPins.tabHistory")}</Tab>
             </TabList>
             <TabPanels>
-              {/* Действующие закрепления */}
+              {/* Действующие закрепления + создание нового */}
               <TabPanel px={0}>
-                <Alert status="info" borderRadius="md" fontSize="sm" mb={3}>
-                  <AlertIcon />
-                  {t("addressPins.createUnavailable")}
-                </Alert>
+                <Box borderWidth="1px" borderRadius="lg" p={3} mb={4}>
+                  <Text fontWeight="semibold" fontSize="sm" mb={2}>
+                    {t("addressPins.newPin")}
+                  </Text>
+                  {pinnableHostsError && (
+                    <Alert status="error" mb={3} borderRadius="md" fontSize="sm">
+                      <AlertIcon />
+                      {pinnableHostsError}
+                    </Alert>
+                  )}
+                  {pinnableHostsLoading ? (
+                    <Flex justifyContent="center" py="4">
+                      <Spinner size="sm" />
+                    </Flex>
+                  ) : pinnableHosts.length ? (
+                    <VStack align="stretch" spacing={3}>
+                      <FormControl>
+                        <FormLabel fontSize="sm">
+                          {t("addressPins.host")}
+                        </FormLabel>
+                        <Select
+                          size="sm"
+                          placeholder={t("addressPins.hostPlaceholder")}
+                          value={selectedHostId}
+                          onChange={(e) => onSelectHost(e.target.value)}
+                        >
+                          {pinnableHosts.map((host) => (
+                            <option key={host.host_id} value={host.host_id}>
+                              {host.remark}
+                            </option>
+                          ))}
+                        </Select>
+                      </FormControl>
+
+                      {selectedHost && (
+                        <FormControl>
+                          <FormLabel fontSize="sm">
+                            {t("addressPins.nodes")}
+                          </FormLabel>
+                          <CheckboxGroup
+                            value={selectedNodeIds}
+                            onChange={(values) =>
+                              setSelectedNodeIds(values as string[])
+                            }
+                          >
+                            <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={1}>
+                              {selectedHost.nodes.map((node) => (
+                                <Checkbox
+                                  key={node.node_id}
+                                  value={String(node.node_id)}
+                                  fontSize="sm"
+                                >
+                                  {node.name}
+                                </Checkbox>
+                              ))}
+                            </SimpleGrid>
+                          </CheckboxGroup>
+                          {!selectedHost.nodes.length && (
+                            <Text fontSize="xs" color="gray.500" mt={1}>
+                              {t("addressPins.hostHasNoNodes")}
+                            </Text>
+                          )}
+                        </FormControl>
+                      )}
+
+                      <HStack align="flex-start" spacing={3}>
+                        <FormControl maxW="140px">
+                          <FormLabel fontSize="sm">
+                            {t("addressPins.ttlDays")}
+                          </FormLabel>
+                          <NumberInput
+                            size="sm"
+                            min={1}
+                            max={MAX_TTL_DAYS}
+                            value={ttlDays}
+                            onChange={(valueString) => setTtlDays(valueString)}
+                          >
+                            <NumberInputField />
+                            <NumberInputStepper>
+                              <NumberIncrementStepper />
+                              <NumberDecrementStepper />
+                            </NumberInputStepper>
+                          </NumberInput>
+                          {!ttlDaysValid && (
+                            <Text fontSize="xs" color="red.400" mt={1}>
+                              {t("addressPins.ttlDaysHint", {
+                                max: MAX_TTL_DAYS,
+                              })}
+                            </Text>
+                          )}
+                        </FormControl>
+                        <FormControl flex={1}>
+                          <FormLabel fontSize="sm">
+                            {t("addressPins.note")}
+                          </FormLabel>
+                          <Textarea
+                            size="sm"
+                            rows={1}
+                            value={note}
+                            onChange={(e) => setNote(e.target.value)}
+                            placeholder={t("addressPins.notePlaceholder")}
+                          />
+                        </FormControl>
+                      </HStack>
+
+                      {createError && (
+                        <Alert status="error" borderRadius="md" fontSize="sm">
+                          <AlertIcon />
+                          {createError}
+                        </Alert>
+                      )}
+
+                      <Flex justify="flex-end">
+                        <Button
+                          size="sm"
+                          colorScheme="primary"
+                          onClick={createPin}
+                          isDisabled={!canCreatePin}
+                          isLoading={creating}
+                        >
+                          {t("addressPins.createPin")}
+                        </Button>
+                      </Flex>
+                    </VStack>
+                  ) : (
+                    <Text color="gray.500" fontSize="sm">
+                      {t("addressPins.noPinnableHosts")}
+                    </Text>
+                  )}
+                </Box>
+
                 {pinsError && (
                   <Alert status="error" mb={3} borderRadius="md">
                     <AlertIcon />
