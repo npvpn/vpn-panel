@@ -11,8 +11,8 @@
     <script defer src="{{ sub_statics }}scripts/status-poll.js"
       data-info-url="/{{ sub_path }}/{{ token }}/info"
       data-initial-status="{{ user.status.value }}"
-      data-device-limit="{{ user.device_limit or 0 }}"
-      data-interval-ms="60000"></script>
+      data-device-limit-mode="cleared"
+      data-interval-ms="30000"></script>
     <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
 
     <script id="devices-data" type="application/json">{{ devices_json | safe }}</script>

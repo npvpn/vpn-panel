@@ -2,30 +2,47 @@
   const script = document.currentScript;
   const infoUrl = script.dataset.infoUrl;
   const initialStatus = script.dataset.initialStatus;
-  const trackDeviceLimit = script.dataset.deviceLimit != null;
+  // 'cleared' — перезагрузить, когда устройств снова стало меньше лимита (страница лимита устройств).
+  // 'reached' — перезагрузить, когда лимит только что достигнут (страница активной подписки).
+  const deviceLimitMode = script.dataset.deviceLimitMode;
+  // Токен может стать невалидным навсегда (например, подписку отозвали) — тогда /info
+  // отвечает 404, и это тоже повод перезагрузить страницу, чтобы показать актуальное состояние.
+  const reloadOnGone = script.dataset.reloadOnGone === 'true';
   const intervalMs = Number(script.dataset.intervalMs) || 60000;
 
   async function checkStatus() {
+    let response;
     try {
-      const response = await fetch(infoUrl);
-      if (!response.ok) return;
-      const data = await response.json();
+      response = await fetch(infoUrl);
+    } catch {
+      return; // Сеть недоступна — просто попробуем на следующем тике.
+    }
 
-      const statusChanged = data.status && data.status !== initialStatus;
-      // Лимит устройств сравниваем с актуальным data.device_limit из ответа,
-      // а не с тем, что был при загрузке страницы — его тоже могли поменять в админке.
-      const deviceLimitCleared =
-        trackDeviceLimit &&
-        typeof data.devices_used === 'number' &&
-        typeof data.device_limit === 'number' &&
-        data.device_limit > 0 &&
-        data.devices_used < data.device_limit;
-
-      if (statusChanged || deviceLimitCleared) {
+    if (!response.ok) {
+      if (reloadOnGone && response.status === 404) {
         window.location.reload();
       }
-    } catch {
-      // Сеть недоступна — просто попробуем на следующем тике.
+      return;
+    }
+
+    const data = await response.json();
+    const statusChanged = data.status && data.status !== initialStatus;
+
+    let deviceLimitTriggered = false;
+    if (
+      deviceLimitMode &&
+      typeof data.devices_used === 'number' &&
+      typeof data.device_limit === 'number' &&
+      data.device_limit > 0
+    ) {
+      deviceLimitTriggered =
+        deviceLimitMode === 'cleared'
+          ? data.devices_used < data.device_limit
+          : data.devices_used >= data.device_limit;
+    }
+
+    if (statusChanged || deviceLimitTriggered) {
+      window.location.reload();
     }
   }
 
