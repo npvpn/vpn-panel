@@ -30,6 +30,7 @@ from app.db.crud import (  # noqa: E402
     write_host_composition_snapshot,
 )
 from app.db.models import HostCompositionSnapshot, Node, ProxyHost, ProxyInbound  # noqa: E402
+from app.jobs.snapshot_host_composition import _host_payload  # noqa: E402
 from app.xray.host_addresses import resolve_host_addresses, resolve_host_node_ids  # noqa: E402
 
 if sys.modules.get("app.subscription.share") is _share_stub:
@@ -135,3 +136,29 @@ def test_snapshot_survives_host_without_nodes(db):
     write_host_composition_snapshot(db, 10, host.id, payload)
 
     assert get_host_composition(db, 10) == {host.id: []}
+
+
+def test_static_address_host_has_no_node_correlation(db):
+    """host.address статический: node_id -> None, а не случайное сопоставление по индексу.
+
+    Число адресов (2, через запятую) и число привязанных нод (3) НАРОЧНО не
+    совпадают — если бы код зиповал node_ids с адресами как для нодового случая,
+    он бы либо упал (strict=True), либо молча приписал адресу чужую ноду. Вызываем
+    ровно ту функцию, что использует джоба (_host_payload), а не копию её логики —
+    иначе тест проверял бы сам себя, а не продакшен-код.
+    """
+    node1 = _make_node(db, "nl-1", "1.2.3.4")
+    node2 = _make_node(db, "nl-2", "5.6.7.8")
+    node3 = _make_node(db, "nl-3", "9.9.9.9")
+    host = _make_host(db, address="static-a.example, static-b.example", nodes=[node1, node2, node3])
+
+    payload = _host_payload(host)
+
+    assert payload == [
+        {"node_id": None, "address": "static-a.example"},
+        {"node_id": None, "address": "static-b.example"},
+    ]
+
+    write_host_composition_snapshot(db, 10, host.id, payload)
+
+    assert get_host_composition(db, 10) == {host.id: payload}

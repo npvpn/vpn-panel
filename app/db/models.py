@@ -690,7 +690,9 @@ class HostCompositionSnapshot(Base):
     id = Column(Integer, primary_key=True)
     epoch_index = Column(Integer, nullable=False, index=True)
     host_id = Column(Integer, ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False, index=True)
-    # [{"node_id": int, "address": str}, ...] в порядке выдачи.
+    # [{"node_id": int | None, "address": str}, ...] в порядке выдачи. node_id = None
+    # для статического host.address: там нет соответствия "адрес <-> нода" по
+    # построению (см. app/jobs/snapshot_host_composition.py:_host_payload).
     payload = Column(JSON, nullable=False)
     host = relationship("ProxyHost", passive_deletes=True)
 

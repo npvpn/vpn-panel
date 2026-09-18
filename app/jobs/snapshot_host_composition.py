@@ -24,6 +24,8 @@ inbound_tag, а внутри — список словарей БЕЗ host_id (�
 import time
 from datetime import UTC, datetime
 
+from sqlalchemy.orm import selectinload
+
 from app import logger, scheduler
 from app.db import GetDB, crud
 from app.db.models import ProxyHost
@@ -60,10 +62,18 @@ def snapshot_host_composition() -> None:
     epoch = day_index(datetime.now(UTC))
 
     with GetDB() as db:
-        hosts = db.query(ProxyHost).filter(ProxyHost.is_disabled.isnot(True)).all()
+        # selectinload: host.nodes — коллекция без eager-загрузки по умолчанию,
+        # без неё _host_payload бьёт по БД за нодами отдельным SELECT на каждый
+        # хост (N+1) в джобе, которая крутится каждый час (NPVPN-2072).
+        hosts = (
+            db.query(ProxyHost).options(selectinload(ProxyHost.nodes)).filter(ProxyHost.is_disabled.isnot(True)).all()
+        )
         for host in hosts:
             crud.write_host_composition_snapshot(db, epoch, host.id, _host_payload(host))
 
+        # write_host_composition_snapshot сама не коммитит — один коммит на весь
+        # проход (десятки хостов), а не по одному на хост: prune делает свой DELETE
+        # и коммитит разом всё, что накопилось в транзакции выше.
         crud.prune_host_composition_snapshots(db, epoch, RETENTION_DAYS)
 
     logger.info(f"[snapshot_host_composition] done hosts={len(hosts)} epoch={epoch} dt={time.monotonic() - t0:.2f}s")

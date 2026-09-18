@@ -2179,6 +2179,16 @@ def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int,
     Эквивалент "ON DUPLICATE KEY UPDATE epoch_index = epoch_index" из бота
     (scripts/prometheus_vpn_nodes_sd.py), но через SQLAlchemy Core, диалект-зависимо:
     панель крутится на MySQL в проде и на SQLite в тестах, а не на Postgres, как бот.
+
+    Формат `payload`: список `{"node_id": int | None, "address": str}`. `node_id`
+    равен `None`, когда адрес хоста статический (host.address задан, обычно
+    маскировка под домен) — там нет соответствия "адрес <-> нода" по построению
+    (см. `_host_payload` в app/jobs/snapshot_host_composition.py и комментарий в
+    `AddressContext.pick` про то же самое несоответствие).
+
+    Не коммитит сама: вызывающий код (джоба снимка обходит десятки хостов за
+    проход) копит изменения и коммитит один раз за проход, а не на каждый хост —
+    N лишних round-trip'ов к БД в джобе, которая ходит каждый час, того не стоят.
     """
     values = {"epoch_index": epoch_index, "host_id": host_id, "payload": payload}
     stmt: Any
@@ -2190,7 +2200,6 @@ def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int,
         sqlite_stmt = sqlite_insert(HostCompositionSnapshot).values(**values)
         stmt = sqlite_stmt.on_conflict_do_nothing(index_elements=["epoch_index", "host_id"])
     db.execute(stmt)
-    db.commit()
 
 
 def get_host_composition(db: Session, epoch_index: int) -> dict[int, list[dict]]:
