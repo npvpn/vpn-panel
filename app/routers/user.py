@@ -1,7 +1,7 @@
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import uuid4
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app import logger, xray
 from app.db import Session, crud, get_db
 from app.db.models import Proxy as DBProxy
+from app.db.models import ProxyHost as DBProxyHost
 from app.db.models import User as DBUser
 from app.dependencies import get_expired_users_list, get_validated_user, validate_dates
 from app.models.admin import Admin
@@ -39,6 +40,8 @@ from app.models.user import (
     UsersUsagesResponse,
     UserUsagesResponse,
 )
+from app.services.address_history import DayAssignments, PinCreate, PinResponse, reconstruct
+from app.subscription.address_context_builder import _EPOCH_ORIGIN, day_index
 from app.subscription.bot_settings import resolve_bot_settings
 from app.utils import report, responses
 from app.utils.request_context import request_id_var
@@ -472,6 +475,131 @@ def rotate_user_addresses_endpoint(
     rotated = crud.rotate_user_addresses(db=db, dbuser=cast(DBUser, dbuser))
     logger.info(f'User "{rotated.username}" addresses rotated by "{admin.username}"')
     return UserResponse.model_validate(rotated)
+
+
+@router.post(
+    "/user/{username}/pins",
+    response_model=PinResponse,
+    responses={403: responses._403, 404: responses._404},
+)
+def create_user_pin_endpoint(
+    payload: PinCreate,
+    db: Session = Depends(get_db),
+    dbuser: UserResponse = Depends(get_validated_user),
+    admin: Admin = Depends(Admin.get_current),
+):
+    """Закрепить конкретные ноды хоста за юзером (расследование/ручная правка саппорта).
+
+    Закрепление заменяет автовыбор целиком для этого хоста, пока не истечёт
+    или не будет снято явно (см. AddressContext.pick). `created_by` берётся из
+    аутентифицированного админа, а не из тела запроса.
+    """
+    host = db.query(DBProxyHost).filter(DBProxyHost.id == payload.host_id).first()
+    if host is None:
+        raise HTTPException(status_code=404, detail="Host not found")
+    if host.address:
+        # Легаси-хост со статическим адресом: соответствия "адрес <-> нода" нет
+        # по построению (см. AddressContext.pick), закреплять там нечего.
+        raise HTTPException(status_code=400, detail="Host has a static address, nothing to pin by node")
+
+    host_node_ids = {node.id for node in host.nodes}
+    unknown_nodes = [node_id for node_id in payload.node_ids if node_id not in host_node_ids]
+    if unknown_nodes:
+        raise HTTPException(status_code=400, detail=f"Nodes not attached to this host: {unknown_nodes}")
+
+    db_user = cast(DBUser, dbuser)
+    now = datetime.now(UTC)
+    pin = crud.create_user_node_pin(
+        db,
+        user_id=cast(int, db_user.id),
+        host_id=payload.host_id,
+        node_ids=payload.node_ids,
+        expires_at=now + timedelta(days=payload.ttl_days),
+        created_by=admin.username,
+        note=payload.note,
+    )
+    logger.info(
+        f'Node pin created for user "{db_user.username}" host={payload.host_id} nodes={payload.node_ids} '
+        f'ttl_days={payload.ttl_days} by "{admin.username}"'
+    )
+    return PinResponse(
+        host_id=cast(int, pin.host_id),
+        node_ids=cast("list[int]", pin.node_ids),
+        created_at=cast(datetime, pin.created_at),
+        expires_at=cast(datetime, pin.expires_at),
+        created_by=cast(str, pin.created_by),
+        note=cast("str | None", pin.note),
+    )
+
+
+@router.delete(
+    "/user/{username}/pins/{host_id}",
+    responses={403: responses._403, 404: responses._404},
+)
+def delete_user_pin_endpoint(
+    host_id: int,
+    db: Session = Depends(get_db),
+    dbuser: UserResponse = Depends(get_validated_user),
+    admin: Admin = Depends(Admin.get_current),
+):
+    """Снять действующее закрепление немедленно, не дожидаясь ttl_days."""
+    db_user = cast(DBUser, dbuser)
+    removed = crud.delete_user_node_pin(db, user_id=cast(int, db_user.id), host_id=host_id, now=datetime.now(UTC))
+    logger.info(f'Node pin removed for user "{db_user.username}" host={host_id} by "{admin.username}" (rows={removed})')
+    return {"removed": removed}
+
+
+@router.get(
+    "/user/{username}/pins",
+    response_model=list[PinResponse],
+    responses={403: responses._403, 404: responses._404},
+)
+def list_user_pins_endpoint(
+    db: Session = Depends(get_db),
+    dbuser: UserResponse = Depends(get_validated_user),
+    admin: Admin = Depends(Admin.get_current),
+):
+    """Действующие закрепления юзера."""
+    db_user = cast(DBUser, dbuser)
+    rows = crud.list_active_pins(db, cast(int, db_user.id), datetime.now(UTC))
+    return [
+        PinResponse(
+            host_id=cast(int, row.host_id),
+            node_ids=cast("list[int]", row.node_ids),
+            created_at=cast(datetime, row.created_at),
+            expires_at=cast(datetime, row.expires_at),
+            created_by=cast(str, row.created_by),
+            note=cast("str | None", row.note),
+        )
+        for row in rows
+    ]
+
+
+@router.get(
+    "/user/{username}/address_history",
+    response_model=list[DayAssignments],
+    responses={403: responses._403, 404: responses._404},
+)
+def get_user_address_history_endpoint(
+    days: int = Query(7, gt=0, le=90),
+    db: Session = Depends(get_db),
+    dbuser: UserResponse = Depends(get_validated_user),
+    admin: Admin = Depends(Admin.get_current),
+):
+    """История выдачи адресов за последние `days` суток, по каждому хосту:
+    ноды/адреса, источник (pin/auto) и явный признак невосстановимости
+    (см. app.services.address_history)."""
+    db_user = cast(DBUser, dbuser)
+    bot_settings = resolve_bot_settings(db_user)
+    today = day_index(datetime.now(UTC))
+    return [
+        DayAssignments(
+            day_index=day,
+            date=(_EPOCH_ORIGIN + timedelta(days=day)).date().isoformat(),
+            hosts=reconstruct(db, cast(int, db_user.id), day, bot_settings),
+        )
+        for day in range(today, today - days, -1)
+    ]
 
 
 @router.get(

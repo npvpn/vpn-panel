@@ -1,0 +1,203 @@
+"""Восстановление выдачи адресов задним числом — журнал для саппорта (NPVPN-2072).
+
+Смысловое ядро фичи сужения адресов: ради этого и собираются суточные снимки
+состава хостов (HostCompositionSnapshot) и весов нод (NodeWeightSnapshot).
+
+Главный принцип: честность важнее полноты. Саппорт примет любой показанный
+ответ за факт. Поэтому если по хосту за дату нет данных для однозначного
+восстановления — источник "unknown" и restorable=False, а не пустой список
+(который прочитают как "адресов не было") и не правдоподобная догадка по
+чужим/неполным данным.
+
+Историческая оговорка: `bot_settings` приходит СЕГОДНЯШНИМ — панель не хранит,
+каким было `sub_address_subset_size`/`sub_address_rotation_days` в прошлом.
+Реконструкция предполагает, что настройки сужения не менялись; если их
+меняли, auto-часть истории за периоды до смены может быть неточной. Это
+ограничение источника данных, а не что-то, что можно обойти в этом модуле.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Literal, cast
+
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.db import crud
+from app.db.models import ProxyHost, User
+from app.subscription.address_context import weighted_candidates
+from app.subscription.address_context_builder import _EPOCH_ORIGIN
+from app.xray.address_policy import epoch_for, epoch_start_day, pick_keys
+
+AssignmentSource = Literal["pin", "auto", "unknown"]
+
+
+class HostAssignment(BaseModel):
+    """Что юзер получил по одному хосту в один день (NPVPN-2072).
+
+    `restorable=False` — явный признак "не восстановимо": данных за эти сутки
+    не хватает, `node_ids`/`addresses` в этом случае пустые и НЕ означают
+    "адресов не было", а означают "неизвестно, какие были".
+    """
+
+    host_id: int
+    remark: str
+    source: AssignmentSource
+    restorable: bool
+    node_ids: list[int] = Field(default_factory=list)
+    addresses: list[str] = Field(default_factory=list)
+
+
+class DayAssignments(BaseModel):
+    """Один день истории: `day_index` + человекочитаемая дата + все хосты."""
+
+    day_index: int
+    date: str
+    hosts: list[HostAssignment]
+
+
+# Архивный горизонт закреплений: тот же, что у снимков состава/весов
+# (prune_host_composition_snapshots, NodeWeightSnapshot). Пин с TTL дальше
+# этого горизонта пережил бы собственную историю — стал бы необъяснимым,
+# когда журнал за его срок уже вычищен.
+MAX_PIN_TTL_DAYS = 90
+
+
+class PinCreate(BaseModel):
+    """Тело POST /user/{username}/pins. `created_by` намеренно не поле тела —
+    берётся из аутентифицированного админа на стороне роутера, иначе автора
+    действия можно подделать одной строкой в запросе."""
+
+    host_id: int
+    node_ids: list[int] = Field(min_length=1)
+    ttl_days: int = Field(gt=0, le=MAX_PIN_TTL_DAYS)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class PinResponse(BaseModel):
+    host_id: int
+    node_ids: list[int]
+    created_at: datetime
+    expires_at: datetime
+    created_by: str
+    note: str | None = None
+
+
+def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -> list[HostAssignment]:
+    """Восстанавливает выдачу адресов юзеру за сутки `day_index` по всем хостам.
+
+    Алгоритм на каждый хост:
+    1. Если на эти сутки был активный пин (created_at < конец суток и
+       expires_at > начало суток) — источник "pin", ноды из пина, пересечённые
+       с фактическим составом хоста за эти сутки (та же семантика пересечения,
+       что в AddressContext.pick — закреплённая нода могла с тех пор отвязаться
+       от хоста).
+    2. Иначе — вычисляем эпоху юзера на эти сутки (epoch_for с его
+       address_rotation_offset), берём снимок весов на начало этой эпохи и
+       прогоняем тот же pick_keys, что работает в живой выдаче — источник
+       "auto".
+    3. Если снимка СОСТАВА хоста за эти сутки нет вовсе — восстановить нечего
+       (мы даже не знаем, какие ноды/адреса стояли за хостом): "unknown".
+       Если снимка ВЕСОВ за эти сутки нет, а сужение в этот день было бы
+       фактическим (адресов больше, чем размер подмножества) — тоже "unknown":
+       угадывать веса значило бы выдавать может-быть-правду за факт.
+    """
+    day_start = day_start_at(day_index)
+    day_end = day_start_at(day_index + 1)
+
+    composition = crud.get_host_composition(db, day_index)
+    hosts = db.query(ProxyHost).order_by(ProxyHost.id).all()
+    pins_on_day = crud.get_pins_covering_day(db, user_id, day_start, day_end)
+
+    dbuser = db.query(User).filter(User.id == user_id).first()
+    offset = int(getattr(dbuser, "address_rotation_offset", 0) or 0) if dbuser else 0
+
+    period_days = max(1, int(bot_settings.get("sub_address_rotation_days") or 1))
+    size = int(bot_settings.get("sub_address_subset_size") or 0)
+    epoch = epoch_for(user_id, day_index, period_days, offset)
+    snapshot_day = epoch_start_day(user_id, day_index, period_days)
+    weights = crud.get_weight_snapshot(db, snapshot_day)
+
+    results: list[HostAssignment] = []
+    for host in hosts:
+        host_id = cast(int, host.id)
+        remark = cast(str, host.remark)
+        payload = composition.get(host_id)
+        if payload is None:
+            results.append(HostAssignment(host_id=host_id, remark=remark, source="unknown", restorable=False))
+            continue
+
+        node_ids_all = [item["node_id"] for item in payload]
+        addresses_all = [item["address"] for item in payload]
+        addresses_from_nodes = bool(node_ids_all) and all(nid is not None for nid in node_ids_all)
+
+        pin_nodes = pins_on_day.get(host_id)
+        if pin_nodes and addresses_from_nodes:
+            pinned = set(pin_nodes) & set(node_ids_all)
+            if pinned:
+                chosen = [(nid, addr) for nid, addr in zip(node_ids_all, addresses_all, strict=True) if nid in pinned]
+                results.append(
+                    HostAssignment(
+                        host_id=host_id,
+                        remark=remark,
+                        source="pin",
+                        restorable=True,
+                        node_ids=[nid for nid, _ in chosen],
+                        addresses=[addr for _, addr in chosen],
+                    )
+                )
+                continue
+
+        # Автовыбор. Если подмножество не режет список (фича выключена в
+        # today-конфиге или адресов и так не больше size) — веса не нужны,
+        # выдаём состав как есть, честно и без всяких допущений.
+        if size <= 0 or len(addresses_all) <= size:
+            results.append(
+                HostAssignment(
+                    host_id=host_id,
+                    remark=remark,
+                    source="auto",
+                    restorable=True,
+                    node_ids=[nid for nid in node_ids_all if nid is not None],
+                    addresses=addresses_all,
+                )
+            )
+            continue
+
+        if not weights:
+            # Реальное сужение в этот день было бы, а весов нет: не гадаем,
+            # каким было бы распределение — честно говорим "не восстановимо".
+            results.append(HostAssignment(host_id=host_id, remark=remark, source="unknown", restorable=False))
+            continue
+
+        if addresses_from_nodes:
+            candidates = list(weighted_candidates(weights, node_ids_all).items())
+            chosen_nodes = set(pick_keys(user_id, candidates, size, epoch))
+            chosen = [(nid, addr) for nid, addr in zip(node_ids_all, addresses_all, strict=True) if nid in chosen_nodes]
+            node_ids_out = [nid for nid, _ in chosen]
+            addresses_out = [addr for _, addr in chosen]
+        else:
+            by_address = [(addr, 0.0) for addr in addresses_all]
+            chosen_addresses = set(pick_keys(user_id, by_address, size, epoch))
+            node_ids_out = []
+            addresses_out = [addr for addr in addresses_all if addr in chosen_addresses]
+
+        results.append(
+            HostAssignment(
+                host_id=host_id,
+                remark=remark,
+                source="auto",
+                restorable=True,
+                node_ids=node_ids_out,
+                addresses=addresses_out,
+            )
+        )
+
+    return results
+
+
+def day_start_at(day_index: int):
+    """datetime начала указанных суток — обратная операция к day_index() из
+    address_context_builder."""
+    return _EPOCH_ORIGIN + timedelta(days=day_index)

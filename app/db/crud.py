@@ -2190,6 +2190,103 @@ def get_active_pins(db: Session, user_id: int, now: datetime) -> dict[int, list[
     return pins
 
 
+def create_user_node_pin(
+    db: Session,
+    *,
+    user_id: int,
+    host_id: int,
+    node_ids: list[int],
+    expires_at: datetime,
+    created_by: str,
+    note: str | None,
+) -> UserNodePin:
+    """Ставит закрепление нод хоста за юзером (NPVPN-2072).
+
+    Не трогает прежние строки на этот (user_id, host_id) — они остаются как
+    история (см. docstring UserNodePin). Действующей всегда становится эта,
+    самая свежая по created_at, — так её видят и get_active_pins, и
+    get_pins_covering_day.
+    """
+    pin = UserNodePin(
+        user_id=user_id,
+        host_id=host_id,
+        node_ids=node_ids,
+        expires_at=expires_at,
+        created_by=created_by,
+        note=note,
+    )
+    db.add(pin)
+    db.commit()
+    db.refresh(pin)
+    return pin
+
+
+def delete_user_node_pin(db: Session, *, user_id: int, host_id: int, now: datetime) -> int:
+    """Снимает действующее закрепление немедленно, не дожидаясь expires_at (NPVPN-2072).
+
+    Строку не удаляем — это стёрло бы историю расследований. Вместо этого
+    переносим expires_at на `now`: get_active_pins перестаёт видеть пин сразу
+    же, а get_pins_covering_day для прошлых суток по-прежнему честно покажет,
+    что в те сутки закрепление действовало. Возвращает число снятых строк
+    (0 — снимать было нечего).
+    """
+    rows = (
+        db.query(UserNodePin)
+        .filter(UserNodePin.user_id == user_id, UserNodePin.host_id == host_id, UserNodePin.expires_at > now)
+        .all()
+    )
+    for row in rows:
+        cast(Any, row).expires_at = now
+    db.commit()
+    return len(rows)
+
+
+def list_active_pins(db: Session, user_id: int, now: datetime) -> list[UserNodePin]:
+    """Действующие закрепления юзера с полными полями — для админского списка (NPVPN-2072).
+
+    В отличие от get_active_pins (плоский dict host_id -> node_ids для горячего
+    пути рендера подписки), тут нужны все поля строки: expires_at, created_by,
+    note. Если на хост несколько активных строк — берём самую свежую по
+    created_at, тем же правилом, что и get_active_pins.
+    """
+    rows = (
+        db.query(UserNodePin)
+        .filter(UserNodePin.user_id == user_id, UserNodePin.expires_at > now)
+        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
+        .all()
+    )
+    latest: dict[int, UserNodePin] = {}
+    for row in rows:
+        latest[cast(int, row.host_id)] = row
+    return list(latest.values())
+
+
+def get_pins_covering_day(db: Session, user_id: int, day_start: datetime, day_end: datetime) -> dict[int, list[int]]:
+    """Закрепления юзера, действовавшие в течение суток [day_start, day_end) (NPVPN-2072).
+
+    В отличие от get_active_pins ("что действует сейчас") — отдельный запрос для
+    восстановления истории: захватывает и уже истёкшие строки. Истёкшие строки
+    специально не удаляются именно ради этого запроса. Пин считается
+    действовавшим в сутки, если он был создан до конца суток и не истёк до их
+    начала (`created_at < day_end and expires_at > day_start`). Если на пару
+    (host_id) за эти сутки несколько строк — берём самую свежую по created_at.
+    """
+    rows = (
+        db.query(UserNodePin)
+        .filter(
+            UserNodePin.user_id == user_id,
+            UserNodePin.created_at < day_end,
+            UserNodePin.expires_at > day_start,
+        )
+        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
+        .all()
+    )
+    pins: dict[int, list[int]] = {}
+    for row in rows:
+        pins[cast(int, row.host_id)] = list(cast(list[int], row.node_ids))
+    return pins
+
+
 def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int, payload: list[dict]) -> None:
     """Идемпотентная запись состава хоста на сутки (NPVPN-2072).
 
