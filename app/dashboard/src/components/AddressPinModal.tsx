@@ -296,7 +296,16 @@ export const AddressPinModal: FC = () => {
   };
 
   return (
-    <Modal isCentered isOpen={!!user} onClose={onClose} size="2xl">
+    /* NPVPN-2072: scrollBehavior="inside" обязателен — журнал выдачи длиной
+       в ретеншн (до 90 дней) с isCentered вырастал выше вьюпорта, и модалка
+       обрезалась сверху и снизу без единой полосы прокрутки. */
+    <Modal
+      isCentered
+      isOpen={!!user}
+      onClose={onClose}
+      size="2xl"
+      scrollBehavior="inside"
+    >
       <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
       <ModalContent mx="3">
         <ModalHeader pt={6}>
