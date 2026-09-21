@@ -467,6 +467,12 @@ export const UserDialog: FC<UserDialogProps> = () => {
 
   const handleOpenAddressPins = () => {
     useDashboard.setState({ addressPinsUser: editingUser });
+    // NPVPN-2072: форму закрываем намеренно, иначе диалог закреплений открылся бы
+    // ВТОРОЙ модалкой поверх этой — а Chakra включает RemoveScroll только первой
+    // (`enabled: index === 1 && blockScrollOnMount`). Лок первой модалки при этом
+    // продолжает гасить wheel над чужим поддеревом, и журнал выдачи скроллился
+    // только перетаскиванием полосы, но не колесом мыши.
+    onClose();
   };
 
   const disabled = loading;
