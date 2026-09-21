@@ -148,7 +148,7 @@
   "nodes.title": "Используя Marzban-Node, Вы можете масштабировать инфраструктуру, добавляя узлы на разных серверах.",
   "nodes.usageCoefficient": "Коэффициент использования",
   "nodes.hostingTrafficLimitTb": "Лимит трафика хостинга (ТБ)",
-  "nodes.hostingTrafficLimitTbHint": "Пусто — без лимита. Можно дробь: 0,7. 1 ТБ = 10¹² байт (как у хостера).",
+  "nodes.hostingTrafficLimitTbHint": "Пусто — без лимита. Можно дробь: 0,7. 1 ТБ = 2⁴⁰ байт (как у хостера и в VPN Nodes).",
   "nodes.inbounds": "Инбаунды на этой ноде",
   "nodes.inboundsHint": "Оставьте всё пустым, чтобы нода слушала все инбаунды (по умолчанию).",
   "nodes.role": "Роль ноды",
