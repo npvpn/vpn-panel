@@ -47,11 +47,6 @@ from app.xray.address_policy import pick_keys  # noqa: E402
 if sys.modules.get("app.subscription.share") is _share_stub:
     del sys.modules["app.subscription.share"]
 
-# rotation_days=1 делает epoch_start_day(user_id, day, 1) == day для любого юзера
-# (сдвиг "размазки" внутри периода в один день не существует) — так тест не
-# зависит от хеша смещения по юзеру.
-BOT_SETTINGS = {"sub_address_subset_enabled": True, "sub_address_subset_size": 2, "sub_address_rotation_days": 1}
-
 USER_ID = 1
 DAY = 100
 
@@ -72,11 +67,33 @@ def _make_node(db, name: str, address: str, node_id: int | None = None) -> Node:
     return node
 
 
-def _make_host(db, *, nodes: list[Node], remark: str = "host-remark", bots: list[Bot] | None = None) -> ProxyHost:
+def _make_host(
+    db,
+    *,
+    nodes: list[Node],
+    remark: str = "host-remark",
+    bots: list[Bot] | None = None,
+    subset_enabled: bool = True,
+    subset_size: int | None = 2,
+    rotation_days: int | None = 1,
+) -> ProxyHost:
+    """Хост с пер-хостовыми настройками сужения (NPVPN-2072).
+
+    rotation_days=1 делает epoch_start_day(user_id, day, 1) == day для любого юзера
+    (сдвиг «размазки» внутри периода в один день не существует) — так тест не зависит
+    от хеша смещения по юзеру.
+    """
     inbound_tag = f"tag-{db.query(ProxyInbound).count()}"
     db.add(ProxyInbound(tag=inbound_tag))
     db.commit()
-    host = ProxyHost(remark=remark, address="", inbound_tag=inbound_tag)
+    host = ProxyHost(
+        remark=remark,
+        address="",
+        inbound_tag=inbound_tag,
+        address_subset_enabled=subset_enabled,
+        address_subset_size=subset_size,
+        address_rotation_days=rotation_days,
+    )
     host.nodes = nodes
     if bots:
         host.bots = bots
@@ -150,7 +167,7 @@ def test_reconstructs_auto_assignment_from_snapshots(db, monkeypatch):
         db.add(NodeWeightSnapshot(epoch_index=DAY, node_id=node_id, weight=weight))
     db.commit()
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert len(result) == 1
     assignment = result[0]
@@ -194,7 +211,7 @@ def test_pin_wins_over_recomputation(db, monkeypatch):
     )
     db.commit()
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert len(result) == 1
     assignment = result[0]
@@ -230,13 +247,13 @@ def test_expired_pin_does_not_affect_later_dates(db, monkeypatch):
     )
     db.commit()
 
-    on_pin_day = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    on_pin_day = reconstruct(db, USER_ID, DAY)
     assert on_pin_day[0].source == "pin"
     assert on_pin_day[0].node_ids == [pinned_node.id]
 
     # На DAY+1 адресов всего 2 <= size(2) — авто-ветке веса не нужны, поэтому
     # честно возвращается полный состав, а не "unknown".
-    on_later_day = reconstruct(db, USER_ID, DAY + 1, BOT_SETTINGS)
+    on_later_day = reconstruct(db, USER_ID, DAY + 1)
     assert on_later_day[0].source == "auto"
     assert set(on_later_day[0].node_ids) == {n.id for n in nodes}
 
@@ -259,7 +276,7 @@ def test_missing_snapshot_reports_unknown_rather_than_guessing(db, monkeypatch):
     # Состав есть, но снимка весов на DAY нет, а 4 адреса > size(2) — реальное
     # сужение было бы, угадывать веса нельзя.
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
     by_host = {a.host_id: a for a in result}
 
     assert len(result) == 2  # оба хоста присутствуют в ответе, не пропущены молча
@@ -308,7 +325,7 @@ def test_hides_hosts_restricted_to_other_bots(db, monkeypatch):
     db.commit()
     _grant_inbound_access(monkeypatch, db, user, [host_for_bot_b, host_unrestricted])
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
     host_ids = {a.host_id for a in result}
 
     assert host_unrestricted.id in host_ids
@@ -339,7 +356,7 @@ def test_hides_hosts_outside_users_inbounds(db, monkeypatch):
     proxy.excluded_inbounds = [excluded_inbound]
     db.commit()
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
     host_ids = {a.host_id for a in result}
 
     assert host_visible.id in host_ids
@@ -360,7 +377,7 @@ def test_hides_hosts_for_protocol_without_any_proxy(db, monkeypatch):
     # Тег присутствует в конфиге, но Proxy для юзера НЕ создаём вовсе.
     monkeypatch.setattr(xray, "config", _FakeXrayConfig({ProxyTypes.VLESS: [{"tag": host.inbound_tag}]}), raising=False)
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert result == []
 
@@ -381,7 +398,7 @@ def test_disabled_host_hidden_from_history(db, monkeypatch):
     host.is_disabled = True
     db.commit()
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert result == []
 
@@ -408,7 +425,7 @@ def test_rotation_after_day_makes_auto_epoch_unknown(db, monkeypatch):
     user.address_rotation_offset_at = day_start_at(DAY + 1).replace(tzinfo=None)
     db.commit()
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert len(result) == 1
     assignment = result[0]
@@ -437,7 +454,7 @@ def test_rotation_before_day_keeps_auto_restorable(db, monkeypatch):
     user.address_rotation_offset_at = day_start_at(DAY - 1).replace(tzinfo=None)
     db.commit()
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert len(result) == 1
     assignment = result[0]
@@ -482,7 +499,7 @@ def test_pin_restorable_even_when_rotation_gates_auto(db, monkeypatch):
     user.address_rotation_offset_at = day_start_at(DAY + 1).replace(tzinfo=None)
     db.commit()
 
-    result = reconstruct(db, USER_ID, DAY, BOT_SETTINGS)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert len(result) == 1
     assignment = result[0]
@@ -491,16 +508,14 @@ def test_pin_restorable_even_when_rotation_gates_auto(db, monkeypatch):
     assert assignment.node_ids == [pinned_node.id]
 
 
-def test_disabled_flag_shows_full_composition_not_a_guessed_subset(db, monkeypatch):
-    """Критический регресс: sub_address_subset_enabled=False — юзеру шёл ПОЛНЫЙ
-    состав хоста (см. build_address_context: size обнуляется независимо от
-    sub_address_subset_size). Дефолт бота — enabled=False, size=2 (см.
-    app/models/bot.py), то есть это состояние ЛЮБОГО бота, который фичу не
-    включал. История обязана показать все адреса, а не выдумать сужение до
-    size=2, которого в реальности не было."""
+def test_disabled_host_shows_full_composition_not_a_guessed_subset(db, monkeypatch):
+    """Критический регресс: сужение на хосте выключено — юзеру шёл ПОЛНЫЙ состав хоста.
+    Дефолт хоста — address_subset_enabled=False, то есть это состояние ЛЮБОГО хоста,
+    на котором фичу не включали. История обязана показать все адреса, а не выдумать
+    сужение до двух, которого в реальности не было."""
     user = _make_user(db)
     nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
-    host = _make_host(db, nodes=nodes)
+    host = _make_host(db, nodes=nodes, subset_enabled=False)
     _grant_inbound_access(monkeypatch, db, user, [host])
 
     payload = [{"node_id": n.id, "address": n.address} for n in nodes]
@@ -509,8 +524,7 @@ def test_disabled_flag_shows_full_composition_not_a_guessed_subset(db, monkeypat
     # Намеренно НЕТ снимка весов — при выключенном флаге они и не должны
     # понадобиться: сужения нет, значит и весов не спрашиваем.
 
-    disabled_settings = {**BOT_SETTINGS, "sub_address_subset_enabled": False}
-    result = reconstruct(db, USER_ID, DAY, disabled_settings)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert len(result) == 1
     assignment = result[0]
@@ -520,13 +534,13 @@ def test_disabled_flag_shows_full_composition_not_a_guessed_subset(db, monkeypat
     assert set(assignment.addresses) == {n.address for n in nodes}
 
 
-def test_pin_applies_even_when_subset_flag_disabled(db, monkeypatch):
-    """Пины не зависят от sub_address_subset_enabled — то же решение, что уже
+def test_pin_applies_even_when_host_subset_disabled(db, monkeypatch):
+    """Пины не зависят от настроек сужения хоста — то же решение, что уже
     реализовано в build_address_context (закрепление — административное
     действие саппорта для отладки именно там, где фича ещё выключена)."""
     user = _make_user(db)
     nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
-    host = _make_host(db, nodes=nodes)
+    host = _make_host(db, nodes=nodes, subset_enabled=False)
     _grant_inbound_access(monkeypatch, db, user, [host])
 
     payload = [{"node_id": n.id, "address": n.address} for n in nodes]
@@ -546,8 +560,7 @@ def test_pin_applies_even_when_subset_flag_disabled(db, monkeypatch):
     )
     db.commit()
 
-    disabled_settings = {**BOT_SETTINGS, "sub_address_subset_enabled": False}
-    result = reconstruct(db, USER_ID, DAY, disabled_settings)
+    result = reconstruct(db, USER_ID, DAY)
 
     assert len(result) == 1
     assignment = result[0]
@@ -669,3 +682,90 @@ def test_pinnable_hosts_excludes_hosts_outside_users_inbounds(db, monkeypatch):
 
     assert host_visible.id in host_ids
     assert host_excluded.id not in host_ids
+
+
+def test_exhausted_node_is_excluded_from_reconstructed_day(db, monkeypatch):
+    """Порог исчерпания виден и в журнале: за те сутки ноды, добравшей лимит, у юзера не было.
+
+    Свежего расхода за прошедший день у нас нет, поэтому исчерпание выводится из снимка
+    весов: вес — это остаток лимита, значит «остаток ≤ 10% лимита» равносильно «расход
+    достиг 90%» (см. exhausted_from_snapshot).
+    """
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    for node in nodes:
+        node.hosting_traffic_limit_bytes = 1000
+    db.commit()
+    host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
+
+    write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
+    # Две первые ноды выбрали 90% и больше (остаток 100 и 0 при лимите 1000), две другие целы.
+    for node, weight in zip(nodes, [100.0, 0.0, 900.0, 800.0], strict=True):
+        db.add(NodeWeightSnapshot(epoch_index=DAY, node_id=node.id, weight=weight))
+    db.commit()
+
+    assignment = reconstruct(db, USER_ID, DAY)[0]
+
+    assert assignment.source == "auto"
+    assert assignment.restorable is True
+    assert set(assignment.node_ids) == {nodes[2].id, nodes[3].id}
+
+
+def test_reconstruct_matches_live_pick_with_exhaustion(db, monkeypatch):
+    """Журнал и живая выдача обязаны считать одно и то же — формула у них общая."""
+    from app.subscription.address_context import AddressContext, HostSubsetSettings
+
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 6)]
+    for node in nodes:
+        node.hosting_traffic_limit_bytes = 1000
+    db.commit()
+    host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
+
+    write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
+    weights = {nodes[0].id: 50.0, nodes[1].id: 900.0, nodes[2].id: 700.0, nodes[3].id: 300.0, nodes[4].id: 20.0}
+    for node_id, weight in weights.items():
+        db.add(NodeWeightSnapshot(epoch_index=DAY, node_id=node_id, weight=weight))
+    db.commit()
+
+    from_history = reconstruct(db, USER_ID, DAY)[0]
+
+    live = AddressContext(
+        user_id=USER_ID,
+        day_index=DAY,
+        weights_by_day={DAY: weights},
+        # Ноды 1 и 5 добрали больше 90% лимита — ровно те, что даёт exhausted_from_snapshot.
+        exhausted=frozenset({nodes[0].id, nodes[4].id}),
+        enabled=True,
+    ).pick(
+        [n.address for n in nodes],
+        [n.id for n in nodes],
+        addresses_from_nodes=True,
+        host_id=host.id,
+        settings=HostSubsetSettings(enabled=True, size=2, rotation_days=1),
+    )
+
+    assert from_history.addresses == live
+
+
+def test_per_host_size_is_reconstructed_per_host(db, monkeypatch):
+    """Два хоста на одном парке нод с разными размерами — журнал показывает разные наборы."""
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    two = _make_host(db, nodes=nodes, remark="two", subset_size=2)
+    three = _make_host(db, nodes=nodes, remark="three", subset_size=3)
+    _grant_inbound_access(monkeypatch, db, user, [two, three])
+
+    payload = [{"node_id": n.id, "address": n.address} for n in nodes]
+    for host in (two, three):
+        write_host_composition_snapshot(db, DAY, host.id, payload)
+    for node in nodes:
+        db.add(NodeWeightSnapshot(epoch_index=DAY, node_id=node.id, weight=100.0))
+    db.commit()
+
+    by_remark = {a.remark: a for a in reconstruct(db, USER_ID, DAY)}
+
+    assert len(by_remark["two"].node_ids) == 2
+    assert len(by_remark["three"].node_ids) == 3

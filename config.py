@@ -47,6 +47,12 @@ SYNC_INBOUNDS_DB_CHUNK_SIZE = config("SYNC_INBOUNDS_DB_CHUNK_SIZE", cast=int, de
 XRAY_SUBSCRIPTION_URL_PREFIX = config("XRAY_SUBSCRIPTION_URL_PREFIX", default="").strip("/")
 XRAY_SUBSCRIPTION_PATH = config("XRAY_SUBSCRIPTION_PATH", default="sub").strip("/")
 
+# NPVPN-2072: доля месячного лимита хостера, после которой нода считается исчерпанной и
+# ВЫБЫВАЕТ из выдачи, а не просто получает маленький вес. Не 100% намеренно: счётчик
+# хостера расходится с нашим (node_exporter считает NIC, хостер — по-своему), и добирать
+# лимит до нуля означает платить за перерасход. Меняется переменной окружения без релиза.
+HOSTING_USAGE_CUTOFF_PERCENT = config("HOSTING_USAGE_CUTOFF_PERCENT", cast=int, default=90)
+
 TELEGRAM_API_TOKEN = config("TELEGRAM_API_TOKEN", default="")
 TELEGRAM_ADMIN_ID = config(
     "TELEGRAM_ADMIN_ID",

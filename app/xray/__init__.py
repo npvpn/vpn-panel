@@ -76,6 +76,11 @@ def hosts(storage: dict):
                     # (тогда node_ids — просто все привязанные ноды без порядкового
                     # соответствия, и взвешивать по ним нельзя).
                     "addresses_from_nodes": not bool(host.address),
+                    # NPVPN-2072: настройки сужения лежат в кэше рядом с node_ids —
+                    # рендер подписки не делает за ними ни одного запроса в БД.
+                    "address_subset_enabled": bool(host.address_subset_enabled),
+                    "address_subset_size": host.address_subset_size,
+                    "address_rotation_days": host.address_rotation_days,
                     "port": host.port,
                     "path": host.path if host.path else None,
                     "sni": [i.strip() for i in host.sni.split(",")] if host.sni else [],

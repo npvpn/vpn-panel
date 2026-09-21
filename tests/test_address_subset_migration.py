@@ -58,3 +58,29 @@ def test_weight_snapshot_node_id_has_no_fk():
     вместо реального веса (weighted_candidates), выдавая уверенный неверный
     ответ. Теперь node_id — обычная колонка без ссылочной целостности."""
     assert not NodeWeightSnapshot.__table__.columns["node_id"].foreign_keys
+
+
+def test_host_has_per_host_subset_columns():
+    """NPVPN-2072: настройки сужения живут на хосте, а не на боте."""
+    from app.db.models import ProxyHost
+
+    columns = ProxyHost.__table__.columns
+    assert "address_subset_enabled" in columns
+    assert "address_subset_size" in columns
+    assert "address_rotation_days" in columns
+    # Выключено по умолчанию: включение меняет выдачу адресов всем юзерам хоста сразу.
+    assert columns["address_subset_enabled"].nullable is False
+    assert columns["address_subset_enabled"].server_default is not None
+    # size/период не заданы — «отдавать все адреса», а не «отдавать один».
+    assert columns["address_subset_size"].nullable is True
+    assert columns["address_rotation_days"].nullable is True
+
+
+def test_bot_settings_no_longer_carry_subset_keys():
+    """Ключи уехали из синка настроек: приёмник панели их больше не знает (NPVPN-2072)."""
+    from app.models.bot import BotSettingsPayload
+    from app.services.managed_settings import BOT_MANAGED_JSON_FIELDS
+
+    for key in ("sub_address_subset_enabled", "sub_address_subset_size", "sub_address_rotation_days"):
+        assert key not in BOT_MANAGED_JSON_FIELDS
+        assert key not in BotSettingsPayload.model_fields

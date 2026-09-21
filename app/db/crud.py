@@ -64,7 +64,12 @@ from app.subscription.device_ua import unknown_user_agents_match as _unknown_use
 from app.utils.helpers import calculate_expiration_days, calculate_usage_percent
 from app.utils.jwt import create_subscription_token
 from app.xray.cascade_keys import generate_cascade_identity
-from config import NOTIFY_DAYS_LEFT, NOTIFY_REACHED_USAGE_PERCENT, USERS_AUTODELETE_DAYS
+from config import (
+    HOSTING_USAGE_CUTOFF_PERCENT,
+    NOTIFY_DAYS_LEFT,
+    NOTIFY_REACHED_USAGE_PERCENT,
+    USERS_AUTODELETE_DAYS,
+)
 
 
 def add_default_host(db: Session, inbound: ProxyInbound):
@@ -207,6 +212,10 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
             xhttp_extra=host.xhttp_extra,
             order=order,
             client_config_id=host.client_config_id,
+            # NPVPN-2072: сужение адресов настраивается на хосте.
+            address_subset_enabled=host.address_subset_enabled,
+            address_subset_size=host.address_subset_size,
+            address_rotation_days=host.address_rotation_days,
             bots=bots,
             nodes=nodes,
         )
@@ -252,6 +261,9 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
             xhttp_extra=host.xhttp_extra,
             order=order,
             client_config_id=host.client_config_id,
+            address_subset_enabled=host.address_subset_enabled,
+            address_subset_size=host.address_subset_size,
+            address_rotation_days=host.address_rotation_days,
             bots=_get_bots_by_usernames(db, host.bot_usernames),
             nodes=_get_nodes_by_ids(db, host.node_ids),
         )
@@ -2146,6 +2158,42 @@ def rotate_user_addresses(db: Session, dbuser: User) -> User:
     db.commit()
     db.refresh(dbuser)
     return dbuser
+
+
+def get_exhausted_node_ids(db: Session, cutoff_percent: int | None = None) -> frozenset[int]:
+    """Ноды, достигшие порога месячного лимита хостера (NPVPN-2072).
+
+    Порог — доля лимита (`HOSTING_USAGE_CUTOFF_PERCENT`, дефолт 90%), а не 100%: счётчик
+    хостера расходится с нашим, и добор лимита до нуля оплачивается как перерасход.
+    Сравнение делает БД, а не Python: строк мало, но тянуть весь парк нод на каждый
+    промах TTL-кэша незачем.
+
+    Ноды без лимита и без замера сюда не попадают — см. is_exhausted.
+    """
+    from app.xray.address_policy import cutoff_ratio
+
+    ratio = cutoff_ratio(HOSTING_USAGE_CUTOFF_PERCENT if cutoff_percent is None else cutoff_percent)
+    rows = (
+        db.query(Node.id)
+        .filter(
+            Node.hosting_traffic_limit_bytes.isnot(None),
+            Node.hosting_traffic_limit_bytes > 0,
+            Node.hosting_used_bytes.isnot(None),
+            Node.hosting_used_bytes >= Node.hosting_traffic_limit_bytes * ratio,
+        )
+        .all()
+    )
+    return frozenset(row.id for row in rows)
+
+
+def get_node_limits(db: Session) -> dict[int, int]:
+    """Месячные лимиты нод (id -> байты). Ноды без лимита не попадают.
+
+    Нужен журналу (address_history): восстановить «была ли нода исчерпана в день X» по
+    снимку весов можно только зная лимит — снимок хранит остаток, а не долю.
+    """
+    rows = db.query(Node.id, Node.hosting_traffic_limit_bytes).filter(Node.hosting_traffic_limit_bytes > 0).all()
+    return {row.id: int(row.hosting_traffic_limit_bytes) for row in rows}
 
 
 def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:

@@ -59,9 +59,6 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "show_ads": True,
     # NPVPN-2072. Источник истины — админка бота; здесь дефолт на случай, когда синк
     # ещё не доехал. Выключено по умолчанию: включение меняет выдачу адресов всем сразу.
-    "sub_address_subset_enabled": False,
-    "sub_address_subset_size": 2,
-    "sub_address_rotation_days": 2,
 }
 
 
@@ -121,9 +118,6 @@ class BotSettingsPayload(BaseModel):
     sub_bs_limit_server_text: list[str] = []
     sub_bs_limit_announce_text: str = ""
     show_ads: bool = True
-    sub_address_subset_enabled: bool = False
-    sub_address_subset_size: int = 2
-    sub_address_rotation_days: int = 2
 
     @field_validator(
         "sub_revoked_server_text",

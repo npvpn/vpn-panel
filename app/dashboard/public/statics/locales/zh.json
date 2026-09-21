@@ -404,5 +404,10 @@
   "addressPins.pinCreated": "固定已创建",
   "addressPins.pinCreateError": "创建固定失败，请重试。",
   "addressPins.pinnableHostsLoadError": "加载位置失败",
-  "addressPins.noPinnableHosts": "该用户没有可供固定的节点位置。"
+  "addressPins.noPinnableHosts": "该用户没有可供固定的节点位置。",
+  "hostsDialog.addressSubset": "只下发部分地址",
+  "hostsDialog.addressSubsetSize": "每个用户的地址数",
+  "hostsDialog.addressSubsetSize.placeholder": "全部地址",
+  "hostsDialog.addressRotationDays": "每 N 天轮换一次",
+  "hostsDialog.addressRotationDays.placeholder": "2"
 }

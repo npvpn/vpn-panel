@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from jdatetime import date as jd
 
 from app import xray
-from app.subscription.address_context import AddressContext
+from app.subscription.address_context import AddressContext, settings_from_host
 from app.subscription.bs_context import ZERO_STUB, BsContext, StubEndpoint
 from app.utils.system import get_public_ip, get_public_ipv6, readable_size
 from app.xray.host_addresses import host_allowed_for_bot
@@ -507,6 +507,10 @@ def process_inbounds_and_tags(
                         host.get("node_ids") or [],
                         addresses_from_nodes=bool(host.get("addresses_from_nodes")),
                         host_id=host.get("id"),
+                        # NPVPN-2072: размер подмножества и период ротации — свойства ХОСТА:
+                        # у локаций разное число нод, и один размер на всего бота этого не
+                        # выражал.
+                        settings=settings_from_host(host),
                     )
                 balanced = isinstance(conf, V2rayJsonConfig) and address_list and len(address_list) > 1
                 if address_list and not balanced:

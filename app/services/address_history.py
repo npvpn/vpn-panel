@@ -9,11 +9,13 @@
 (который прочитают как "адресов не было") и не правдоподобная догадка по
 чужим/неполным данным.
 
-Историческая оговорка: `bot_settings` приходит СЕГОДНЯШНИМ — панель не хранит,
-каким было `sub_address_subset_size`/`sub_address_rotation_days` в прошлом.
-Реконструкция предполагает, что настройки сужения не менялись; если их
-меняли, auto-часть истории за периоды до смены может быть неточной. Это
-ограничение источника данных, а не что-то, что можно обойти в этом модуле.
+Историческая оговорка: настройки сужения (`hosts.address_subset_*`, NPVPN-2072)
+берутся СЕГОДНЯШНИМИ — панель не хранит, каким был размер подмножества или период
+ротации хоста в прошлом. Реконструкция предполагает, что их не меняли; если меняли,
+auto-часть истории за периоды до смены может быть неточной. То же и с порогом
+исчерпания: свежего расхода за прошедшие сутки нет, исчерпание выводится из снимка
+весов, поэтому его точность суточная (см. exhausted_from_snapshot). Это ограничения
+источника данных, а не что-то, что можно обойти в этом модуле.
 """
 
 from __future__ import annotations
@@ -26,10 +28,15 @@ from sqlalchemy.orm import Session
 
 from app.db import crud
 from app.db.models import ProxyHost, User
-from app.subscription.address_context import weighted_candidates
+from app.subscription.address_context import (
+    choose_nodes,
+    exhausted_from_snapshot,
+    settings_from_host,
+)
 from app.subscription.address_context_builder import _EPOCH_ORIGIN
 from app.xray.address_policy import ARCHIVE_RETENTION_DAYS, epoch_for, epoch_start_day, pick_keys
 from app.xray.host_addresses import host_allowed_for_bot, visible_nodes
+from config import HOSTING_USAGE_CUTOFF_PERCENT
 
 AssignmentSource = Literal["pin", "auto", "unknown"]
 
@@ -163,7 +170,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
     ]
 
 
-def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -> list[HostAssignment]:
+def reconstruct(db: Session, user_id: int, day_index: int) -> list[HostAssignment]:
     """Восстанавливает выдачу адресов юзеру за сутки `day_index` по всем хостам.
 
     Алгоритм на каждый хост:
@@ -172,25 +179,24 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
        с фактическим составом хоста за эти сутки (та же семантика пересечения,
        что в AddressContext.pick — закреплённая нода могла с тех пор отвязаться
        от хоста).
-    2. Иначе — если `sub_address_subset_enabled` включён, вычисляем эпоху
-       юзера на эти сутки (epoch_for с его address_rotation_offset), берём
-       снимок весов на начало этой эпохи и прогоняем тот же pick_keys, что
-       работает в живой выдаче — источник "auto". Если флаг ВЫКЛЮЧЕН —
-       сужения не было (см. build_address_context: при выключенном флаге
-       size обнуляется независимо от sub_address_subset_size), юзеру шёл
-       ПОЛНЫЙ состав хоста — источник "auto", но без урезания.
+    2. Иначе — если сужение включено НА ЭТОМ ХОСТЕ, вычисляем эпоху юзера на
+       эти сутки (epoch_for с его address_rotation_offset и периодом ротации
+       хоста), берём снимок весов на начало этой эпохи, вычитаем исчерпанные по
+       снимку ноды и прогоняем тот же choose_nodes, что работает в живой
+       выдаче — источник "auto". Если на хосте сужение ВЫКЛЮЧЕНО — его не было,
+       юзеру шёл ПОЛНЫЙ состав хоста: источник "auto", но без урезания.
     3. Если снимка СОСТАВА хоста за эти сутки нет вовсе — восстановить нечего
        (мы даже не знаем, какие ноды/адреса стояли за хостом): "unknown".
        Если снимка ВЕСОВ за эти сутки нет, а сужение в этот день было бы
-       фактическим (флаг включён И адресов больше размера подмножества) —
+       фактическим (включено на хосте И адресов больше размера подмножества) —
        тоже "unknown": угадывать веса значило бы выдавать может-быть-правду
        за факт.
 
-    Флаг `sub_address_subset_enabled` гасит ТОЛЬКО автовыбор. Пины проверяются
-    ДО флага и от него не зависят вовсе — это то же решение, что уже
-    реализовано в build_address_context: закрепление — явное административное
-    действие саппорта для отладки именно там, где фича сужения ещё не
-    включена, и выключенный флаг не должен его глушить.
+    Настройки хоста гасят ТОЛЬКО автовыбор. Пины проверяются ДО них и от них не
+    зависят вовсе — это то же решение, что уже реализовано в
+    build_address_context: закрепление — явное административное действие
+    саппорта для отладки именно там, где фича сужения ещё не включена, и
+    выключенная на хосте настройка не должна его глушить.
 
     Допущение (смешанный payload): если в снимке состава для хоста часть
     записей содержит node_id, а часть — None (в теории не должно возникать,
@@ -286,23 +292,26 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
     ]
     pins_on_day = crud.get_pins_covering_day(db, user_id, day_start, day_end)
 
-    # Флаг гасит ТОЛЬКО автовыбор — та же развилка, что в build_address_context
-    # (app/subscription/address_context_builder.py): при выключенном
-    # sub_address_subset_enabled size обнуляется НЕЗАВИСИМО от значения
-    # sub_address_subset_size (дефолт бота — enabled=False, size=2, см.
-    # app/models/bot.py — это состояние ЛЮБОГО бота, который фичу не включал).
-    # Пины при этом проверяются раньше и не зависят от флага вовсе — они
-    # применяются даже когда фича выключена (см. ruling в
-    # build_address_context: закрепление — явное административное действие
-    # для отладки именно там, где фичи ещё нет).
-    enabled = bool(bot_settings.get("sub_address_subset_enabled"))
-    period_days = max(1, int(bot_settings.get("sub_address_rotation_days") or 1))
-    size = int(bot_settings.get("sub_address_subset_size") or 0) if enabled else 0
-    epoch = epoch_for(user_id, day_index, period_days, offset)
-    snapshot_day = epoch_start_day(user_id, day_index, period_days)
-    # Как и build_address_context — весами не интересуемся, если сужения не
-    # будет и так (флаг выключен или size<=0): лишний поход в БД не нужен.
-    weights = crud.get_weight_snapshot(db, snapshot_day) if size > 0 else {}
+    # Настройки сужения живут на ХОСТЕ (NPVPN-2072), поэтому size/период/эпоха считаются
+    # внутри цикла по хостам, а снимок весов берётся на начало эпохи КАЖДОГО периода —
+    # у хостов с разными периодами эпохи стартуют в разные сутки. Пины при этом
+    # проверяются раньше настроек и от них не зависят вовсе: закрепление — явное
+    # административное действие для отладки именно там, где фичи ещё нет (тот же ruling,
+    # что в build_address_context).
+    #
+    # Ограничение то же, что и раньше: настройки берутся ТЕКУЩИЕ. Истории изменения полей
+    # хоста панель не хранит, и подставлять сегодняшние значения — меньшее зло, чем гадать.
+    weights_cache: dict[int, dict[int, float]] = {}
+
+    def weights_for(period_days: int) -> dict[int, float]:
+        snapshot_day = epoch_start_day(user_id, day_index, period_days)
+        if snapshot_day not in weights_cache:
+            weights_cache[snapshot_day] = crud.get_weight_snapshot(db, snapshot_day)
+        return weights_cache[snapshot_day]
+
+    # Лимиты нужны, чтобы вывести исчерпание из снимка: вес — это остаток, а не доля.
+    # Запрос делается лениво, только если хоть один хост реально сужает.
+    node_limits: dict[int, int] | None = None
 
     # C1: offset входит слагаемым в epoch_for, а users.address_rotation_offset
     # хранит только ТЕКУЩЕЕ значение — одно число без истории. Известна только
@@ -353,12 +362,20 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
                 )
                 continue
 
-        # Автовыбор. Если подмножество не режет список (фича выключена в
-        # today-конфиге или адресов и так не больше size) — ответ полностью
-        # определён СОСТАВОМ и не зависит от весов вовсе (см. pick_keys: при
-        # len(candidates) <= n он просто возвращает все ключи). Объявлять его
-        # "не восстановимо" из-за отсутствующего снимка весов было бы ложной
+        # Автовыбор. Настройки — с ЭТОГО хоста: размер подмножества и период ротации у
+        # каждого свои. Если подмножество не режет список (на хосте выключено или адресов
+        # и так не больше size) — ответ полностью определён СОСТАВОМ и не зависит от весов
+        # вовсе (см. pick_keys: при len(candidates) <= n он просто возвращает все ключи).
+        # Объявлять его "не восстановимо" из-за отсутствующего снимка весов было бы ложной
         # скромностью — веса тут ни при чём, выдаём состав как есть.
+        settings = settings_from_host(
+            {
+                "address_subset_enabled": host.address_subset_enabled,
+                "address_subset_size": host.address_subset_size,
+                "address_rotation_days": host.address_rotation_days,
+            }
+        )
+        size = settings.size if settings.narrows else 0
         if size <= 0 or len(addresses_all) <= size:
             results.append(
                 HostAssignment(
@@ -372,6 +389,7 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
             )
             continue
 
+        weights = weights_for(settings.rotation_days)
         if not weights:
             # Реальное сужение в этот день было бы, а весов нет: не гадаем,
             # каким было бы распределение — честно говорим "не восстановимо".
@@ -386,13 +404,25 @@ def reconstruct(db: Session, user_id: int, day_index: int, bot_settings: dict) -
             continue
 
         if addresses_from_nodes:
-            candidates = list(weighted_candidates(weights, node_ids_all).items())
-            chosen_nodes = set(pick_keys(user_id, candidates, size, epoch))
+            if node_limits is None:
+                node_limits = crud.get_node_limits(db)
+            epoch = epoch_for(user_id, day_index, settings.rotation_days, offset)
+            chosen_nodes = choose_nodes(
+                user_id,
+                node_ids_all,
+                weights=weights,
+                # Исчерпание за прошедшие сутки выводится из снимка: свежего расхода за
+                # тот день у нас нет (см. exhausted_from_snapshot).
+                exhausted=exhausted_from_snapshot(weights, node_limits, HOSTING_USAGE_CUTOFF_PERCENT),
+                size=size,
+                epoch=epoch,
+            )
             chosen = [(nid, addr) for nid, addr in zip(node_ids_all, addresses_all, strict=True) if nid in chosen_nodes]
             node_ids_out = [nid for nid, _ in chosen]
             addresses_out = [addr for _, addr in chosen]
         else:
             by_address = [(addr, 0.0) for addr in addresses_all]
+            epoch = epoch_for(user_id, day_index, settings.rotation_days, offset)
             chosen_addresses = set(pick_keys(user_id, by_address, size, epoch))
             node_ids_out = []
             addresses_out = [addr for addr in addresses_all if addr in chosen_addresses]

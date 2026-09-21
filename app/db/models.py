@@ -505,6 +505,12 @@ class ProxyHost(Base):
     random_user_agent = Column(Boolean, nullable=False, default=False, server_default="0")
     use_sni_as_host = Column(Boolean, nullable=False, default=False, server_default="0")
     xhttp_extra = Column(JSON, nullable=True)
+    # NPVPN-2072: сужение адресов настраивается ПО ХОСТУ, а не по боту — у локаций разное
+    # число нод и разная ценность: на одной юзеру осмысленно отдать два адреса, на другой
+    # три. NULL/0 в size = не сужать.
+    address_subset_enabled = Column(Boolean, nullable=False, default=False, server_default="0")
+    address_subset_size = Column(Integer, nullable=True)
+    address_rotation_days = Column(Integer, nullable=True)
     bots = relationship("Bot", secondary=host_bot_association, back_populates="hosts")
 
     @property

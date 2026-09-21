@@ -634,7 +634,7 @@ def get_user_address_history_endpoint(
         DayAssignments(
             day_index=day,
             date=(_EPOCH_ORIGIN + timedelta(days=day)).date().isoformat(),
-            hosts=reconstruct(db, cast(int, db_user.id), day, bot_settings),
+            hosts=reconstruct(db, cast(int, db_user.id), day),
         )
         for day in range(today, today - days, -1)
     ]

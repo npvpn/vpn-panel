@@ -98,3 +98,37 @@ def test_non_positive_n_returns_empty(n):
 
 def test_exhausted_weight_is_positive():
     assert EXHAUSTED_WEIGHT > 0
+
+
+def test_node_is_exhausted_at_and_above_cutoff():
+    """Порог — «достигла», а не «превысила»: ровно 90% уже выбывает (NPVPN-2072)."""
+    from app.xray.address_policy import is_exhausted
+
+    assert is_exhausted(used=89, limit=100, cutoff_percent=90) is False
+    assert is_exhausted(used=90, limit=100, cutoff_percent=90) is True
+    assert is_exhausted(used=91, limit=100, cutoff_percent=90) is True
+
+
+def test_node_without_limit_is_never_exhausted():
+    """Незаполненный лимит не делает ноду невидимой — судить не по чему."""
+    from app.xray.address_policy import is_exhausted
+
+    assert is_exhausted(used=10**15, limit=None, cutoff_percent=90) is False
+    assert is_exhausted(used=10**15, limit=0, cutoff_percent=90) is False
+
+
+def test_node_without_usage_is_never_exhausted():
+    """Данных о расходе нет (скрипт не доехал) — нода остаётся в выдаче."""
+    from app.xray.address_policy import is_exhausted
+
+    assert is_exhausted(used=None, limit=100, cutoff_percent=90) is False
+
+
+def test_cutoff_percent_out_of_range_falls_back_to_full_limit():
+    """Мусорный порог не должен выкашивать парк нод целиком."""
+    from app.xray.address_policy import is_exhausted
+
+    assert is_exhausted(used=50, limit=100, cutoff_percent=0) is False
+    assert is_exhausted(used=99, limit=100, cutoff_percent=-5) is False
+    assert is_exhausted(used=99, limit=100, cutoff_percent=1000) is False
+    assert is_exhausted(used=100, limit=100, cutoff_percent=1000) is True

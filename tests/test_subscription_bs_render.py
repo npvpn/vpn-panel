@@ -155,6 +155,8 @@ def _host(
     order: int = 0,
     client_config_id: int | None = None,
     addresses_from_nodes: bool = True,
+    subset_size: int | None = None,
+    rotation_days: int = 1,
 ) -> dict:
     """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids.
 
@@ -171,6 +173,10 @@ def _host(
         "node_ids": list(node_ids or []),
         "client_config_id": client_config_id,
         "addresses_from_nodes": addresses_from_nodes,
+        # NPVPN-2072: сужение настраивается на хосте — size=None означает «отдавать все».
+        "address_subset_enabled": subset_size is not None,
+        "address_subset_size": subset_size,
+        "address_rotation_days": rotation_days,
         "port": 8443,
         "sni": [],
         "host": [],
@@ -659,12 +665,17 @@ FOUR_ADDRESSES = ("10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4")
 FOUR_NODE_IDS = [11, 22, 33, 44]
 
 
-def _subset_ctx(size=2, weights=None, user_id=4242):
+def _subset_ctx(weights=None, user_id=4242, exhausted=frozenset()):
+    """Пер-юзерная часть контекста. Размер подмножества задаётся на ХОСТЕ (см. _host).
+
+    rotation_days=1 у тестовых хостов, поэтому эпоха начинается в те же сутки
+    (epoch_start_day при периоде 1 равен day_index) и снимок кладётся под ключ 0.
+    """
     return AddressContext(
         user_id=user_id,
-        size=size,
-        epoch=0,
-        weights=weights or {},
+        day_index=0,
+        weights_by_day={0: weights or {}},
+        exhausted=exhausted,
         enabled=True,
     )
 
@@ -712,8 +723,8 @@ def test_subset_flag_off_renders_identically(xray_stub):
 
 
 def test_subset_narrows_balanced_addresses(xray_stub):
-    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS)])
-    rendered = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx(size=2)))
+    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS, subset_size=2)])
+    rendered = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx()))
     picked = _balanced_addresses(rendered)
     assert len(picked) == 2
     assert set(picked) <= set(FOUR_ADDRESSES)
@@ -722,7 +733,7 @@ def test_subset_narrows_balanced_addresses(xray_stub):
 
 
 def test_subset_is_stable_between_renders(xray_stub):
-    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS)])
+    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS, subset_size=2)])
     first = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx()))
     second = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx()))
     assert _balanced_addresses(first) == _balanced_addresses(second)
@@ -730,16 +741,16 @@ def test_subset_is_stable_between_renders(xray_stub):
 
 def test_subset_follows_weights(xray_stub):
     """Исчерпанные ноды уступают тем, у кого остался лимит."""
-    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS)])
-    exhausted = {11: 0.0, 22: 0.0, 33: 10**12, 44: 10**12}
-    rendered = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx(size=2, weights=exhausted)))
+    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS, subset_size=2)])
+    drained = {11: 0.0, 22: 0.0, 33: 10**12, 44: 10**12}
+    rendered = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx(weights=drained)))
     assert set(_balanced_addresses(rendered)) == {"10.0.0.3", "10.0.0.4"}
 
 
 def test_subset_size_one_disables_balancer(xray_stub):
     """N = 1 разрешён; следствие — balanced-ветка не срабатывает вовсе."""
-    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS)])
-    rendered = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx(size=1)))
+    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS, subset_size=1)])
+    rendered = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx()))
     assert _balanced_addresses(rendered) == []
 
 
@@ -750,10 +761,40 @@ def test_blocked_bs_host_ignores_subset(xray_stub):
     который остаётся верным и после его снятия (NPVPN-2024 убрал is_bs из BsContext):
     заблокированный хост уходит в ветку bs.is_blocked() ДО того, как суженный список
     вообще попал бы в рендер, так что subset здесь ни на что не влияет."""
-    xray_stub([_host(*FOUR_ADDRESSES, node_ids=[BS_NODE_ID])])
+    xray_stub([_host(*FOUR_ADDRESSES, node_ids=[BS_NODE_ID], subset_size=1)])
     bs = BsContext(blocked_node_ids=frozenset({BS_NODE_ID}), stub_text=STUB_TEXT)
 
-    with_subset = json.loads(_render(_v2ray_json_conf(), bs, subset=_subset_ctx(size=1)))
+    with_subset = json.loads(_render(_v2ray_json_conf(), bs, subset=_subset_ctx()))
     without = json.loads(_render(_v2ray_json_conf(), bs, subset=AddressContext.disabled()))
 
     assert with_subset == without
+
+
+def test_two_hosts_get_their_own_subset_size(xray_stub):
+    """Ради чего настройка уехала на хост: одна локация отдаёт 2 адреса, другая 3."""
+    xray_stub(
+        [
+            _host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS, remark="two", subset_size=2),
+            _host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS, remark="three", order=1, subset_size=3),
+        ]
+    )
+    rendered = json.loads(_render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx()))
+    per_profile = []
+    for profile in rendered:
+        proxies = [
+            ob
+            for ob in profile.get("outbounds", [])
+            if str(ob.get("tag", "")) == "proxy" or str(ob.get("tag", "")).startswith("proxy-")
+        ]
+        if len(proxies) >= 2:
+            per_profile.append(len(proxies))
+    assert sorted(per_profile) == [2, 3]
+
+
+def test_exhausted_node_is_not_rendered(xray_stub):
+    """Порог исчерпания режет ноду в живой выдаче, а не просто понижает ей вес."""
+    xray_stub([_host(*FOUR_ADDRESSES, node_ids=FOUR_NODE_IDS, subset_size=2)])
+    rendered = json.loads(
+        _render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx(exhausted=frozenset({11, 22})))
+    )
+    assert set(_balanced_addresses(rendered)) == {"10.0.0.3", "10.0.0.4"}
