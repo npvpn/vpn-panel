@@ -22,7 +22,8 @@ import {
   SquaresPlusIcon,
 } from "@heroicons/react/24/outline";
 import { useNodesQuery } from "contexts/NodesContext";
-import { FC, useCallback, useEffect, useMemo, useState } from "react";
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readHashParams } from "utils/hashParams";
 
 import { useTranslation } from "react-i18next";
 import { useQuery } from "react-query";
@@ -44,6 +45,14 @@ const ModalIcon = chakra(SquaresPlusIcon, {
   },
 });
 
+/** id ноды из deep-link `#/?node=5` — так на неё ссылается сводка простоя в Telegram. */
+function readDeepLinkNodeId(): number | null {
+  const raw = readHashParams().get("node");
+  if (!raw) return null;
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 export const NodesDialog: FC = () => {
   const [isAddingNode, setIsAddingNode] = useState(false);
   const [search, setSearch] = useState("");
@@ -52,6 +61,30 @@ export const NodesDialog: FC = () => {
   const [openAccordion, setOpenAccordion] = useState<number | null>(null);
   const { data: nodes, isLoading } = useNodesQuery();
   const { data: nodeSettings } = useNodeSettings();
+  const deepLinkNodeId = useMemo(readDeepLinkNodeId, []);
+  const [isDeepLinkPending, setIsDeepLinkPending] = useState(
+    deepLinkNodeId !== null
+  );
+
+  // Раскрываем ноду только когда список уже пришёл: на несуществующий id (ноду
+  // удалили после простоя) модалка открылась бы пустой. Отработав один раз,
+  // снимаем флаг — иначе закрытие модалки тут же открывало бы её снова.
+  useEffect(() => {
+    if (!isDeepLinkPending || deepLinkNodeId === null || !nodes) return;
+    if (nodes.some((node) => node.id === deepLinkNodeId)) {
+      onEditingNodes(true);
+      setOpenAccordion(deepLinkNodeId);
+    }
+    setIsDeepLinkPending(false);
+  }, [nodes, isDeepLinkPending, deepLinkNodeId, onEditingNodes]);
+
+  const didScrollToDeepLink = useRef(false);
+  const attachDeepLinkNode = useCallback((element: HTMLDivElement | null) => {
+    if (!element || didScrollToDeepLink.current) return;
+    didScrollToDeepLink.current = true;
+    // Нод бывает под двадцать, и пришедший по ссылке иначе увидит верх списка.
+    element.scrollIntoView({ block: "center" });
+  }, []);
 
   useEffect(() => {
     if (isEditingNodes) {
@@ -222,13 +255,22 @@ export const NodesDialog: FC = () => {
                   const isOpen = openAccordion === node.id;
 
                   return (
-                    <NodeAccordion
-                      onToggle={toggleAccordion}
+                    <Box
                       key={node.id}
-                      node={node}
-                      isOpen={isOpen}
-                      nodeSettings={nodeSettings}
-                    />
+                      w="full"
+                      ref={
+                        node.id === deepLinkNodeId
+                          ? attachDeepLinkNode
+                          : undefined
+                      }
+                    >
+                      <NodeAccordion
+                        onToggle={toggleAccordion}
+                        node={node}
+                        isOpen={isOpen}
+                        nodeSettings={nodeSettings}
+                      />
+                    </Box>
                   );
                 })}
             </VStack>
