@@ -1431,6 +1431,11 @@
         font-size: 16px;
     }
 
+    p.key-step-text {
+        white-space: nowrap;
+        margin-bottom: 16px;
+    }
+
     .steps-title {
         font-size: 24px;
         margin-bottom: 16px;
