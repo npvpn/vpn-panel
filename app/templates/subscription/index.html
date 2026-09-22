@@ -643,7 +643,7 @@ get alternativeApps() {
     
               <div>
                 <template x-if="selectedOs !== 'TV'">
-                  <p class="steps-title mb-4">
+                  <p class="steps-title mb-2 lg:mb-4">
                     Добавьте ключ
                   </p>
                 </template>
@@ -655,9 +655,8 @@ get alternativeApps() {
                 </template>
 
                 <div x-show="selectedOs !== 'TV'">
-                  <p class="steps-text mb-4">
-                    Добавьте ключ в приложение,<br>
-                    чтобы подключиться к VPN
+                  <p class="steps-text mb-2 key-step-text">
+                    Добавьте ключ в приложение, чтобы подключиться к VPN
                   </p>
                 </div>
 
