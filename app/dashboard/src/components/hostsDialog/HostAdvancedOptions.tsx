@@ -15,8 +15,17 @@ import {
   Checkbox,
   FormLabel,
   Select,
+  Input,
+  InputGroup,
+  InputLeftElement,
+  InputRightElement,
+  IconButton,
 } from "@chakra-ui/react";
-import { ChevronDownIcon } from "@heroicons/react/24/outline";
+import {
+  ChevronDownIcon,
+  MagnifyingGlassIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import { NodeType } from "contexts/NodesContext";
 import { ChangeEvent, memo, useEffect, useState } from "react";
 import { Control, Controller, UseFormRegister } from "react-hook-form";
@@ -66,6 +75,8 @@ export const HostAdvancedOptions = memo(
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
+    const [botSearch, setBotSearch] = useState("");
+    const [nodeSearch, setNodeSearch] = useState("");
     const [clientConfigs, setClientConfigs] = useState<XrayTemplateDocument[]>(
       []
     );
@@ -571,9 +582,20 @@ export const HostAdvancedOptions = memo(
                 const selectedBots = bots.filter((bot: Bot) =>
                   selectedBotUsernames.includes(bot.username)
                 );
+                const query = botSearch.trim().toLowerCase();
+                const filteredBots = query
+                  ? bots.filter(
+                      (bot: Bot) =>
+                        bot.username.toLowerCase().includes(query) ||
+                        (bot.title ?? "").toLowerCase().includes(query)
+                    )
+                  : bots;
 
                 return (
-                  <Popover placement="bottom-start">
+                  <Popover
+                    placement="bottom-start"
+                    onClose={() => setBotSearch("")}
+                  >
                     <PopoverTrigger>
                       <Button
                         variant="outline"
@@ -592,15 +614,36 @@ export const HostAdvancedOptions = memo(
                       </Button>
                     </PopoverTrigger>
                     <Portal>
-                      <PopoverContent
-                        w="280px"
-                        maxH="320px"
-                        overflowY="auto"
-                        zIndex={1500}
-                      >
+                      <PopoverContent w="280px" zIndex={1500}>
                         <PopoverArrow />
                         <PopoverBody>
                           <VStack align="start" spacing={2}>
+                            <InputGroup size="xs">
+                              <InputLeftElement pointerEvents="none">
+                                <MagnifyingGlassIcon width="14px" />
+                              </InputLeftElement>
+                              <Input
+                                placeholder={t("search")}
+                                value={botSearch}
+                                onChange={(
+                                  event: ChangeEvent<HTMLInputElement>
+                                ) => setBotSearch(event.target.value)}
+                                borderRadius="4px"
+                                pl={7}
+                              />
+                              {botSearch.length > 0 && (
+                                <InputRightElement>
+                                  <IconButton
+                                    onClick={() => setBotSearch("")}
+                                    aria-label="clear"
+                                    size="xs"
+                                    variant="ghost"
+                                  >
+                                    <XMarkIcon width="14px" />
+                                  </IconButton>
+                                </InputRightElement>
+                              )}
+                            </InputGroup>
                             {selectedBotUsernames.length > 0 && (
                               <Button
                                 variant="ghost"
@@ -610,36 +653,49 @@ export const HostAdvancedOptions = memo(
                                 {t("hostsDialog.availableBots.clear")}
                               </Button>
                             )}
-                            {bots.map((bot: Bot) => (
-                              <Checkbox
-                                key={bot.username}
-                                isChecked={selectedBotUsernames.includes(
-                                  bot.username
-                                )}
-                                onChange={(
-                                  event: ChangeEvent<HTMLInputElement>
-                                ) => {
-                                  if (event.target.checked) {
-                                    field.onChange([
-                                      ...selectedBotUsernames,
-                                      bot.username,
-                                    ]);
-                                  } else {
-                                    field.onChange(
-                                      selectedBotUsernames.filter(
-                                        (username: string) =>
-                                          username !== bot.username
-                                      )
-                                    );
-                                  }
-                                }}
-                              >
-                                <Text as="span" fontSize="sm">
-                                  @{bot.username}
-                                  {bot.title ? ` (${bot.title})` : ""}
+                            <VStack
+                              align="start"
+                              spacing={2}
+                              maxH="240px"
+                              overflowY="auto"
+                              w="full"
+                            >
+                              {filteredBots.map((bot: Bot) => (
+                                <Checkbox
+                                  key={bot.username}
+                                  isChecked={selectedBotUsernames.includes(
+                                    bot.username
+                                  )}
+                                  onChange={(
+                                    event: ChangeEvent<HTMLInputElement>
+                                  ) => {
+                                    if (event.target.checked) {
+                                      field.onChange([
+                                        ...selectedBotUsernames,
+                                        bot.username,
+                                      ]);
+                                    } else {
+                                      field.onChange(
+                                        selectedBotUsernames.filter(
+                                          (username: string) =>
+                                            username !== bot.username
+                                        )
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <Text as="span" fontSize="sm">
+                                    @{bot.username}
+                                    {bot.title ? ` (${bot.title})` : ""}
+                                  </Text>
+                                </Checkbox>
+                              ))}
+                              {filteredBots.length === 0 && (
+                                <Text fontSize="sm" color="gray.500">
+                                  {t("hostsDialog.availableBots.notFound")}
                                 </Text>
-                              </Checkbox>
-                            ))}
+                              )}
+                            </VStack>
                           </VStack>
                         </PopoverBody>
                       </PopoverContent>
@@ -671,8 +727,20 @@ export const HostAdvancedOptions = memo(
                 const selectedIds: number[] = Array.isArray(field.value)
                   ? field.value
                   : [];
+                const availableNodes = nodes.filter((n) => n.id != null);
+                const query = nodeSearch.trim().toLowerCase();
+                const filteredNodes = query
+                  ? availableNodes.filter((node: NodeType) =>
+                      node.name.toLowerCase().includes(query)
+                    )
+                  : availableNodes;
+
                 return (
-                  <Popover isLazy placement="bottom-start">
+                  <Popover
+                    isLazy
+                    placement="bottom-start"
+                    onClose={() => setNodeSearch("")}
+                  >
                     <PopoverTrigger>
                       <Button
                         variant="outline"
@@ -691,15 +759,36 @@ export const HostAdvancedOptions = memo(
                       </Button>
                     </PopoverTrigger>
                     <Portal>
-                      <PopoverContent
-                        w="280px"
-                        maxH="320px"
-                        overflowY="auto"
-                        zIndex={1500}
-                      >
+                      <PopoverContent w="280px" zIndex={1500}>
                         <PopoverArrow />
                         <PopoverBody>
                           <VStack align="start" spacing={2}>
+                            <InputGroup size="xs">
+                              <InputLeftElement pointerEvents="none">
+                                <MagnifyingGlassIcon width="14px" />
+                              </InputLeftElement>
+                              <Input
+                                placeholder={t("search")}
+                                value={nodeSearch}
+                                onChange={(
+                                  event: ChangeEvent<HTMLInputElement>
+                                ) => setNodeSearch(event.target.value)}
+                                borderRadius="4px"
+                                pl={7}
+                              />
+                              {nodeSearch.length > 0 && (
+                                <InputRightElement>
+                                  <IconButton
+                                    onClick={() => setNodeSearch("")}
+                                    aria-label="clear"
+                                    size="xs"
+                                    variant="ghost"
+                                  >
+                                    <XMarkIcon width="14px" />
+                                  </IconButton>
+                                </InputRightElement>
+                              )}
+                            </InputGroup>
                             {selectedIds.length > 0 && (
                               <Button
                                 variant="ghost"
@@ -709,9 +798,14 @@ export const HostAdvancedOptions = memo(
                                 {t("hostsDialog.linkedNodes.clear")}
                               </Button>
                             )}
-                            {nodes
-                              .filter((n) => n.id != null)
-                              .map((node: NodeType) => {
+                            <VStack
+                              align="start"
+                              spacing={2}
+                              maxH="240px"
+                              overflowY="auto"
+                              w="full"
+                            >
+                              {filteredNodes.map((node: NodeType) => {
                                 const nodeId = node.id as number;
                                 return (
                                   <Checkbox
@@ -740,6 +834,12 @@ export const HostAdvancedOptions = memo(
                                   </Checkbox>
                                 );
                               })}
+                              {filteredNodes.length === 0 && (
+                                <Text fontSize="sm" color="gray.500">
+                                  {t("hostsDialog.linkedNodes.notFound")}
+                                </Text>
+                              )}
+                            </VStack>
                           </VStack>
                         </PopoverBody>
                       </PopoverContent>
@@ -750,6 +850,32 @@ export const HostAdvancedOptions = memo(
             />
           </FormControl>
         )}
+        {/* NPVPN-2072: сужение адресов — свойство ХОСТА: у локаций разное число нод,
+            и одна настройка на всего бота этого не выражала. */}
+        <RHFCheckbox
+          label={t("hostsDialog.addressSubset")}
+          registerProps={register(`${hostKey}.${index}.address_subset_enabled`)}
+          error={accordionErrors?.address_subset_enabled}
+        />
+
+        <RHFInput
+          label={t("hostsDialog.addressSubsetSize")}
+          placeholder={t("hostsDialog.addressSubsetSize.placeholder")}
+          type="number"
+          registerProps={register(`${hostKey}.${index}.address_subset_size`)}
+          error={accordionErrors?.address_subset_size}
+          inputProps={{ min: 1 }}
+        />
+
+        <RHFInput
+          label={t("hostsDialog.addressRotationDays")}
+          placeholder={t("hostsDialog.addressRotationDays.placeholder")}
+          type="number"
+          registerProps={register(`${hostKey}.${index}.address_rotation_days`)}
+          error={accordionErrors?.address_rotation_days}
+          inputProps={{ min: 1 }}
+        />
+
         <FormControl>
           <FormLabel>{t("hostsDialog.clientConfig")}</FormLabel>
           <Controller

@@ -47,6 +47,9 @@ export const EMPTY_HOST: z.infer<typeof hostItemSchema> = {
   bot_usernames: [],
   node_ids: [],
   client_config_id: null,
+  address_subset_enabled: false,
+  address_subset_size: null,
+  address_rotation_days: null,
   order: 0,
   inbound_tag: "",
 };

@@ -115,6 +115,9 @@ export const ADVANCED_FIELD_KEYS = [
   "bot_usernames",
   "node_ids",
   "client_config_id",
+  "address_subset_enabled",
+  "address_subset_size",
+  "address_rotation_days",
 ] as const;
 
 // Whether the settings-modal gear icon should show its error dot: remark/address

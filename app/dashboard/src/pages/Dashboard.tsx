@@ -1,4 +1,5 @@
 import { Box, VStack } from "@chakra-ui/react";
+import { AddressPinModal } from "components/AddressPinModal";
 import { AppSettingsDialog } from "components/AppSettingsDialog";
 import { CoreSettingsModal } from "components/CoreSettingsModal";
 import { BotSettingsDialog } from "components/BotSettingsDialog";
@@ -15,6 +16,7 @@ import { ResetAllUsageModal } from "components/ResetAllUsageModal";
 import { SyncInboundsModal } from "components/SyncInboundsModal";
 import { ResetUserUsageModal } from "components/ResetUserUsageModal";
 import { RevokeSubscriptionModal } from "components/RevokeSubscriptionModal";
+import { RotateAddressesModal } from "components/RotateAddressesModal";
 import { UserDialog } from "components/UserDialog";
 import { UsersTable } from "components/UsersTable";
 import { fetchInbounds, useDashboard } from "contexts/DashboardContext";
@@ -47,6 +49,8 @@ export const Dashboard: FC = () => {
         <HostsDialog />
         <ResetUserUsageModal />
         <RevokeSubscriptionModal />
+        <RotateAddressesModal />
+        <AddressPinModal />
         <NodesDialog />
         <NodesUsage />
         <ResetAllUsageModal />

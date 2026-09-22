@@ -110,3 +110,16 @@ def test_hosts_storage_client_config_id_comes_from_the_host_column():
     assert isinstance(value.value, ast.Name) and value.value.id == "host", (
         "client_config_id должен читаться с хоста текущей итерации (host.client_config_id)"
     )
+
+
+def test_hosts_storage_has_addresses_from_nodes_key_derived_from_host_address():
+    """NPVPN-2072: AddressContext.pick больше не угадывает происхождение адресов по
+    совпадению длин node_ids/address (app/subscription/address_context.py) — признак
+    обязан прийти явно из storage-словаря хоста, посчитанный от того же host.address,
+    что определяет ветку в _visible_nodes (host_addresses.py)."""
+    host_dict = _host_dict_literal()
+    assert "addresses_from_nodes" in _dict_keys(host_dict)
+
+    value = _value_for_key(host_dict, "addresses_from_nodes")
+    source = ast.unparse(value)
+    assert "host.address" in source, '"addresses_from_nodes" должен вычисляться из host.address, а не из длины списков'
