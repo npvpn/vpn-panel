@@ -387,6 +387,12 @@ export const HostsDialog: FC = () => {
                         alignItems="center"
                         w="auto"
                         flexShrink={0}
+                        h="32px"
+                        px={3}
+                        border="1px solid"
+                        borderColor="gray.200"
+                        borderRadius="6px"
+                        _dark={{ borderColor: "gray.600" }}
                       >
                         <Switch
                           id="active-only-filter"

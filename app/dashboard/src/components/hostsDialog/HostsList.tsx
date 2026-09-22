@@ -341,6 +341,9 @@ export const HostsList: FC<Props> = ({
     borderColor: "gray.200",
     bg: "white",
     color: "gray.600",
+    position: "sticky" as const,
+    top: 0,
+    zIndex: 1,
     _dark: { borderColor: "gray.600", bg: "gray.700", color: "gray.400" },
   };
 
@@ -410,11 +413,7 @@ export const HostsList: FC<Props> = ({
             <Thead>
               <Tr>
                 <Th {...thBorder} w={`${columnWidths.drag}px`} px={1} />
-                <Th
-                  {...thBorder}
-                  w={`${columnWidths.inbound}px`}
-                  textAlign="left"
-                >
+                <Th {...thBorder} w={`${columnWidths.inbound}px`}>
                   {t("hostsDialog.columnInbound")}
                 </Th>
                 <Th {...thBorder} w={`${columnWidths.remark}px`}>
