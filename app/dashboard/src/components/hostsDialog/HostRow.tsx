@@ -97,11 +97,6 @@ export const HostRow = memo(function HostRow({
     isDragging,
   } = useSortable({ id, disabled: !isTableView });
 
-  // dnd-kit's drop-settle transition assumes div/li-based sortable lists; on
-  // real <tr> layout its rect measurement doesn't keep up with the table
-  // reflow, so the eased "ease back into place" turns into a visible jump
-  // instead. Skipping the transition trades that stutter for a plain,
-  // unanimated snap.
   const dragStyle = {
     transform: CSS.Transform.toString(dragTransform),
   };
@@ -348,13 +343,6 @@ export const HostRow = memo(function HostRow({
     _dark: { borderColor: "gray.600" },
   };
 
-  // Every row's useSortable() re-renders on each drag pointer move (dnd-kit
-  // needs a fresh transform to decide whether this row should slide out of
-  // the way), even for rows nowhere near the one actually being dragged.
-  // These 4 cells are the bulk of a row's JSX (nested Tooltips/Text/Badge)
-  // and never depend on drag state, so memoizing them lets React skip
-  // rebuilding that subtree on ticks where none of this data changed —
-  // only isDragging/transform did, which aren't in the dependency list.
   const dataCells = useMemo(
     () => (
       <>

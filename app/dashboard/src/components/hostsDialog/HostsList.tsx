@@ -57,13 +57,13 @@ import { HostRow } from "./HostRow";
 
 type HostField = FieldArrayWithId<z.infer<typeof hostsFormSchema>, "hosts">;
 
-// Rows are uniform height and only reorder via transform (no resizing), so
-// droppable rects only need measuring once before a drag starts — the
-// default (WhileDragging) re-measures every row continuously for the whole
-// drag, which gets expensive with a large host list.
 const dndMeasuring = {
   droppable: { strategy: MeasuringStrategy.BeforeDragging },
 };
+
+const pointerSensorOptions = { activationConstraint: { distance: 4 } };
+const keyboardSensorOptions = { coordinateGetter: sortableKeyboardCoordinates };
+const dndModifiers = [restrictToVerticalAxis];
 
 export type HostColumnWidths = {
   drag: number;
@@ -110,11 +110,6 @@ export const HostsList: FC<Props> = ({
   // duplicate) already knows its layout instead of flashing card -> table.
   const isTableView = useBreakpointValue({ base: false, md: true });
 
-  // Column widths are computed in JS from the measured table width rather
-  // than left to CSS (table-layout: fixed + %/calc() on cells or <col> did
-  // not reliably apply here), so Remark/Address reliably get the lion's
-  // share of the space instead of the browser recalculating column widths
-  // from whatever content happens to be in view.
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const [tableWidth, setTableWidth] = useState(900);
 
@@ -125,10 +120,6 @@ export const HostsList: FC<Props> = ({
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
       if (!width) return;
-      // Ignore sub-pixel churn — ResizeObserver can fire many times a
-      // second while the window is actively being resized, and every
-      // update here re-renders every row (columnWidths is a prop on each
-      // HostRow), so only commit a new width once it moved meaningfully.
       setTableWidth((prev) => (Math.abs(width - prev) > 4 ? width : prev));
     });
 
@@ -154,9 +145,6 @@ export const HostsList: FC<Props> = ({
       actions: ACTIONS,
     };
 
-    // Same reasoning as the threshold above: keep the previous object
-    // identity when nothing actually changed, so HostRow's memo() can
-    // bail out instead of re-rendering every row.
     const prev = lastColumnWidthsRef.current;
     const unchanged =
       !!prev &&
@@ -179,10 +167,6 @@ export const HostsList: FC<Props> = ({
   const { errors } = form.formState;
   const accordionErrors = errors.hosts;
 
-  // Only the fields the filter/list actually need — watching the whole
-  // "hosts" array here would re-run the O(fields.length) filter below on
-  // every keystroke anywhere in the form, including unrelated advanced-modal
-  // fields of other rows.
   const watchNames = useMemo(
     () =>
       fields.flatMap(
@@ -212,15 +196,6 @@ export const HostsList: FC<Props> = ({
     [watchedValues, fields.length]
   );
 
-  // Row currently being edited (has focus inside it) stays visible even if the
-  // edit itself would make it fail the search/inbound filter mid-keystroke.
-  //
-  // Tracked by the field's stable id, not its position in `fields`: a
-  // move/insert/remove elsewhere can shift which host sits at a given index
-  // without the still-focused DOM node (React keeps it mounted, keyed by
-  // field.id) firing a new focus event — so a stale positional index would
-  // end up bypassing the filter for whatever unrelated host lands on that
-  // index afterwards, not the row actually being edited.
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const handleFocusCapture = useCallback((e: FocusEvent<HTMLDivElement>) => {
@@ -331,10 +306,9 @@ export const HostsList: FC<Props> = ({
     [visibleIndexes, fields]
   );
 
-  const dndSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
+  const pointerSensor = useSensor(PointerSensor, pointerSensorOptions);
+  const keyboardSensor = useSensor(KeyboardSensor, keyboardSensorOptions);
+  const dndSensors = useSensors(pointerSensor, keyboardSensor);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -419,7 +393,7 @@ export const HostsList: FC<Props> = ({
         <DndContext
           sensors={dndSensors}
           collisionDetection={closestCenter}
-          modifiers={[restrictToVerticalAxis]}
+          modifiers={dndModifiers}
           measuring={dndMeasuring}
           onDragEnd={handleDragEnd}
         >
