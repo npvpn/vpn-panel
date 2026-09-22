@@ -23,7 +23,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useNodesQuery } from "contexts/NodesContext";
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { readHashParams } from "utils/hashParams";
+import { clearHashParam, readHashParams } from "utils/hashParams";
 
 import { useTranslation } from "react-i18next";
 import { useQuery } from "react-query";
@@ -102,6 +102,9 @@ export const NodesDialog: FC = () => {
   const onClose = () => {
     setOpenAccordion(null);
     onEditingNodes(false);
+    // Иначе #/?node=6 остаётся в адресной строке: при закрытии модалки ссылка
+    // из Telegram снова откроет её при F5 или «Назад».
+    clearHashParam("node");
   };
 
   const toggleAccordion = useCallback((id: number) => {
