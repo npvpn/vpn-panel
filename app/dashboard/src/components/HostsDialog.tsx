@@ -2,6 +2,8 @@ import {
   Box,
   Button,
   Collapse,
+  FormControl,
+  FormLabel,
   HStack,
   Input,
   InputGroup,
@@ -14,6 +16,7 @@ import {
   ModalOverlay,
   Select,
   Stack,
+  Switch,
   Text,
   useToast,
 } from "@chakra-ui/react";
@@ -97,6 +100,7 @@ export const HostsDialog: FC = () => {
   const [search, setSearch] = useState("");
   const [inboundFilter, setInboundFilter] = useState("");
   const [botFilter, setBotFilter] = useState("");
+  const [activeOnly, setActiveOnly] = useState(false);
 
   const [isAddingHost, setIsAddingHost] = useState(false);
 
@@ -161,6 +165,7 @@ export const HostsDialog: FC = () => {
       setSearch("");
       setInboundFilter("");
       setBotFilter("");
+      setActiveOnly(false);
     }
   }, [hosts, isEditingHosts, form]);
 
@@ -168,6 +173,7 @@ export const HostsDialog: FC = () => {
     setSearch("");
     setInboundFilter("");
     setBotFilter("");
+    setActiveOnly(false);
     setIsAddingHost(false);
 
     onEditingHosts(false);
@@ -256,7 +262,7 @@ export const HostsDialog: FC = () => {
         mt="3vh"
         mb="3vh"
         w="full"
-        maxW="1040px"
+        maxW="1320px"
         h="94vh"
         maxH="94vh"
       >
@@ -312,7 +318,7 @@ export const HostsDialog: FC = () => {
                 <>
                   <Box flexShrink={0}>
                     {/* SEARCH + FILTERS */}
-                    <HStack mt={1} spacing={2} flexWrap="wrap">
+                    <HStack mt={1} spacing={2} rowGap={2} flexWrap="wrap">
                       <InputGroup flex="2" minW="180px" size="sm">
                         <InputLeftElement pointerEvents="none">
                           <MagnifyingGlassIcon width="16px" color="gray" />
@@ -375,6 +381,40 @@ export const HostsDialog: FC = () => {
                           ))}
                         </Select>
                       )}
+
+                      <FormControl
+                        display="flex"
+                        alignItems="center"
+                        w="auto"
+                        flexShrink={0}
+                        h="32px"
+                        px={3}
+                        border="1px solid"
+                        borderColor="gray.200"
+                        borderRadius="6px"
+                        _dark={{ borderColor: "gray.600" }}
+                      >
+                        <Switch
+                          id="active-only-filter"
+                          colorScheme="primary"
+                          aria-label={
+                            t("hostsDialog.filterActiveOnly") ?? undefined
+                          }
+                          isChecked={activeOnly}
+                          onChange={(e) => setActiveOnly(e.target.checked)}
+                        />
+
+                        <FormLabel
+                          htmlFor="active-only-filter"
+                          mb={0}
+                          ml={2}
+                          fontSize="sm"
+                          whiteSpace="nowrap"
+                          cursor="pointer"
+                        >
+                          {t("hostsDialog.activeOnly")}
+                        </FormLabel>
+                      </FormControl>
                     </HStack>
 
                     {/* ADD HOST BUTTON */}
@@ -450,6 +490,7 @@ export const HostsDialog: FC = () => {
                       inboundTags={inboundTags}
                       inboundFilter={inboundFilter}
                       botFilter={botFilter}
+                      activeOnly={activeOnly}
                       search={search}
                       bots={bots}
                       nodes={nodes}

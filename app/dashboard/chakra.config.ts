@@ -111,7 +111,15 @@ export const theme = extendTheme({
           },
           _dark: {
             borderColor: "gray.600 !important",
+            borderBottomColor: "gray.600 !important",
+            borderTopColor: "gray.600 !important",
             background: "gray.750",
+            _first: {
+              borderColor: "gray.600 !important",
+            },
+            _last: {
+              borderColor: "gray.600 !important",
+            },
           },
         },
         td: {
