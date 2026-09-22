@@ -87,6 +87,7 @@
   "hostsDialog.filterBot": "Filter by bot",
   "hostsDialog.activeOnly": "Active only",
   "hostsDialog.filterActiveOnly": "Show only active hosts",
+  "hostsDialog.dragToReorder": "Drag to reorder",
   "hostsDialog.columnInbound": "Inbound",
   "hostsDialog.columnBot": "Bot",
   "hostsDialog.columnEnabled": "On",

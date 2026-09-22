@@ -474,9 +474,9 @@ export const HostRow = memo(function HostRow({
         py={2}
         w={columnWidths ? `${columnWidths.drag}px` : undefined}
       >
-        <Tooltip label="Drag to reorder" placement="top">
+        <Tooltip label={t("hostsDialog.dragToReorder")} placement="top">
           <IconButton
-            aria-label="Drag to reorder"
+            aria-label={t("hostsDialog.dragToReorder")}
             size="xs"
             variant="ghost"
             cursor="grab"

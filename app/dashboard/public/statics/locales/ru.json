@@ -87,6 +87,7 @@
   "hostsDialog.filterBot": "Фильтр по боту",
   "hostsDialog.activeOnly": "Только активные",
   "hostsDialog.filterActiveOnly": "Показывать только активные хосты",
+  "hostsDialog.dragToReorder": "Перетащите для изменения порядка",
   "hostsDialog.columnInbound": "Инбаунд",
   "hostsDialog.columnBot": "Бот",
   "hostsDialog.columnEnabled": "Вкл",
