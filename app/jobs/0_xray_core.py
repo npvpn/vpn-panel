@@ -4,6 +4,7 @@ import traceback
 from app import app, logger, scheduler, xray
 from app.db import GetDB, crud
 from app.models.node import NodeStatus
+from app.utils.malloc_trim import trim_malloc
 from app.xray.node import NodeAPIError
 from config import (
     JOB_CORE_HEALTH_CHECK_INTERVAL,
@@ -38,11 +39,31 @@ def core_health_check():
     config = None
     now = time.time()
 
+    # Отдаём ядру память, освободившуюся после ПРОШЛОЙ волны, до того как начнём
+    # аллоцировать новую (NPVPN-2120). Почему в начале тика, а не в конце: connect_node
+    # уходит в пул потоков, так что к моменту возврата из этой функции волна ещё живая
+    # и её конфиг никто не освободил — тримить там было бы нечего. К следующему тику
+    # (JOB_CORE_HEALTH_CHECK_INTERVAL) волна закончена и мусор собран.
+    trim_malloc()
+
+    def wave_config():
+        """Полный конфиг волны, собираемый не раньше, чем он реально понадобился.
+
+        include_db_users() материализует конфиг со всеми юзерами: на opl это 4-16
+        секунд и сотни мегабайт, с которых потом снимается по копии на ноду. Раньше
+        он строился до проверок _should_force_reconnect/is_connect_in_progress, то
+        есть и на тиках, где ни один реконнект в итоге не планировался. При нодах,
+        вечно висящих в connecting с живым локом (на opl таких два десятка), панель
+        собирала его вхолостую каждые JOB_CORE_HEALTH_CHECK_INTERVAL секунд.
+        """
+        nonlocal config
+        if config is None:
+            config = xray.config.include_db_users()
+        return config
+
     # main core
     if not xray.core.started:
-        if not config:
-            config = xray.config.include_db_users()
-        xray.core.restart(config)
+        xray.core.restart(wave_config())
 
     with GetDB() as db:
         dbnodes = crud.get_nodes(db=db, enabled=True)
@@ -66,13 +87,11 @@ def core_health_check():
                     continue
                 if xray.operations.is_connect_in_progress(node_id):
                     continue
-                if not config:
-                    config = xray.config.include_db_users()
                 logger.debug(
                     f"[health] node_id={node_id} ({dbnode.name}): DB=connected but ping failed → "
                     f"schedule SOFT connect_node(force=False)"
                 )
-                xray.operations.connect_node(node_id, config)
+                xray.operations.connect_node(node_id, wave_config())
                 reconnects_scheduled += 1
                 continue
 
@@ -83,13 +102,11 @@ def core_health_check():
                     raise AssertionError("Xray core is not started on node")
                 node.api.get_sys_stats(timeout=2)
             except (ConnectionError, NodeAPIError, xray_exc.XrayError, AssertionError) as exc:
-                if not config:
-                    config = xray.config.include_db_users()
                 logger.debug(
                     f"[health] node_id={node_id} ({dbnode.name}): session ok but core/API unhealthy "
                     f"({type(exc).__name__}: {exc}) → schedule restart_node (/restart)"
                 )
-                xray.operations.restart_node(node_id, config)
+                xray.operations.restart_node(node_id, wave_config())
             continue
 
         if dbnode.status not in (NodeStatus.error, NodeStatus.connecting):
@@ -97,9 +114,6 @@ def core_health_check():
 
         if reconnects_scheduled >= max_reconnects:
             break
-
-        if not config:
-            config = xray.config.include_db_users()
 
         force = _should_force_reconnect(node_id, dbnode.status, now)
 
@@ -114,7 +128,7 @@ def core_health_check():
             f"[health] node_id={node_id} ({dbnode.name}): status={dbnode.status.value} → "
             f"schedule {'HARD' if force else 'SOFT'} connect_node(force={force})"
         )
-        xray.operations.connect_node(node_id, config, force=force)
+        xray.operations.connect_node(node_id, wave_config(), force=force)
         reconnects_scheduled += 1
 
 
