@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypedDict
 
 from fastapi import Request
 
+from app.subscription.address_context import AddressContext
 from app.subscription.bs_context import BsContext
 from app.subscription.custom_headers import parse_custom_headers
 
@@ -51,6 +52,7 @@ class SubscriptionRenderContext:
     bot_settings: dict
     panel_settings: dict
     bs: BsContext
+    subset: AddressContext
     response_headers: dict[str, str]
 
 

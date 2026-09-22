@@ -850,6 +850,32 @@ export const HostAdvancedOptions = memo(
             />
           </FormControl>
         )}
+        {/* NPVPN-2072: сужение адресов — свойство ХОСТА: у локаций разное число нод,
+            и одна настройка на всего бота этого не выражала. */}
+        <RHFCheckbox
+          label={t("hostsDialog.addressSubset")}
+          registerProps={register(`${hostKey}.${index}.address_subset_enabled`)}
+          error={accordionErrors?.address_subset_enabled}
+        />
+
+        <RHFInput
+          label={t("hostsDialog.addressSubsetSize")}
+          placeholder={t("hostsDialog.addressSubsetSize.placeholder")}
+          type="number"
+          registerProps={register(`${hostKey}.${index}.address_subset_size`)}
+          error={accordionErrors?.address_subset_size}
+          inputProps={{ min: 1 }}
+        />
+
+        <RHFInput
+          label={t("hostsDialog.addressRotationDays")}
+          placeholder={t("hostsDialog.addressRotationDays.placeholder")}
+          type="number"
+          registerProps={register(`${hostKey}.${index}.address_rotation_days`)}
+          error={accordionErrors?.address_rotation_days}
+          inputProps={{ min: 1 }}
+        />
+
         <FormControl>
           <FormLabel>{t("hostsDialog.clientConfig")}</FormLabel>
           <Controller

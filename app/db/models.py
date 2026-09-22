@@ -210,6 +210,17 @@ class User(Base):
     bs_extra = Column(BigInteger, nullable=True, default=None)
     bs_extra_period = Column(String(7), nullable=True, default=None)
 
+    # Ручная ротация адресов: саппорт инкрементирует, подмножество меняется немедленно.
+    # Одна колонка вместо таблицы назначений — выбор вычисляется, а не хранится.
+    address_rotation_offset = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    # Момент ПОСЛЕДНЕЙ ротации (NPVPN-2072, C1). Не история всех ротаций — одно
+    # значение, как и сам offset. Нужен журналу (app/services/address_history.py:
+    # reconstruct), чтобы не подставлять СЕГОДНЯШНИЙ offset в эпоху прошлых суток:
+    # инкремент offset задним числом меняет эпоху ВСЕХ дней, поэтому дни до этой
+    # метки честно помечаются "не восстановимо", а не пересчитываются неверно.
+    # NULL = ротаций не было вовсе (offset всегда был текущим — 0 изначально).
+    address_rotation_offset_at = Column(DateTime, nullable=True, default=None)
+
     # * Positive values: User will be deleted after the value of this field in days automatically.
     # * Negative values: User won't be deleted automatically at all.
     # * NULL: Uses global settings.
@@ -494,6 +505,12 @@ class ProxyHost(Base):
     random_user_agent = Column(Boolean, nullable=False, default=False, server_default="0")
     use_sni_as_host = Column(Boolean, nullable=False, default=False, server_default="0")
     xhttp_extra = Column(JSON, nullable=True)
+    # NPVPN-2072: сужение адресов настраивается ПО ХОСТУ, а не по боту — у локаций разное
+    # число нод и разная ценность: на одной юзеру осмысленно отдать два адреса, на другой
+    # три. NULL/0 в size = не сужать.
+    address_subset_enabled = Column(Boolean, nullable=False, default=False, server_default="0")
+    address_subset_size = Column(Integer, nullable=True)
+    address_rotation_days = Column(Integer, nullable=True)
     bots = relationship("Bot", secondary=host_bot_association, back_populates="hosts")
 
     @property
@@ -592,6 +609,17 @@ class Node(Base):
     is_bs = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     # Лимит трафика у хостера на этот сервер (SI-байты). NULL — лимита нет.
     hosting_traffic_limit_bytes = Column(BigInteger, nullable=True)
+    # Израсходованный NIC-трафик за месяц. Панель его сама не знает: это счётчик
+    # node_exporter, который скрейпит Prometheus. Пишет scripts/prometheus_vpn_nodes_sd.py
+    # из репозитория бота — он единственный видит оба берега (NPVPN-2072).
+    hosting_used_bytes = Column(BigInteger, nullable=True)
+    hosting_used_at = Column(DateTime, nullable=True)
+    # NodeWeightSnapshot больше НЕ связана FK-каскадом с этой таблицей (I3,
+    # NPVPN-2072) — снимок это архив журнала (app/services/address_history.py),
+    # который обязан пережить удаление ноды, поэтому и ORM-relationship сюда не
+    # заводим: cascade="all, delete-orphan" стёр бы архив вместе с нодой, а
+    # именно это I3 и запрещает. Node.id, оставшийся в снимке после удаления
+    # ноды, — не баг, ожидаемый "висячий" идентификатор архивной записи.
 
 
 class NodeUserUsage(Base):
@@ -638,6 +666,87 @@ class NodeUserBlock(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     period = Column(String(8), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class NodeWeightSnapshot(Base):
+    """Суточный снимок веса ноды = остаток лимита хостера (NPVPN-2072).
+
+    Вес обязан быть постоянным внутри эпохи юзера, иначе подмножество адресов плывёт
+    и у клиента скачут IP. Снимков хранится несколько, потому что ротация размазана по
+    юзерам: каждый берёт тот, что действовал на начало ЕГО эпохи.
+
+    Единственный writer — scripts/prometheus_vpn_nodes_sd.py (репозиторий бота).
+
+    node_id НАРОЧНО без FK (I3, NPVPN-2072): это архивная запись журнала
+    (app/services/address_history.py), а не текущее состояние. Удаление ноды не
+    должно стирать её прошлые веса — иначе локация просто ИСЧЕЗАЕТ из истории
+    без пометки, и недостача читается саппортом как "такого не было", хотя
+    правда в том, что запись стёрлась вместе с нодой. Поэтому node_id может
+    "повиснуть" (ссылаться на уже удалённую ноду) — reconstruct умеет работать
+    с этим: снимок весов ищется по (epoch_index, node_id) независимо от того,
+    жива ли ещё сама Node. Индекс на node_id сохранён (нужен для выборок),
+    просто без ограничения ссылочной целостности.
+    """
+
+    __tablename__ = "node_weight_snapshots"
+    __table_args__ = (UniqueConstraint("epoch_index", "node_id", name="uq_node_weight_snapshots"),)
+
+    id = Column(Integer, primary_key=True)
+    epoch_index = Column(Integer, nullable=False, index=True)
+    node_id = Column(Integer, nullable=False, index=True)
+    weight = Column(BigInteger, nullable=False, default=0)
+
+
+class HostCompositionSnapshot(Base):
+    """Суточный снимок состава хоста: какие ноды и адреса он в этот день представлял.
+
+    Нужен, чтобы восстановить выдачу задним числом. Снимок, а не журнал событий:
+    состав меняется четырьмя разными путями (привязка нод, статус ноды, её адрес,
+    статическая строка host.address), и инструментировать каждый — четыре способа
+    забыть один из них (NPVPN-2072).
+
+    host_id НАРОЧНО без FK (I3, NPVPN-2072) — та же причина, что у
+    NodeWeightSnapshot.node_id: это архив журнала, а CASCADE на удалении хоста
+    стёр бы снимки состава вместе с ним, и локация молча ИСЧЕЗЛА бы из истории
+    вместо явной пометки "хост удалён". host_id может "повиснуть", это
+    ожидаемо — reconstruct читает снимок по (epoch_index, host_id) и не требует
+    живого ProxyHost. Индекс на host_id сохранён, ссылочная целостность — нет.
+    """
+
+    __tablename__ = "host_composition_snapshots"
+    __table_args__ = (UniqueConstraint("epoch_index", "host_id", name="uq_host_composition_snapshots"),)
+
+    id = Column(Integer, primary_key=True)
+    epoch_index = Column(Integer, nullable=False, index=True)
+    host_id = Column(Integer, nullable=False, index=True)
+    # [{"node_id": int | None, "address": str}, ...] в порядке выдачи. node_id = None
+    # для статического host.address: там нет соответствия "адрес <-> нода" по
+    # построению (см. app/jobs/snapshot_host_composition.py:_host_payload).
+    payload = Column(JSON, nullable=False)
+
+
+class UserNodePin(Base):
+    """Закрепление конкретных нод за юзером в пределах одного хоста (NPVPN-2072).
+
+    Заменяет автовыбор целиком: для этого хоста юзер получает ровно заданные ноды.
+    Срок годности обязателен — пин ставят на время разбирательства и забывают снять,
+    а через год никто не вспомнит, почему юзер сидит на странных нодах.
+
+    Истёкшие строки не удаляются: они и есть история закреплений для журнала.
+    """
+
+    __tablename__ = "user_node_pins"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    host_id = Column(Integer, ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_ids = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    created_by = Column(String(64), nullable=False)
+    note = Column(String(500), nullable=True)
+    user = relationship("User", passive_deletes=True)
+    host = relationship("ProxyHost", passive_deletes=True)
 
 
 class NodeUsage(Base):
