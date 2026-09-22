@@ -40,7 +40,12 @@ from app.db.models import (  # noqa: E402
     UserNodePin,
 )
 from app.models.proxy import ProxyTypes  # noqa: E402
-from app.services.address_history import day_start_at, list_pinnable_hosts, reconstruct  # noqa: E402
+from app.services.address_history import (  # noqa: E402
+    day_start_at,
+    list_pinnable_hosts,
+    reconstruct,
+    reconstruct_range,
+)
 from app.subscription.address_context import weighted_candidates  # noqa: E402
 from app.xray.address_policy import pick_keys  # noqa: E402
 
@@ -769,3 +774,71 @@ def test_per_host_size_is_reconstructed_per_host(db, monkeypatch):
 
     assert len(by_remark["two"].node_ids) == 2
     assert len(by_remark["three"].node_ids) == 3
+
+
+def test_range_matches_per_day_reconstruction(db, monkeypatch):
+    """Диапазонный журнал обязан совпадать с поденным: оптимизация не меняет ответ."""
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    for node in nodes:
+        node.hosting_traffic_limit_bytes = 1000
+    db.commit()
+    host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
+
+    payload = [{"node_id": n.id, "address": n.address} for n in nodes]
+    # Снимок состава есть не за все сутки, веса — тоже: в ответе должны оказаться и
+    # восстановимые дни, и "unknown".
+    for day in (DAY - 3, DAY - 1, DAY):
+        write_host_composition_snapshot(db, day, host.id, payload)
+    for day in (DAY - 1, DAY):
+        for node, weight in zip(nodes, [100.0, 0.0, 900.0, 800.0], strict=True):
+            db.add(NodeWeightSnapshot(epoch_index=day, node_id=node.id, weight=weight))
+    db.commit()
+
+    by_day = reconstruct_range(db, USER_ID, DAY - 4, DAY)
+
+    assert sorted(by_day) == list(range(DAY - 4, DAY + 1))
+    for day, assignments in by_day.items():
+        expected = reconstruct(db, USER_ID, day)
+        assert [a.model_dump() for a in assignments] == [a.model_dump() for a in expected], f"день {day}"
+
+
+def test_range_does_not_scale_queries_with_days(db, monkeypatch):
+    """Главное свойство правки: число запросов не растёт вместе с длиной диапазона.
+
+    Раньше каждые сутки стоили отдельного чтения юзера, хостов, пинов, снимка и
+    лимитов — при 90 днях это сотни последовательных запросов внутри обработчика.
+    """
+    from sqlalchemy import event
+
+    user = _make_user(db)
+    nodes = [_make_node(db, f"n{i}", f"1.2.3.{i}") for i in range(1, 5)]
+    host = _make_host(db, nodes=nodes)
+    _grant_inbound_access(monkeypatch, db, user, [host])
+    write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
+    db.commit()
+
+    counter = {"n": 0}
+
+    def count(*args, **kwargs):
+        counter["n"] += 1
+
+    def measure(first_day: int) -> int:
+        # expunge_all — чтобы ленивые подгрузки relationship (hosts.bots/nodes) повторялись
+        # одинаково в обоих замерах: иначе второй вызов выигрывал бы за счёт identity map
+        # сессии, а не за счёт самой правки.
+        db.expunge_all()
+        counter["n"] = 0
+        reconstruct_range(db, USER_ID, first_day, DAY)
+        return counter["n"]
+
+    event.listen(db.bind, "before_cursor_execute", count)
+    try:
+        week = measure(DAY - 6)
+        quarter = measure(DAY - 89)
+    finally:
+        event.remove(db.bind, "before_cursor_execute", count)
+
+    assert week == quarter, f"запросы выросли с длиной диапазона: {week} -> {quarter}"
+    assert quarter <= 10, f"слишком много запросов на диапазон: {quarter}"

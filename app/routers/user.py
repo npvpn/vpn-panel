@@ -46,7 +46,7 @@ from app.services.address_history import (
     PinnableHost,
     PinResponse,
     list_pinnable_hosts,
-    reconstruct,
+    reconstruct_range,
 )
 from app.subscription.address_context_builder import _EPOCH_ORIGIN, day_index
 from app.subscription.bot_settings import resolve_bot_settings
@@ -628,15 +628,19 @@ def get_user_address_history_endpoint(
     ноды/адреса, источник (pin/auto) и явный признак невосстановимости
     (см. app.services.address_history)."""
     db_user = cast(DBUser, dbuser)
-    bot_settings = resolve_bot_settings(db_user)
     today = day_index(datetime.now(UTC))
+    first_day = today - days + 1
+    # Один сервисный вызов на весь диапазон: поденный reconstruct читал бы юзера,
+    # хосты, пины, снимки и лимиты заново на каждые сутки — при days=90 это сотни
+    # последовательных запросов внутри обработчика (NPVPN-2072).
+    by_day = reconstruct_range(db, cast(int, db_user.id), first_day, today)
     return [
         DayAssignments(
             day_index=day,
             date=(_EPOCH_ORIGIN + timedelta(days=day)).date().isoformat(),
-            hosts=reconstruct(db, cast(int, db_user.id), day),
+            hosts=by_day[day],
         )
-        for day in range(today, today - days, -1)
+        for day in range(today, first_day - 1, -1)
     ]
 
 

@@ -20,6 +20,7 @@ auto-часть истории за периоды до смены может б
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal, cast
 
@@ -27,14 +28,20 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db import crud
-from app.db.models import ProxyHost, User
+from app.db.models import ProxyHost, User, UserNodePin
 from app.subscription.address_context import (
     choose_nodes,
     exhausted_from_snapshot,
     settings_from_host,
 )
 from app.subscription.address_context_builder import _EPOCH_ORIGIN
-from app.xray.address_policy import ARCHIVE_RETENTION_DAYS, epoch_for, epoch_start_day, pick_keys
+from app.xray.address_policy import (
+    ARCHIVE_RETENTION_DAYS,
+    WEIGHT_SNAPSHOT_MAX_AGE_DAYS,
+    epoch_for,
+    epoch_start_day,
+    pick_keys,
+)
 from app.xray.host_addresses import host_allowed_for_bot, visible_nodes
 from config import HOSTING_USAGE_CUTOFF_PERCENT
 
@@ -170,6 +177,101 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
     ]
 
 
+@dataclass
+class _HistoryScope:
+    """День-независимые данные журнала, прочитанные один раз на весь диапазон.
+
+    Журнал строится сразу за десятки суток (до ARCHIVE_RETENTION_DAYS). Поденное чтение
+    юзера, хостов, пинов, снимков и лимитов означало бы сотни последовательных запросов
+    в синхронном обработчике — при 90 днях больше четырёхсот. Здесь всё это читается
+    пачкой, а раскладку по конкретным суткам делает `_reconstruct_day` в памяти.
+    """
+
+    user_id: int
+    offset: int
+    rotation_at: datetime | None
+    hosts: list[ProxyHost]
+    composition: dict[int, dict[int, list[dict]]]
+    pins: list[UserNodePin]
+    snapshots: dict[int, dict[int, float]]
+    node_limits: dict[int, int]
+
+    def pins_on_day(self, day_start: datetime, day_end: datetime) -> dict[int, list[int]]:
+        """Закрепления, действовавшие в эти сутки. Правило то же, что в crud.get_pins_covering_day:
+        пин создан до конца суток и не истёк до их начала; при нескольких строках на хост
+        выигрывает самая свежая (строки уже отсортированы по created_at/id)."""
+        result: dict[int, list[int]] = {}
+        for pin in self.pins:
+            if pin.created_at < day_end.replace(tzinfo=None) and pin.expires_at > day_start.replace(tzinfo=None):
+                result[cast(int, pin.host_id)] = list(cast(list[int], pin.node_ids))
+        return result
+
+    def weights_for(self, day_index: int, period_days: int) -> dict[int, float]:
+        """Снимок весов на начало эпохи этого хоста в эти сутки.
+
+        Повторяет правило crud.get_weight_snapshot: берётся ближайший снимок не позже
+        нужных суток, и он отбрасывается, если отстал больше чем на
+        WEIGHT_SNAPSHOT_MAX_AGE_DAYS — иначе журнал показал бы распределение по весам,
+        которых живая выдача в тот день уже не использовала.
+        """
+        snapshot_day = epoch_start_day(self.user_id, day_index, period_days)
+        available = [day for day in self.snapshots if day <= snapshot_day]
+        if not available:
+            return {}
+        latest = max(available)
+        if snapshot_day - latest > WEIGHT_SNAPSHOT_MAX_AGE_DAYS:
+            return {}
+        return self.snapshots[latest]
+
+
+def _build_scope(db: Session, user_id: int, first_day: int, last_day: int) -> _HistoryScope:
+    dbuser = db.query(User).filter(User.id == user_id).first()
+    user_bot_username = dbuser.bot_username if dbuser else None
+    # reconstruct вызывается только для валидированного юзера (роутер гарантирует
+    # существование через get_validated_user) — dbuser is None защитный краевой случай,
+    # а не ожидаемый путь. При нём фильтр по инбаундам не применяем вовсе
+    # (permissive-дефолт, тот же, что уже был у фильтра по боту): считать
+    # несуществующего юзера лишённым вообще всех хостов было бы новым, никем не
+    # проверенным поведением ради случая, который никогда не должен наступить.
+    visible_tags = _visible_inbound_tags(dbuser) if dbuser else set()
+    all_hosts = db.query(ProxyHost).order_by(ProxyHost.id).all()
+    # Та же логика, что и в рендере подписки и в list_pinnable_hosts: пустой
+    # bot_usernames = хост доступен всем ботам, отсеивать не надо. Плюс два фильтра
+    # выше (is_disabled, инбаунды юзера, C2/M3) — см. докстринг reconstruct.
+    hosts = [
+        host
+        for host in all_hosts
+        if not host.is_disabled
+        and host_allowed_for_bot(host.bot_usernames, user_bot_username)
+        and (dbuser is None or host.inbound_tag in visible_tags)
+    ]
+    return _HistoryScope(
+        user_id=user_id,
+        offset=int(getattr(dbuser, "address_rotation_offset", 0) or 0) if dbuser else 0,
+        # Единственная известная нам точка ротации — ПОСЛЕДНЯЯ (см. day_offset_known, C1).
+        rotation_at=getattr(dbuser, "address_rotation_offset_at", None) if dbuser else None,
+        hosts=hosts,
+        composition=crud.get_host_composition_range(db, first_day, last_day),
+        pins=crud.get_pins_covering_range(db, user_id, day_start_at(first_day), day_start_at(last_day + 1)),
+        # Снимки эпох могут начинаться раньше запрошенного диапазона: период ротации
+        # хоста бывает длиннее суток, и эпоха первого дня стартовала до него.
+        snapshots=crud.get_weight_snapshots_range(db, first_day - ARCHIVE_RETENTION_DAYS, last_day),
+        # Лимиты нужны, чтобы вывести исчерпание из снимка: вес — это остаток, а не доля.
+        node_limits=crud.get_node_limits(db),
+    )
+
+
+def reconstruct_range(db: Session, user_id: int, first_day: int, last_day: int) -> dict[int, list[HostAssignment]]:
+    """Журнал выдачи за диапазон суток включительно: day_index -> назначения по хостам.
+
+    Диапазон, а не день, — основная форма: именно так журнал показывается саппорту
+    (см. app/routers/user.py). Все чтения из БД делает `_build_scope` — по одному
+    запросу на сущность, независимо от длины диапазона.
+    """
+    scope = _build_scope(db, user_id, first_day, last_day)
+    return {day: _reconstruct_day(scope, day) for day in range(first_day, last_day + 1)}
+
+
 def reconstruct(db: Session, user_id: int, day_index: int) -> list[HostAssignment]:
     """Восстанавливает выдачу адресов юзеру за сутки `day_index` по всем хостам.
 
@@ -260,37 +362,20 @@ def reconstruct(db: Session, user_id: int, day_index: int) -> list[HostAssignmen
     история всё равно покажет адреса, которых юзер фактически не получал —
     это документированная дыра в данных, а не баг восстановления.
     """
+    return reconstruct_range(db, user_id, day_index, day_index)[day_index]
+
+
+def _reconstruct_day(scope: _HistoryScope, day_index: int) -> list[HostAssignment]:
+    """Одни сутки журнала по уже прочитанным данным диапазона (см. _HistoryScope)."""
+    user_id = scope.user_id
+    offset = scope.offset
+    rotation_at = scope.rotation_at
     day_start = day_start_at(day_index)
     day_end = day_start_at(day_index + 1)
 
-    dbuser = db.query(User).filter(User.id == user_id).first()
-    offset = int(getattr(dbuser, "address_rotation_offset", 0) or 0) if dbuser else 0
-    # Единственная известная нам точка ротации — ПОСЛЕДНЯЯ (см. пояснение у
-    # day_offset_known ниже, C1).
-    rotation_at = getattr(dbuser, "address_rotation_offset_at", None) if dbuser else None
-    user_bot_username = dbuser.bot_username if dbuser else None
-    # reconstruct вызывается только для валидированного юзера (роутер
-    # гарантирует существование через get_validated_user) — dbuser is None
-    # защитный краевой случай, а не ожидаемый путь. При нём фильтр по
-    # инбаундам не применяем вовсе (permissive-дефолт, тот же, что уже был у
-    # фильтра по боту): считать несуществующего юзера лишённым вообще всех
-    # хостов было бы новым, никем не проверенным поведением ради случая,
-    # который никогда не должен наступить на живом роутере.
-    visible_tags = _visible_inbound_tags(dbuser) if dbuser else set()
-
-    composition = crud.get_host_composition(db, day_index)
-    all_hosts = db.query(ProxyHost).order_by(ProxyHost.id).all()
-    # Та же логика, что и в рендере подписки и в list_pinnable_hosts: пустой
-    # bot_usernames = хост доступен всем ботам, отсеивать не надо. Плюс два
-    # фильтра выше (is_disabled, инбаунды юзера, C2/M3) — см. докстринг.
-    hosts = [
-        host
-        for host in all_hosts
-        if not host.is_disabled
-        and host_allowed_for_bot(host.bot_usernames, user_bot_username)
-        and (dbuser is None or host.inbound_tag in visible_tags)
-    ]
-    pins_on_day = crud.get_pins_covering_day(db, user_id, day_start, day_end)
+    composition = scope.composition.get(day_index, {})
+    hosts = scope.hosts
+    pins_on_day = scope.pins_on_day(day_start, day_end)
 
     # Настройки сужения живут на ХОСТЕ (NPVPN-2072), поэтому size/период/эпоха считаются
     # внутри цикла по хостам, а снимок весов берётся на начало эпохи КАЖДОГО периода —
@@ -301,17 +386,6 @@ def reconstruct(db: Session, user_id: int, day_index: int) -> list[HostAssignmen
     #
     # Ограничение то же, что и раньше: настройки берутся ТЕКУЩИЕ. Истории изменения полей
     # хоста панель не хранит, и подставлять сегодняшние значения — меньшее зло, чем гадать.
-    weights_cache: dict[int, dict[int, float]] = {}
-
-    def weights_for(period_days: int) -> dict[int, float]:
-        snapshot_day = epoch_start_day(user_id, day_index, period_days)
-        if snapshot_day not in weights_cache:
-            weights_cache[snapshot_day] = crud.get_weight_snapshot(db, snapshot_day)
-        return weights_cache[snapshot_day]
-
-    # Лимиты нужны, чтобы вывести исчерпание из снимка: вес — это остаток, а не доля.
-    # Запрос делается лениво, только если хоть один хост реально сужает.
-    node_limits: dict[int, int] | None = None
 
     # C1: offset входит слагаемым в epoch_for, а users.address_rotation_offset
     # хранит только ТЕКУЩЕЕ значение — одно число без истории. Известна только
@@ -389,7 +463,7 @@ def reconstruct(db: Session, user_id: int, day_index: int) -> list[HostAssignmen
             )
             continue
 
-        weights = weights_for(settings.rotation_days)
+        weights = scope.weights_for(day_index, settings.rotation_days)
         if not weights:
             # Реальное сужение в этот день было бы, а весов нет: не гадаем,
             # каким было бы распределение — честно говорим "не восстановимо".
@@ -404,8 +478,6 @@ def reconstruct(db: Session, user_id: int, day_index: int) -> list[HostAssignmen
             continue
 
         if addresses_from_nodes:
-            if node_limits is None:
-                node_limits = crud.get_node_limits(db)
             epoch = epoch_for(user_id, day_index, settings.rotation_days, offset)
             chosen_nodes = choose_nodes(
                 user_id,
@@ -413,7 +485,7 @@ def reconstruct(db: Session, user_id: int, day_index: int) -> list[HostAssignmen
                 weights=weights,
                 # Исчерпание за прошедшие сутки выводится из снимка: свежего расхода за
                 # тот день у нас нет (см. exhausted_from_snapshot).
-                exhausted=exhausted_from_snapshot(weights, node_limits, HOSTING_USAGE_CUTOFF_PERCENT),
+                exhausted=exhausted_from_snapshot(weights, scope.node_limits, HOSTING_USAGE_CUTOFF_PERCENT),
                 size=size,
                 epoch=epoch,
             )

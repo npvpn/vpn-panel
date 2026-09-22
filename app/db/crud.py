@@ -63,6 +63,7 @@ from app.models.user_template import UserTemplateCreate, UserTemplateModify
 from app.subscription.device_ua import unknown_user_agents_match as _unknown_user_agents_match
 from app.utils.helpers import calculate_expiration_days, calculate_usage_percent
 from app.utils.jwt import create_subscription_token
+from app.xray.address_policy import WEIGHT_SNAPSHOT_MAX_AGE_DAYS
 from app.xray.cascade_keys import generate_cascade_identity
 from config import (
     HOSTING_USAGE_CUTOFF_PERCENT,
@@ -2160,6 +2161,31 @@ def rotate_user_addresses(db: Session, dbuser: User) -> User:
     return dbuser
 
 
+def get_weight_snapshots_range(db: Session, first_day: int, last_day: int) -> dict[int, dict[int, float]]:
+    """Сырые снимки весов за диапазон суток: epoch_index -> {node_id: weight} (NPVPN-2072).
+
+    Именно СЫРЫЕ: подбор «ближайшего не позже» и отсев протухших делает вызывающий
+    (журнал выдачи), потому что для каждого дня диапазона ответ свой. Захватывает
+    WEIGHT_SNAPSHOT_MAX_AGE_DAYS суток до начала диапазона — иначе у первых дней не
+    нашлось бы более раннего снимка, который живая выдача в тот день использовала.
+
+    Нужен журналу, который строится сразу за десятки дней: поденный
+    get_weight_snapshot давал бы столько же round-trip'ов подряд.
+    """
+    rows = (
+        db.query(NodeWeightSnapshot.epoch_index, NodeWeightSnapshot.node_id, NodeWeightSnapshot.weight)
+        .filter(
+            NodeWeightSnapshot.epoch_index >= first_day - WEIGHT_SNAPSHOT_MAX_AGE_DAYS,
+            NodeWeightSnapshot.epoch_index <= last_day,
+        )
+        .all()
+    )
+    by_day: dict[int, dict[int, float]] = {}
+    for row in rows:
+        by_day.setdefault(int(row.epoch_index), {})[int(row.node_id)] = float(row.weight)
+    return by_day
+
+
 def get_exhausted_node_ids(db: Session, cutoff_percent: int | None = None) -> frozenset[int]:
     """Ноды, достигшие порога месячного лимита хостера (NPVPN-2072).
 
@@ -2210,10 +2236,10 @@ def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:
     )
     if latest is None:
         return {}
-    # Пропущено больше двух суточных проходов — веса недостоверны, выравниваем.
-    # Проверка до выборки строк: на каждом рендере подписки устаревший снимок не
-    # должен стоить лишнего похода в БД (NPVPN-2072).
-    if epoch_index - int(latest) > 2:
+    # Пропущено больше WEIGHT_SNAPSHOT_MAX_AGE_DAYS суточных проходов — веса
+    # недостоверны, выравниваем. Проверка до выборки строк: на каждом рендере подписки
+    # устаревший снимок не должен стоить лишнего похода в БД (NPVPN-2072).
+    if epoch_index - int(latest) > WEIGHT_SNAPSHOT_MAX_AGE_DAYS:
         return {}
     rows = (
         db.query(NodeWeightSnapshot.node_id, NodeWeightSnapshot.weight, NodeWeightSnapshot.epoch_index)
@@ -2393,6 +2419,51 @@ def get_host_composition(db: Session, epoch_index: int) -> dict[int, list[dict]]
         .all()
     )
     return {row.host_id: row.payload for row in rows}
+
+
+def get_host_composition_range(db: Session, first_day: int, last_day: int) -> dict[int, dict[int, list[dict]]]:
+    """Состав хостов за диапазон суток: epoch_index -> {host_id: payload} (NPVPN-2072).
+
+    Журнал выдачи строится сразу за десятки дней (до ARCHIVE_RETENTION_DAYS), и
+    поденный вызов get_host_composition означал бы столько же round-trip'ов подряд в
+    синхронном обработчике запроса. Семантика точного снимка та же: подбора ближайших
+    более ранних суток здесь нет.
+    """
+    rows = (
+        db.query(
+            HostCompositionSnapshot.epoch_index,
+            HostCompositionSnapshot.host_id,
+            HostCompositionSnapshot.payload,
+        )
+        .filter(
+            HostCompositionSnapshot.epoch_index >= first_day,
+            HostCompositionSnapshot.epoch_index <= last_day,
+        )
+        .all()
+    )
+    by_day: dict[int, dict[int, list[dict]]] = {}
+    for row in rows:
+        by_day.setdefault(cast(int, row.epoch_index), {})[cast(int, row.host_id)] = row.payload
+    return by_day
+
+
+def get_pins_covering_range(db: Session, user_id: int, range_start: datetime, range_end: datetime) -> list[UserNodePin]:
+    """Закрепления юзера, пересекающиеся с диапазоном [range_start, range_end) (NPVPN-2072).
+
+    Возвращает СТРОКИ, а не готовую карту по хостам: какие из них действовали в
+    конкретные сутки, решает вызывающий (см. pins_on_day в address_history) — иначе
+    диапазонный журнал снова ходил бы в БД на каждый день.
+    """
+    return (
+        db.query(UserNodePin)
+        .filter(
+            UserNodePin.user_id == user_id,
+            UserNodePin.created_at < range_end,
+            UserNodePin.expires_at > range_start,
+        )
+        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
+        .all()
+    )
 
 
 def prune_host_composition_snapshots(db: Session, epoch_index: int, retention_days: int) -> None:
