@@ -6,6 +6,7 @@ import {
 
 import {
   ArrowDownIcon,
+  ArrowsUpDownIcon,
   ArrowUpIcon,
   Cog6ToothIcon,
   DocumentDuplicateIcon,
@@ -31,6 +32,13 @@ export const UpIcon = chakra(ArrowUpIcon, {
 });
 
 export const DownIcon = chakra(ArrowDownIcon, {
+  baseStyle: {
+    w: 5,
+    h: 5,
+  },
+});
+
+export const DragHandleIcon = chakra(ArrowsUpDownIcon, {
   baseStyle: {
     w: 5,
     h: 5,

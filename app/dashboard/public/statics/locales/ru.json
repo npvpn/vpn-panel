@@ -85,6 +85,8 @@
   "hostsDialog.notFound": "Хосты не найдены",
   "hostsDialog.filterInbound": "Фильтр по инбаунду",
   "hostsDialog.filterBot": "Фильтр по боту",
+  "hostsDialog.activeOnly": "Только активные",
+  "hostsDialog.filterActiveOnly": "Показывать только активные хосты",
   "hostsDialog.columnInbound": "Инбаунд",
   "hostsDialog.columnBot": "Бот",
   "hostsDialog.columnEnabled": "Вкл",

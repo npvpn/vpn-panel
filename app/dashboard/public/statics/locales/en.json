@@ -85,6 +85,8 @@
   "hostsDialog.notFound": "No hosts found",
   "hostsDialog.filterInbound": "Filter by inbound",
   "hostsDialog.filterBot": "Filter by bot",
+  "hostsDialog.activeOnly": "Active only",
+  "hostsDialog.filterActiveOnly": "Show only active hosts",
   "hostsDialog.columnInbound": "Inbound",
   "hostsDialog.columnBot": "Bot",
   "hostsDialog.columnEnabled": "On",
