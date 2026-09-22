@@ -4,8 +4,8 @@ import { z } from "zod";
 import { create } from "zustand";
 import { FilterUsageType, useDashboard } from "./DashboardContext";
 
-/** SI ТБ, как у хостеров в счетах (не TiB). */
-export const SI_TB_BYTES = 1_000_000_000_000;
+/** 1 ТБ = 2⁴⁰ байт (TiB), как Grafana `bytes` и карточка VPN Nodes. */
+export const IEC_TB_BYTES = 1024 ** 4;
 
 export function tbStringToBytes(raw: unknown): number | null {
   if (raw == null || raw === "") {
@@ -19,14 +19,18 @@ export function tbStringToBytes(raw: unknown): number | null {
   if (!Number.isFinite(value) || value <= 0) {
     return null;
   }
-  return Math.round(value * SI_TB_BYTES);
+  return Math.round(value * IEC_TB_BYTES);
 }
 
 export function bytesToTbString(bytes: number | null | undefined): string {
   if (bytes == null || bytes <= 0) {
     return "";
   }
-  return String(bytes / SI_TB_BYTES);
+  const tb = bytes / IEC_TB_BYTES;
+  if (Number.isInteger(tb)) {
+    return String(tb);
+  }
+  return String(parseFloat(tb.toPrecision(12)));
 }
 
 const hostingTrafficLimitTb = z

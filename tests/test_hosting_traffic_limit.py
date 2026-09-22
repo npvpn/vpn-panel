@@ -8,7 +8,7 @@ from datetime import datetime
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import BigInteger, create_engine
+from sqlalchemy import BigInteger, create_engine, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -47,13 +47,17 @@ def test_model_declares_nullable_bigint_limit():
     assert column.nullable is True
 
 
+IEC_TB = 1024**4
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        (0.7, 700_000_000_000),
-        ("0,7", 700_000_000_000),
-        ("0.7", 700_000_000_000),
-        (" 1 ", 1_000_000_000_000),
+        (0.7, round(0.7 * IEC_TB)),
+        ("0,7", round(0.7 * IEC_TB)),
+        ("0.7", round(0.7 * IEC_TB)),
+        (" 1 ", IEC_TB),
+        ("32", 32 * IEC_TB),
         ("", None),
         (None, None),
     ],
@@ -123,3 +127,46 @@ def test_update_node_omitted_limit_keeps_previous(db):
 
     update_node(db, node, NodeModify(name="nl-3-renamed"))
     assert db.query(Node).filter(Node.id == node.id).one().hosting_traffic_limit_bytes == 500_000_000_000
+
+
+def test_hosting_limit_si_to_iec_migration_rescales_stored_bytes():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "app/db/migrations/versions/e8f1a2b3c4d5_hosting_limit_tb_iec.py"
+    spec = importlib.util.spec_from_file_location("hosting_limit_iec", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+
+    class _Op:
+        def __init__(self, bind):
+            self._bind = bind
+
+        def get_bind(self):
+            return self._bind
+
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE nodes (id INTEGER PRIMARY KEY, hosting_traffic_limit_bytes INTEGER)"))
+        conn.execute(
+            text(
+                "INSERT INTO nodes (id, hosting_traffic_limit_bytes) VALUES "
+                "(1, 32000000000000), (2, NULL), (3, 700000000000)"
+            )
+        )
+        orig_op = module.op
+        module.op = _Op(conn)
+        try:
+            module.upgrade()
+            rows = {row[0]: row[1] for row in conn.execute(text("SELECT id, hosting_traffic_limit_bytes FROM nodes"))}
+            assert rows[1] == 32 * 1024**4
+            assert rows[2] is None
+            assert rows[3] == round(700_000_000_000 * 1024**4 / 10**12)
+
+            module.downgrade()
+            rows = {row[0]: row[1] for row in conn.execute(text("SELECT id, hosting_traffic_limit_bytes FROM nodes"))}
+            assert rows[1] == 32_000_000_000_000
+            assert rows[3] == 700_000_000_000
+        finally:
+            module.op = orig_op
