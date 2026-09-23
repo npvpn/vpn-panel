@@ -11,6 +11,12 @@
     <script defer src="/statics/vendor/js/alpinejs.js"></script>
     <script defer src="/statics/vendor/js/qrcode.min.js"></script>
     <script defer src="{{ sub_statics }}scripts/cabinet-link.js"></script>
+    <script defer src="{{ sub_statics }}scripts/status-poll.js"
+      data-info-url="/{{ sub_path }}/{{ token }}/info"
+      data-initial-status="{{ user.status.value }}"
+      data-device-limit-mode="reached"
+      data-reload-on-gone="true"
+      data-interval-ms="30000"></script>
     <script id="devices-data" type="application/json">{{ devices_json | safe }}</script>
     <script>
       const initialDevices = JSON.parse(
