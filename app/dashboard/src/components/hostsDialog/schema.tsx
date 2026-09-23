@@ -52,6 +52,29 @@ export const hostItemSchema = z
     bot_usernames: z.array(z.string()).default([]),
     node_ids: z.array(z.number()).default([]),
     client_config_id: z.number().nullable().default(null),
+    // NPVPN-2072: сужение адресов настраивается на хосте. Пустое поле = null
+    // («отдавать все адреса»), а не 0 — ноль означал бы выдачу без адресов.
+    address_subset_enabled: z.boolean().default(false),
+    address_subset_size: z
+      .string()
+      .or(z.number())
+      .nullable()
+      .optional()
+      .transform((value) => {
+        if (value === null || value === undefined || value === "") return null;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.max(1, Math.trunc(parsed)) : null;
+      }),
+    address_rotation_days: z
+      .string()
+      .or(z.number())
+      .nullable()
+      .optional()
+      .transform((value) => {
+        if (value === null || value === undefined || value === "") return null;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.max(1, Math.trunc(parsed)) : null;
+      }),
   })
   .superRefine((data, ctx) => {
     if (!data.address && (!data.node_ids || data.node_ids.length === 0)) {

@@ -1,14 +1,14 @@
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Хостеры считают ТБ десятичными (10^12), не TiB. Форма панели вводит ТБ, API хранит байты.
-SI_TB_BYTES = 10**12
+# Как Grafana unit `bytes` / VPN Nodes / панель хостера: 1 ТБ = 2^40 байт (TiB).
+IEC_TB_BYTES = 1024**4
 
 
 def hosting_tb_to_bytes(raw: str | float | int | Decimal | None) -> int | None:
-    """Переводит ТБ из формы (0.7 / '0,7' / '') в SI-байты. Пустое → None."""
+    """Переводит ТБ из формы (0.7 / '0,7' / '') в IEC-байты (TiB). Пустое → None."""
     if raw is None:
         return None
     if isinstance(raw, str):
@@ -22,7 +22,7 @@ def hosting_tb_to_bytes(raw: str | float | int | Decimal | None) -> int | None:
         raise ValueError("hosting traffic limit must be a number in TB") from None
     if tb <= 0:
         raise ValueError("hosting traffic limit must be positive")
-    return int((tb * SI_TB_BYTES).to_integral_value())
+    return int((tb * IEC_TB_BYTES).to_integral_value(rounding=ROUND_HALF_UP))
 
 
 class NodeStatus(str, Enum):

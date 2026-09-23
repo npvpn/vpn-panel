@@ -11,8 +11,10 @@ from typing import TYPE_CHECKING, Literal, cast
 from jdatetime import date as jd
 
 from app import xray
+from app.subscription.address_context import AddressContext, settings_from_host
 from app.subscription.bs_context import ZERO_STUB, BsContext, StubEndpoint
 from app.utils.system import get_public_ip, get_public_ipv6, readable_size
+from app.xray.host_addresses import host_allowed_for_bot
 
 from . import *
 
@@ -78,6 +80,7 @@ def _render(
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
     conf: SubscriptionConf | None = None,
+    subset: AddressContext | None = None,
 ) -> list | str:
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
@@ -97,6 +100,7 @@ def _render(
         reverse=reverse,
         bs=bs,
         stub=stub,
+        subset=subset,
     )
 
 
@@ -107,6 +111,7 @@ def generate_v2ray_links(
     reverse: bool,
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
+    subset: AddressContext | None = None,
 ) -> list:
     return cast(
         list,
@@ -118,6 +123,7 @@ def generate_v2ray_links(
             reverse=reverse,
             bs=bs,
             stub=stub,
+            subset=subset,
         ),
     )
 
@@ -135,6 +141,7 @@ def generate_subscription(
     settings: dict | None = None,
     bs: BsContext | None = None,
     db: "Session | None" = None,
+    subset: AddressContext | None = None,
 ) -> str:
     bs = bs or BsContext.empty()
     from app.models.bot import DEFAULT_BOT_SETTINGS, apply_bot_settings_fallback
@@ -256,6 +263,7 @@ def generate_subscription(
                 reverse=reverse,
                 bs=bs,
                 stub=stub,
+                subset=subset,
             ),
         )
         if device_limit_links:
@@ -272,6 +280,7 @@ def generate_subscription(
                 reverse=reverse,
                 bs=bs,
                 stub=stub,
+                subset=subset,
             ),
         )
     elif render_format == "v2ray-json":
@@ -310,6 +319,7 @@ def generate_subscription(
                 bs=bs,
                 stub=stub,
                 conf=conf,
+                subset=subset,
             ),
         )
     else:
@@ -433,9 +443,11 @@ def process_inbounds_and_tags(
     reverse=False,
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
+    subset: AddressContext | None = None,
 ) -> list | str:
     bs = bs or BsContext.empty()
     stub = stub or ZERO_STUB
+    subset = subset or AddressContext.disabled()
     _inbounds = []
     for protocol, tags in inbounds.items():
         for tag in tags:
@@ -460,7 +472,7 @@ def process_inbounds_and_tags(
             format_variables.update({"TRANSPORT": inbound["network"]})
             for host in xray.hosts.get(tag, []):
                 allowed_bot_usernames = host.get("bot_usernames") or []
-                if allowed_bot_usernames and user_bot_username and user_bot_username not in allowed_bot_usernames:
+                if not host_allowed_for_bot(allowed_bot_usernames, user_bot_username):
                     continue
 
                 host_inbound = inbound.copy()
@@ -482,6 +494,24 @@ def process_inbounds_and_tags(
 
                 address = ""
                 address_list = host["address"]
+                # Сужение — ДО расчёта balanced, который зависит от длины списка.
+                # Отдельного исключения для БС-хостов не требуется: заблокированный
+                # БС-хост уходит в ветку bs.is_blocked() ниже, где адрес подменяется
+                # на заглушку и суженный список не используется вовсе; а у
+                # незаблокированного БС-хоста сужение лишь концентрирует расход на
+                # меньшем числе нод — БС-лимит считается агрегатом по юзеру
+                # (aggregate_bs_usage), а не по ноде, поэтому учёт не ломается.
+                if address_list:
+                    address_list = subset.pick(
+                        address_list,
+                        host.get("node_ids") or [],
+                        addresses_from_nodes=bool(host.get("addresses_from_nodes")),
+                        host_id=host.get("id"),
+                        # NPVPN-2072: размер подмножества и период ротации — свойства ХОСТА:
+                        # у локаций разное число нод, и один размер на всего бота этого не
+                        # выражал.
+                        settings=settings_from_host(host),
+                    )
                 balanced = isinstance(conf, V2rayJsonConfig) and address_list and len(address_list) > 1
                 if address_list and not balanced:
                     salt = secrets.token_hex(8)

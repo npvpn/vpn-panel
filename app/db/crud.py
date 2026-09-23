@@ -7,6 +7,8 @@ from enum import Enum
 from typing import Any, cast
 
 from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session, joinedload
 from sqlalchemy.sql.functions import coalesce
@@ -20,6 +22,7 @@ from app.db.models import (
     BotSettings,
     CascadeRoute,
     GlobalSetting,
+    HostCompositionSnapshot,
     ManagedSetting,
     NextPlan,
     Node,
@@ -27,6 +30,7 @@ from app.db.models import (
     NodeUserBlock,
     NodeUserBsUsage,
     NodeUserUsage,
+    NodeWeightSnapshot,
     NotificationReminder,
     Proxy,
     ProxyHost,
@@ -35,6 +39,7 @@ from app.db.models import (
     System,
     User,
     UserDevice,
+    UserNodePin,
     UserTemplate,
     UserUsageResetLogs,
     master_inbounds_association,
@@ -58,8 +63,14 @@ from app.models.user_template import UserTemplateCreate, UserTemplateModify
 from app.subscription.device_ua import unknown_user_agents_match as _unknown_user_agents_match
 from app.utils.helpers import calculate_expiration_days, calculate_usage_percent
 from app.utils.jwt import create_subscription_token
+from app.xray.address_policy import WEIGHT_SNAPSHOT_MAX_AGE_DAYS
 from app.xray.cascade_keys import generate_cascade_identity
-from config import NOTIFY_DAYS_LEFT, NOTIFY_REACHED_USAGE_PERCENT, USERS_AUTODELETE_DAYS
+from config import (
+    HOSTING_USAGE_CUTOFF_PERCENT,
+    NOTIFY_DAYS_LEFT,
+    NOTIFY_REACHED_USAGE_PERCENT,
+    USERS_AUTODELETE_DAYS,
+)
 
 
 def add_default_host(db: Session, inbound: ProxyInbound):
@@ -202,6 +213,10 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
             xhttp_extra=host.xhttp_extra,
             order=order,
             client_config_id=host.client_config_id,
+            # NPVPN-2072: сужение адресов настраивается на хосте.
+            address_subset_enabled=host.address_subset_enabled,
+            address_subset_size=host.address_subset_size,
+            address_rotation_days=host.address_rotation_days,
             bots=bots,
             nodes=nodes,
         )
@@ -247,6 +262,9 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
             xhttp_extra=host.xhttp_extra,
             order=order,
             client_config_id=host.client_config_id,
+            address_subset_enabled=host.address_subset_enabled,
+            address_subset_size=host.address_subset_size,
+            address_rotation_days=host.address_rotation_days,
             bots=_get_bots_by_usernames(db, host.bot_usernames),
             nodes=_get_nodes_by_ids(db, host.node_ids),
         )
@@ -2123,6 +2141,347 @@ def get_blocked_bs_node_ids(db: Session, user_id: int) -> set[int]:
     матча не годятся. При блоке юзер теряет ноду целиком — глушим все её хосты."""
     rows = db.query(NodeUserBlock.node_id).filter(NodeUserBlock.user_id == user_id).all()
     return {node_id for (node_id,) in rows}
+
+
+def rotate_user_addresses(db: Session, dbuser: User) -> User:
+    """Сменить юзеру набор адресов немедленно, не дожидаясь автоматической ротации.
+
+    Инкремент сдвига меняет эпоху этого юзера, а значит и результат выбора. Таблицы
+    назначений нет, поэтому «ротация» — это одно число (NPVPN-2072).
+
+    Проставляем время последней ротации (C1, NPVPN-2072): без него журнал
+    (app/services/address_history.py: reconstruct) не может отличить "offset
+    всегда был таким" от "offset менялся, старые сутки жили с другим значением"
+    — и задним числом переписал бы эпоху всех прошлых суток текущим offset.
+    """
+    cast(Any, dbuser).address_rotation_offset = int(dbuser.address_rotation_offset or 0) + 1
+    cast(Any, dbuser).address_rotation_offset_at = datetime.utcnow()
+    db.commit()
+    db.refresh(dbuser)
+    return dbuser
+
+
+def get_weight_snapshots_range(db: Session, first_day: int, last_day: int) -> dict[int, dict[int, float]]:
+    """Сырые снимки весов за диапазон суток: epoch_index -> {node_id: weight} (NPVPN-2072).
+
+    Именно СЫРЫЕ: подбор «ближайшего не позже» и отсев протухших делает вызывающий
+    (журнал выдачи), потому что для каждого дня диапазона ответ свой. Захватывает
+    WEIGHT_SNAPSHOT_MAX_AGE_DAYS суток до начала диапазона — иначе у первых дней не
+    нашлось бы более раннего снимка, который живая выдача в тот день использовала.
+
+    Нужен журналу, который строится сразу за десятки дней: поденный
+    get_weight_snapshot давал бы столько же round-trip'ов подряд.
+    """
+    rows = (
+        db.query(NodeWeightSnapshot.epoch_index, NodeWeightSnapshot.node_id, NodeWeightSnapshot.weight)
+        .filter(
+            NodeWeightSnapshot.epoch_index >= first_day - WEIGHT_SNAPSHOT_MAX_AGE_DAYS,
+            NodeWeightSnapshot.epoch_index <= last_day,
+        )
+        .all()
+    )
+    by_day: dict[int, dict[int, float]] = {}
+    for row in rows:
+        by_day.setdefault(int(row.epoch_index), {})[int(row.node_id)] = float(row.weight)
+    return by_day
+
+
+def get_exhausted_node_ids(db: Session, cutoff_percent: int | None = None) -> frozenset[int]:
+    """Ноды, достигшие порога месячного лимита хостера (NPVPN-2072).
+
+    Порог — доля лимита (`HOSTING_USAGE_CUTOFF_PERCENT`, дефолт 90%), а не 100%: счётчик
+    хостера расходится с нашим, и добор лимита до нуля оплачивается как перерасход.
+    Сравнение делает БД, а не Python: строк мало, но тянуть весь парк нод на каждый
+    промах TTL-кэша незачем.
+
+    Ноды без лимита и без замера сюда не попадают — см. is_exhausted.
+    """
+    from app.xray.address_policy import cutoff_ratio
+
+    ratio = cutoff_ratio(HOSTING_USAGE_CUTOFF_PERCENT if cutoff_percent is None else cutoff_percent)
+    rows = (
+        db.query(Node.id)
+        .filter(
+            Node.hosting_traffic_limit_bytes.isnot(None),
+            Node.hosting_traffic_limit_bytes > 0,
+            Node.hosting_used_bytes.isnot(None),
+            Node.hosting_used_bytes >= Node.hosting_traffic_limit_bytes * ratio,
+        )
+        .all()
+    )
+    return frozenset(row.id for row in rows)
+
+
+def get_node_limits(db: Session) -> dict[int, int]:
+    """Месячные лимиты нод (id -> байты). Ноды без лимита не попадают.
+
+    Нужен журналу (address_history): восстановить «была ли нода исчерпана в день X» по
+    снимку весов можно только зная лимит — снимок хранит остаток, а не долю.
+    """
+    rows = db.query(Node.id, Node.hosting_traffic_limit_bytes).filter(Node.hosting_traffic_limit_bytes > 0).all()
+    return {row.id: int(row.hosting_traffic_limit_bytes) for row in rows}
+
+
+def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:
+    """Веса нод на указанные сутки: ближайший снимок не позже epoch_index.
+
+    Точного снимка может не быть (скрипт или Prometheus лежали), поэтому берём
+    последний доступный более ранний. Насколько он устарел — решает вызывающий код
+    (NPVPN-2072).
+    """
+    latest = (
+        db.query(func.max(NodeWeightSnapshot.epoch_index))
+        .filter(NodeWeightSnapshot.epoch_index <= epoch_index)
+        .scalar()
+    )
+    if latest is None:
+        return {}
+    # Пропущено больше WEIGHT_SNAPSHOT_MAX_AGE_DAYS суточных проходов — веса
+    # недостоверны, выравниваем. Проверка до выборки строк: на каждом рендере подписки
+    # устаревший снимок не должен стоить лишнего похода в БД (NPVPN-2072).
+    if epoch_index - int(latest) > WEIGHT_SNAPSHOT_MAX_AGE_DAYS:
+        return {}
+    rows = (
+        db.query(NodeWeightSnapshot.node_id, NodeWeightSnapshot.weight, NodeWeightSnapshot.epoch_index)
+        .filter(NodeWeightSnapshot.epoch_index == latest)
+        .all()
+    )
+    return {row.node_id: float(row.weight) for row in rows}
+
+
+def get_active_pins(db: Session, user_id: int, now: datetime) -> dict[int, list[int]]:
+    """Активные закрепления нод юзера: host_id -> node_ids (NPVPN-2072).
+
+    Одним запросом на весь рендер подписки (горячий путь), не по хосту.
+    Уникальности (user_id, host_id) на уровне БД нет намеренно — истёкшие пины
+    остаются как история, по одной паре их может накопиться много. Берём только
+    строки с expires_at > now и, если на пару (user_id, host_id) их несколько,
+    самую свежую по created_at.
+    """
+    rows = (
+        db.query(UserNodePin)
+        .filter(UserNodePin.user_id == user_id, UserNodePin.expires_at > now)
+        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
+        .all()
+    )
+    pins: dict[int, list[int]] = {}
+    for row in rows:
+        pins[cast(int, row.host_id)] = list(cast(list[int], row.node_ids))
+    return pins
+
+
+def create_user_node_pin(
+    db: Session,
+    *,
+    user_id: int,
+    host_id: int,
+    node_ids: list[int],
+    expires_at: datetime,
+    created_by: str,
+    note: str | None,
+) -> UserNodePin:
+    """Ставит закрепление нод хоста за юзером (NPVPN-2072).
+
+    Не трогает прежние строки на этот (user_id, host_id) — они остаются как
+    история (см. docstring UserNodePin). Действующей всегда становится эта,
+    самая свежая по created_at, — так её видят и get_active_pins, и
+    get_pins_covering_day.
+    """
+    pin = UserNodePin(
+        user_id=user_id,
+        host_id=host_id,
+        node_ids=node_ids,
+        expires_at=expires_at,
+        created_by=created_by,
+        note=note,
+    )
+    db.add(pin)
+    db.commit()
+    db.refresh(pin)
+    return pin
+
+
+def delete_user_node_pin(db: Session, *, user_id: int, host_id: int, now: datetime) -> int:
+    """Снимает действующее закрепление немедленно, не дожидаясь expires_at (NPVPN-2072).
+
+    Строку не удаляем — это стёрло бы историю расследований. Вместо этого
+    переносим expires_at на `now`: get_active_pins перестаёт видеть пин сразу
+    же, а get_pins_covering_day для прошлых суток по-прежнему честно покажет,
+    что в те сутки закрепление действовало. Возвращает число снятых строк
+    (0 — снимать было нечего).
+    """
+    rows = (
+        db.query(UserNodePin)
+        .filter(UserNodePin.user_id == user_id, UserNodePin.host_id == host_id, UserNodePin.expires_at > now)
+        .all()
+    )
+    for row in rows:
+        cast(Any, row).expires_at = now
+    db.commit()
+    return len(rows)
+
+
+def list_active_pins(db: Session, user_id: int, now: datetime) -> list[UserNodePin]:
+    """Действующие закрепления юзера с полными полями — для админского списка (NPVPN-2072).
+
+    В отличие от get_active_pins (плоский dict host_id -> node_ids для горячего
+    пути рендера подписки), тут нужны все поля строки: expires_at, created_by,
+    note. Если на хост несколько активных строк — берём самую свежую по
+    created_at, тем же правилом, что и get_active_pins.
+    """
+    rows = (
+        db.query(UserNodePin)
+        .filter(UserNodePin.user_id == user_id, UserNodePin.expires_at > now)
+        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
+        .all()
+    )
+    latest: dict[int, UserNodePin] = {}
+    for row in rows:
+        latest[cast(int, row.host_id)] = row
+    return list(latest.values())
+
+
+def get_pins_covering_day(db: Session, user_id: int, day_start: datetime, day_end: datetime) -> dict[int, list[int]]:
+    """Закрепления юзера, действовавшие в течение суток [day_start, day_end) (NPVPN-2072).
+
+    В отличие от get_active_pins ("что действует сейчас") — отдельный запрос для
+    восстановления истории: захватывает и уже истёкшие строки. Истёкшие строки
+    специально не удаляются именно ради этого запроса. Пин считается
+    действовавшим в сутки, если он был создан до конца суток и не истёк до их
+    начала (`created_at < day_end and expires_at > day_start`). Если на пару
+    (host_id) за эти сутки несколько строк — берём самую свежую по created_at.
+    """
+    rows = (
+        db.query(UserNodePin)
+        .filter(
+            UserNodePin.user_id == user_id,
+            UserNodePin.created_at < day_end,
+            UserNodePin.expires_at > day_start,
+        )
+        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
+        .all()
+    )
+    pins: dict[int, list[int]] = {}
+    for row in rows:
+        pins[cast(int, row.host_id)] = list(cast(list[int], row.node_ids))
+    return pins
+
+
+def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int, payload: list[dict]) -> None:
+    """Идемпотентная запись состава хоста на сутки (NPVPN-2072).
+
+    Первая запись дня выигрывает: при конфликте (epoch_index, host_id) строка НЕ
+    перезаписывается — состав на эти сутки уже зафиксирован, переписать его задним
+    числом значит соврать в истории расследований. Джоба ходит раз в час именно
+    ради этого — идемпотентность делает лишние проходы бесплатными.
+
+    Эквивалент "ON DUPLICATE KEY UPDATE epoch_index = epoch_index" из бота
+    (scripts/prometheus_vpn_nodes_sd.py), но через SQLAlchemy Core, диалект-зависимо:
+    панель крутится на MySQL в проде и на SQLite в тестах, а не на Postgres, как бот.
+
+    Формат `payload`: список `{"node_id": int | None, "address": str}`. `node_id`
+    равен `None`, когда адрес хоста статический (host.address задан, обычно
+    маскировка под домен) — там нет соответствия "адрес <-> нода" по построению
+    (см. `_host_payload` в app/jobs/snapshot_host_composition.py и комментарий в
+    `AddressContext.pick` про то же самое несоответствие).
+
+    Не коммитит сама: обходит десятки хостов за проход, и коммит на каждый хост
+    был бы лишним round-trip'ом в джобе, которая ходит каждый час. Коммитить
+    накопленные вставки — забота ВЫЗЫВАЮЩЕГО кода (см. snapshot_host_composition
+    в app/jobs/snapshot_host_composition.py: там один явный db.commit() сразу
+    после цикла записи, ДО вызова prune_host_composition_snapshots — коммит
+    снимков не должен зависеть от того, удастся ли не связанная с ним по смыслу
+    подчистка).
+    """
+    values = {"epoch_index": epoch_index, "host_id": host_id, "payload": payload}
+    stmt: Any
+    if db.bind is not None and db.bind.dialect.name == "mysql":
+        mysql_stmt = mysql_insert(HostCompositionSnapshot).values(**values)
+        # Условный UPDATE, который ничего не меняет — тот же трюк, что в боте.
+        stmt = mysql_stmt.on_duplicate_key_update(epoch_index=mysql_stmt.inserted.epoch_index)
+    else:
+        sqlite_stmt = sqlite_insert(HostCompositionSnapshot).values(**values)
+        stmt = sqlite_stmt.on_conflict_do_nothing(index_elements=["epoch_index", "host_id"])
+    db.execute(stmt)
+
+
+def get_host_composition(db: Session, epoch_index: int) -> dict[int, list[dict]]:
+    """Состав всех хостов на указанные сутки: host_id -> [{"node_id", "address"}, ...].
+
+    В отличие от get_weight_snapshot — точный снимок за epoch_index, без подбора
+    ближайшего более раннего: состав нужен для расследования "что видел юзер в дату
+    X", подмена суток чужим снимком там была бы не деградацией, а искажением ответа
+    (NPVPN-2072).
+    """
+    rows = (
+        db.query(HostCompositionSnapshot.host_id, HostCompositionSnapshot.payload)
+        .filter(HostCompositionSnapshot.epoch_index == epoch_index)
+        .all()
+    )
+    return {row.host_id: row.payload for row in rows}
+
+
+def get_host_composition_range(db: Session, first_day: int, last_day: int) -> dict[int, dict[int, list[dict]]]:
+    """Состав хостов за диапазон суток: epoch_index -> {host_id: payload} (NPVPN-2072).
+
+    Журнал выдачи строится сразу за десятки дней (до ARCHIVE_RETENTION_DAYS), и
+    поденный вызов get_host_composition означал бы столько же round-trip'ов подряд в
+    синхронном обработчике запроса. Семантика точного снимка та же: подбора ближайших
+    более ранних суток здесь нет.
+    """
+    rows = (
+        db.query(
+            HostCompositionSnapshot.epoch_index,
+            HostCompositionSnapshot.host_id,
+            HostCompositionSnapshot.payload,
+        )
+        .filter(
+            HostCompositionSnapshot.epoch_index >= first_day,
+            HostCompositionSnapshot.epoch_index <= last_day,
+        )
+        .all()
+    )
+    by_day: dict[int, dict[int, list[dict]]] = {}
+    for row in rows:
+        by_day.setdefault(cast(int, row.epoch_index), {})[cast(int, row.host_id)] = row.payload
+    return by_day
+
+
+def get_pins_covering_range(db: Session, user_id: int, range_start: datetime, range_end: datetime) -> list[UserNodePin]:
+    """Закрепления юзера, пересекающиеся с диапазоном [range_start, range_end) (NPVPN-2072).
+
+    Возвращает СТРОКИ, а не готовую карту по хостам: какие из них действовали в
+    конкретные сутки, решает вызывающий (см. pins_on_day в address_history) — иначе
+    диапазонный журнал снова ходил бы в БД на каждый день.
+    """
+    return (
+        db.query(UserNodePin)
+        .filter(
+            UserNodePin.user_id == user_id,
+            UserNodePin.created_at < range_end,
+            UserNodePin.expires_at > range_start,
+        )
+        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
+        .all()
+    )
+
+
+def prune_host_composition_snapshots(db: Session, epoch_index: int, retention_days: int) -> None:
+    """Чистит снимки состава старше архивного горизонта расследований (NPVPN-2072).
+
+    Тот же горизонт (90 дней), что применяется к снимкам весов на стороне бота.
+
+    Коммитит САМА и ТОЛЬКО своё удаление — самодостаточна умышленно, а не как
+    побочный эффект. Это НЕ распространяется на чужие изменения, накопленные в той
+    же сессии до вызова (например, снимки из write_host_composition_snapshot):
+    их обязан закоммитить тот, кто их писал, до того, как отдать сессию сюда —
+    иначе падение подчистки (лок, таймаут) откатывает молча ещё и запись, которая
+    с подчисткой по смыслу не связана.
+    """
+    db.query(HostCompositionSnapshot).filter(HostCompositionSnapshot.epoch_index < epoch_index - retention_days).delete(
+        synchronize_session=False
+    )
+    db.commit()
 
 
 def create_notification_reminder(

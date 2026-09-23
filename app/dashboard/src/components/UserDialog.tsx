@@ -461,6 +461,20 @@ export const UserDialog: FC<UserDialogProps> = () => {
     useDashboard.setState({ revokeSubscriptionUser: editingUser });
   };
 
+  const handleRotateAddresses = () => {
+    useDashboard.setState({ rotateAddressesUser: editingUser });
+  };
+
+  const handleOpenAddressPins = () => {
+    useDashboard.setState({ addressPinsUser: editingUser });
+    // NPVPN-2072: форму закрываем намеренно, иначе диалог закреплений открылся бы
+    // ВТОРОЙ модалкой поверх этой — а Chakra включает RemoveScroll только первой
+    // (`enabled: index === 1 && blockScrollOnMount`). Лок первой модалки при этом
+    // продолжает гасить wheel над чужим поддеревом, и журнал выдачи скроллился
+    // только перетаскиванием полосы, но не колесом мыши.
+    onClose();
+  };
+
   const disabled = loading;
   const isOnHold = userStatus === "on_hold";
 
@@ -989,63 +1003,65 @@ export const UserDialog: FC<UserDialogProps> = () => {
               </ModalBody>
               <ModalFooter mt="3" flexDirection="column" gap={3}>
                 {isEditing && (
-                  <Grid
-                    templateColumns={{
-                      base: "repeat(2, 1fr)",
-                      md: "40px 40px 1fr 1fr 1fr",
-                    }}
-                    gap={2}
-                    w="full"
-                  >
-                    <GridItem>
-                      <Tooltip label={t("delete")} placement="top">
-                        <IconButton
-                          aria-label="Delete"
-                          size="xs"
-                          w="36px"
-                          h="36px"
-                          onClick={() => {
-                            onDeletingUser(editingUser);
-                            onClose();
-                          }}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </GridItem>
-                    <GridItem>
-                      <Tooltip label={t("userDialog.usage")} placement="top">
-                        <IconButton
-                          aria-label="usage"
-                          size="xs"
-                          w="36px"
-                          h="36px"
-                          onClick={handleUsageToggle}
-                        >
-                          <UserUsageIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </GridItem>
-                    <GridItem>
-                      <Button onClick={handleResetUsage} size="sm" w="full">
-                        {t("userDialog.resetUsage")}
-                      </Button>
-                    </GridItem>
-                    <GridItem>
-                      <Button
-                        onClick={handleRevokeSubscription}
-                        size="sm"
-                        w="full"
+                  /* NPVPN-2072: ряд действий переносится по мере нехватки ширины.
+                     Раньше это был Grid с жёстко перечисленными колонками — каждая
+                     новая кнопка выдавливала соседние за край модалки. */
+                  <Flex w="full" gap={2} flexWrap="wrap" alignItems="center">
+                    <Tooltip label={t("delete")} placement="top">
+                      <IconButton
+                        aria-label="Delete"
+                        size="xs"
+                        w="36px"
+                        h="36px"
+                        flexShrink={0}
+                        onClick={() => {
+                          onDeletingUser(editingUser);
+                          onClose();
+                        }}
                       >
-                        {t("userDialog.revokeSubscription")}
-                      </Button>
-                    </GridItem>
-                    <GridItem>
-                      <Button onClick={openDevices} size="sm" w="full">
-                        {t("userDialog.devicesButton")}
-                      </Button>
-                    </GridItem>
-                  </Grid>
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip label={t("userDialog.usage")} placement="top">
+                      <IconButton
+                        aria-label="usage"
+                        size="xs"
+                        w="36px"
+                        h="36px"
+                        flexShrink={0}
+                        onClick={handleUsageToggle}
+                      >
+                        <UserUsageIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Button onClick={handleResetUsage} size="sm" flex="1 1 140px">
+                      {t("userDialog.resetUsage")}
+                    </Button>
+                    <Button
+                      onClick={handleRevokeSubscription}
+                      size="sm"
+                      flex="1 1 140px"
+                    >
+                      {t("userDialog.revokeSubscription")}
+                    </Button>
+                    <Button onClick={openDevices} size="sm" flex="1 1 140px">
+                      {t("userDialog.devicesButton")}
+                    </Button>
+                    <Button
+                      onClick={handleRotateAddresses}
+                      size="sm"
+                      flex="1 1 140px"
+                    >
+                      {t("userDialog.rotateAddresses")}
+                    </Button>
+                    <Button
+                      onClick={handleOpenAddressPins}
+                      size="sm"
+                      flex="1 1 140px"
+                    >
+                      {t("userDialog.addressPins")}
+                    </Button>
+                  </Flex>
                 )}
                 <HStack w="full" justify="flex-end">
                   <Button

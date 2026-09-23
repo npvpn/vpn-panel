@@ -99,6 +99,20 @@
     gap: 12px;
 }
 
+.page-content_limited .info-card {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    column-gap: 40px;
+}
+
+.page-content_limited .info-card > h2 {
+    grid-column: 1 / -1;
+}
+
+.page-content_limited .info-row {
+    display: contents;
+}
+
 /* Заголовок страницы */
 .page-header {
     display: flex;
@@ -255,6 +269,12 @@
     align-items: flex-start;
     text-align: left;
     border-radius: 24px;
+}
+
+.account-block__text {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .account-block h3 {
@@ -1222,13 +1242,31 @@
 }
 
 @media (min-width: 1024px) {
+    .account-block__text {
+        gap: 8px;
+    }
+
     .header-account-btn {
         display: none;
     }
 
     .account-block {
-        gap: 16px;
-        max-width: 460px;
+        gap: 24px;
+        max-width: 584px;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .account-block h3,
+    .account-block p {
+        white-space: nowrap;
+    }
+
+    .limited-btn {
+        width: auto;
+        flex-shrink: 0;
+        padding: 16px 24px;
     }
 
     .button-wrapper_revoke {
@@ -1253,6 +1291,10 @@
     .button-wrapper_revoke .hint {
         width: 100%;
         max-width: 456px;
+    }
+
+    .hint {
+        max-width: 468px;
     }
 
     .button-wrapper_revoke .dark-btn {
@@ -1309,6 +1351,7 @@
 
     .card-content {
         padding-bottom: 120px;
+        gap: 24px;
     }
 
     .page-content {
@@ -1385,7 +1428,12 @@
     }
 
     .steps-text {
-        font-size: 20px;
+        font-size: 16px;
+    }
+
+    p.key-step-text {
+        white-space: nowrap;
+        margin-bottom: 16px;
     }
 
     .steps-title {

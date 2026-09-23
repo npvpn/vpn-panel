@@ -189,7 +189,7 @@
         <header class="page-header">
           <h2 class="page-title">Лимит устройств достигнут</h2>
           <p class="device-count">
-          <span x-text="deviceCount"></span>
+          Подключено <span x-text="deviceCount"></span>
           <span x-show="deviceLimit > 0">
             из <span x-text="deviceLimit"></span>
           </span>
@@ -297,8 +297,10 @@
           <!-- ACCOUNT BLOCK -->
           {% if web_url or bot_url %}
             <div class="account-block">
-              <h3>Как подключить больше устройств</h3>
-              <p>Войдите в личный кабинет и увеличьте лимит</p>
+              <div class="account-block__text">
+                <h3>Как подключить больше устройств</h3>
+                <p>Войдите в личный кабинет и увеличьте лимит</p>
+              </div>
               <a href="{{ web_url or bot_url }}" class="limited-btn" data-cabinet-link>
                 Войти в личный кабинет
               </a>
@@ -309,32 +311,32 @@
           <div class="info-card">
             <h2 class="page-title mb-3 text-[24px]">Тариф</h2>
             <div class="info-row">
-              <span class="text-[#7b7b7b] tariff-info">ID</span>
+              <span class="text-black tariff-info">ID</span>
               <span class="tariff-info" x-text="user.username"></span>
             </div>
 
             <div class="info-row">
-              <span class="text-[#7b7b7b] tariff-info">Статус</span>
+              <span class="text-black tariff-info">Статус</span>
               <span class="tariff-info" :style="{ color: statusColor }" x-text="statusText"></span>
             </div>
 
             <div class="info-row" x-show="isBsActive">
-              <span class="text-[#7b7b7b] tariff-info">Трафик (белый список)</span>
+              <span class="text-black tariff-info">Трафик (белый список)</span>
               <span class="tariff-info" x-text="bsTrafficText"></span>
             </div>
 
             <div class="info-row">
-              <span class="text-[#7b7b7b] tariff-info">Действует до</span>
+              <span class="text-black tariff-info">Действует до</span>
               <span class="tariff-info" x-text="expirationText"></span>
             </div>
 
             <div class="info-row">
-              <span class="text-[#7b7b7b] tariff-info">Осталось</span>
+              <span class="text-black tariff-info">Осталось</span>
               <span class="tariff-info" x-text="remainingDays"></span>
             </div>
 
             <div class="info-row">
-              <span class="text-[#7b7b7b] tariff-info">Кол-во устройств</span>
+              <span class="text-black tariff-info">Кол-во устройств</span>
               <span class="tariff-info" x-text="devicesInfoText"></span>
             </div>
           </div>

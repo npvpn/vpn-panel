@@ -6,6 +6,7 @@ import {
 
 import {
   ArrowDownIcon,
+  ArrowsUpDownIcon,
   ArrowUpIcon,
   Cog6ToothIcon,
   DocumentDuplicateIcon,
@@ -31,6 +32,13 @@ export const UpIcon = chakra(ArrowUpIcon, {
 });
 
 export const DownIcon = chakra(ArrowDownIcon, {
+  baseStyle: {
+    w: 5,
+    h: 5,
+  },
+});
+
+export const DragHandleIcon = chakra(ArrowsUpDownIcon, {
   baseStyle: {
     w: 5,
     h: 5,
@@ -115,6 +123,9 @@ export const ADVANCED_FIELD_KEYS = [
   "bot_usernames",
   "node_ids",
   "client_config_id",
+  "address_subset_enabled",
+  "address_subset_size",
+  "address_rotation_days",
 ] as const;
 
 // Whether the settings-modal gear icon should show its error dot: remark/address
