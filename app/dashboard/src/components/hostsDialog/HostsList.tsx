@@ -337,7 +337,6 @@ export const HostsList: FC<Props> = ({
     pb: 1.5,
     textAlign: "center" as const,
     borderBottom: "1px solid",
-    borderRight: "1px solid",
     borderColor: "gray.200",
     bg: "white",
     color: "gray.600",

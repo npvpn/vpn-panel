@@ -17,6 +17,11 @@ import {
   Select,
   Stack,
   Switch,
+  Tab,
+  TabList,
+  TabPanel,
+  TabPanels,
+  Tabs,
   Text,
   useToast,
 } from "@chakra-ui/react";
@@ -40,6 +45,7 @@ import { hostItemSchema, hostsFormSchema } from "./hostsDialog/schema";
 import { ModalIcon } from "./hostsDialog/constants";
 import { HostsList } from "./hostsDialog/HostsList";
 import { AddHostForm, EMPTY_HOST } from "./hostsDialog/AddHostForm";
+import { BotHostsTab } from "./hostsDialog/BotHostsTab";
 
 type HostsDict = Record<string, any[]>;
 
@@ -103,6 +109,11 @@ export const HostsDialog: FC = () => {
   const [activeOnly, setActiveOnly] = useState(false);
 
   const [isAddingHost, setIsAddingHost] = useState(false);
+  const [tabIndex, setTabIndex] = useState(0);
+
+  // С одним ботом вкладка «По ботам» бессмысленна: единственного бота у хоста
+  // не выключить (пустой список = «все боты»), все переключатели заблокированы.
+  const hasBotTab = bots.length >= 2;
 
   const inboundMap = useMemo(() => {
     const map = new Map();
@@ -175,6 +186,7 @@ export const HostsDialog: FC = () => {
     setBotFilter("");
     setActiveOnly(false);
     setIsAddingHost(false);
+    setTabIndex(0);
 
     onEditingHosts(false);
   }, [onEditingHosts]);
@@ -241,6 +253,10 @@ export const HostsDialog: FC = () => {
     [submitHosts]
   );
 
+  // Ошибки валидации подсвечиваются только в строках вкладки «Хосты» —
+  // если сохраняют с вкладки «Боты», переводим туда, чтобы их было видно.
+  const handleInvalidSubmit = useCallback(() => setTabIndex(0), []);
+
   const handleHostAdded = useCallback(
     (host: z.infer<typeof hostItemSchema>) => {
       prepend({
@@ -303,7 +319,10 @@ export const HostsDialog: FC = () => {
         >
           <FormProvider {...form}>
             <form
-              onSubmit={form.handleSubmit(handleFormSubmit)}
+              onSubmit={form.handleSubmit(
+                handleFormSubmit,
+                handleInvalidSubmit
+              )}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -315,192 +334,243 @@ export const HostsDialog: FC = () => {
               {isLoading ? (
                 <Text>{t("hostsDialog.loading")}</Text>
               ) : (
-                <>
-                  <Box flexShrink={0}>
-                    {/* SEARCH + FILTERS */}
-                    <HStack mt={1} spacing={2} rowGap={2} flexWrap="wrap">
-                      <InputGroup flex="2" minW="180px" size="sm">
-                        <InputLeftElement pointerEvents="none">
-                          <MagnifyingGlassIcon width="16px" color="gray" />
-                        </InputLeftElement>
+                <Tabs
+                  index={hasBotTab ? tabIndex : 0}
+                  onChange={setTabIndex}
+                  colorScheme="primary"
+                  size="sm"
+                  isLazy
+                  lazyBehavior="keepMounted"
+                  display="flex"
+                  flexDirection="column"
+                  flex="1 1 0"
+                  minH={0}
+                >
+                  {hasBotTab && (
+                    <TabList flexShrink={0}>
+                      <Tab>{t("hostsDialog.tabHosts")}</Tab>
+                      <Tab>{t("hostsDialog.tabBots")}</Tab>
+                    </TabList>
+                  )}
 
-                        <Input
-                          placeholder={
-                            t("hostsDialog.search") ??
-                            "Search by remark or address..."
-                          }
-                          borderRadius="6px"
-                          value={search}
-                          onChange={(e) => setSearch(e.target.value)}
-                        />
-                      </InputGroup>
-
-                      <Select
-                        size="sm"
-                        flex="1"
-                        minW="140px"
-                        aria-label={t("hostsDialog.filterInbound") ?? undefined}
-                        value={inboundFilter}
-                        onChange={(e) => setInboundFilter(e.target.value)}
-                        sx={{
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                        }}
-                      >
-                        <option value="">{t("hostsDialog.allInbounds")}</option>
-
-                        {inboundTags.map((tag) => (
-                          <option key={tag} value={tag}>
-                            {tag}
-                          </option>
-                        ))}
-                      </Select>
-
-                      {bots.length >= 2 && (
-                        <Select
-                          size="sm"
-                          flex="1"
-                          minW="140px"
-                          aria-label={t("hostsDialog.filterBot") ?? undefined}
-                          value={botFilter}
-                          onChange={(e) => setBotFilter(e.target.value)}
-                          sx={{
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                          }}
-                        >
-                          <option value="">{t("hostsDialog.allBots")}</option>
-
-                          {bots.map((bot) => (
-                            <option key={bot.username} value={bot.username}>
-                              @{bot.username}
-                              {bot.title ? ` (${bot.title})` : ""}
-                            </option>
-                          ))}
-                        </Select>
-                      )}
-
-                      <FormControl
+                  <TabPanels flex="1 1 0" minH={0}>
+                    <TabPanel px={0} pt={hasBotTab ? 3 : 0} pb={0} h="full">
+                      <Box
                         display="flex"
-                        alignItems="center"
-                        w="auto"
-                        flexShrink={0}
-                        h="32px"
-                        px={3}
-                        border="1px solid"
-                        borderColor="gray.200"
-                        borderRadius="6px"
-                        _dark={{ borderColor: "gray.600" }}
+                        flexDirection="column"
+                        h="full"
+                        minH={0}
                       >
-                        <Switch
-                          id="active-only-filter"
-                          colorScheme="primary"
-                          aria-label={
-                            t("hostsDialog.filterActiveOnly") ?? undefined
-                          }
-                          isChecked={activeOnly}
-                          onChange={(e) => setActiveOnly(e.target.checked)}
-                        />
+                        <Box flexShrink={0}>
+                          {/* SEARCH + FILTERS */}
+                          <HStack mt={1} spacing={2} rowGap={2} flexWrap="wrap">
+                            <InputGroup flex="2" minW="180px" size="sm">
+                              <InputLeftElement pointerEvents="none">
+                                <MagnifyingGlassIcon
+                                  width="16px"
+                                  color="gray"
+                                />
+                              </InputLeftElement>
 
-                        <FormLabel
-                          htmlFor="active-only-filter"
-                          mb={0}
-                          ml={2}
-                          fontSize="sm"
-                          whiteSpace="nowrap"
-                          cursor="pointer"
-                        >
-                          {t("hostsDialog.activeOnly")}
-                        </FormLabel>
-                      </FormControl>
-                    </HStack>
+                              <Input
+                                placeholder={
+                                  t("hostsDialog.search") ??
+                                  "Search by remark or address..."
+                                }
+                                borderRadius="6px"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                              />
+                            </InputGroup>
 
-                    {/* ADD HOST BUTTON */}
-                    <Button
-                      mt={3}
-                      w="full"
-                      size="sm"
-                      variant="outline"
-                      leftIcon={
-                        <HeroIconPlusIcon width="20px" strokeWidth={2} />
-                      }
-                      rightIcon={
-                        <ChevronDownIcon
-                          width="16px"
-                          style={{
-                            transform: isAddingHost
-                              ? "rotate(180deg)"
-                              : "rotate(0deg)",
-                            transition: "transform 0.2s ease",
+                            <Select
+                              size="sm"
+                              flex="1"
+                              minW="140px"
+                              aria-label={
+                                t("hostsDialog.filterInbound") ?? undefined
+                              }
+                              value={inboundFilter}
+                              onChange={(e) => setInboundFilter(e.target.value)}
+                              sx={{
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <option value="">
+                                {t("hostsDialog.allInbounds")}
+                              </option>
+
+                              {inboundTags.map((tag) => (
+                                <option key={tag} value={tag}>
+                                  {tag}
+                                </option>
+                              ))}
+                            </Select>
+
+                            {bots.length >= 2 && (
+                              <Select
+                                size="sm"
+                                flex="1"
+                                minW="140px"
+                                aria-label={
+                                  t("hostsDialog.filterBot") ?? undefined
+                                }
+                                value={botFilter}
+                                onChange={(e) => setBotFilter(e.target.value)}
+                                sx={{
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                }}
+                              >
+                                <option value="">
+                                  {t("hostsDialog.allBots")}
+                                </option>
+
+                                {bots.map((bot) => (
+                                  <option
+                                    key={bot.username}
+                                    value={bot.username}
+                                  >
+                                    @{bot.username}
+                                    {bot.title ? ` (${bot.title})` : ""}
+                                  </option>
+                                ))}
+                              </Select>
+                            )}
+
+                            <FormControl
+                              display="flex"
+                              alignItems="center"
+                              w="auto"
+                              flexShrink={0}
+                              h="32px"
+                              px={3}
+                              border="1px solid"
+                              borderColor="gray.200"
+                              borderRadius="6px"
+                              _dark={{ borderColor: "gray.600" }}
+                            >
+                              <Switch
+                                id="active-only-filter"
+                                colorScheme="primary"
+                                aria-label={
+                                  t("hostsDialog.filterActiveOnly") ?? undefined
+                                }
+                                isChecked={activeOnly}
+                                onChange={(e) =>
+                                  setActiveOnly(e.target.checked)
+                                }
+                              />
+
+                              <FormLabel
+                                htmlFor="active-only-filter"
+                                mb={0}
+                                ml={2}
+                                fontSize="sm"
+                                whiteSpace="nowrap"
+                                cursor="pointer"
+                              >
+                                {t("hostsDialog.activeOnly")}
+                              </FormLabel>
+                            </FormControl>
+                          </HStack>
+
+                          {/* ADD HOST BUTTON */}
+                          <Button
+                            mt={3}
+                            w="full"
+                            size="sm"
+                            variant="outline"
+                            leftIcon={
+                              <HeroIconPlusIcon width="20px" strokeWidth={2} />
+                            }
+                            rightIcon={
+                              <ChevronDownIcon
+                                width="16px"
+                                style={{
+                                  transform: isAddingHost
+                                    ? "rotate(180deg)"
+                                    : "rotate(0deg)",
+                                  transition: "transform 0.2s ease",
+                                }}
+                              />
+                            }
+                            onClick={() => setIsAddingHost((prev) => !prev)}
+                          >
+                            {t("hostsDialog.addNewHost")}
+                          </Button>
+                        </Box>
+
+                        <Box
+                          mt={3}
+                          flex="1 1 0"
+                          minH={0}
+                          overflowY="auto"
+                          overflowX="auto"
+                          pr={1}
+                          pb={4}
+                          sx={{
+                            overscrollBehavior: "contain",
+
+                            "&::-webkit-scrollbar": {
+                              width: "4px",
+                            },
+
+                            "&::-webkit-scrollbar-track": {
+                              background: "transparent",
+                            },
+
+                            "&::-webkit-scrollbar-thumb": {
+                              background: "rgba(0, 0, 0, 0.2)",
+                              borderRadius: "999px",
+                            },
                           }}
-                        />
-                      }
-                      onClick={() => setIsAddingHost((prev) => !prev)}
-                    >
-                      {t("hostsDialog.addNewHost")}
-                    </Button>
-                  </Box>
+                        >
+                          {/* ADD HOST FORM */}
+                          <Collapse in={isAddingHost} animateOpacity>
+                            <Box pt={0} pb={3}>
+                              <AddHostForm
+                                inboundTags={inboundTags}
+                                defaultInboundTag={
+                                  inboundFilter || inboundTags[0] || ""
+                                }
+                                bots={bots}
+                                nodes={nodes}
+                                inboundMap={inboundMap}
+                                onAdded={handleHostAdded}
+                              />
+                            </Box>
+                          </Collapse>
 
-                  <Box
-                    mt={3}
-                    flex="1 1 0"
-                    minH={0}
-                    overflowY="auto"
-                    overflowX="auto"
-                    pr={1}
-                    pb={4}
-                    sx={{
-                      overscrollBehavior: "contain",
-
-                      "&::-webkit-scrollbar": {
-                        width: "4px",
-                      },
-
-                      "&::-webkit-scrollbar-track": {
-                        background: "transparent",
-                      },
-
-                      "&::-webkit-scrollbar-thumb": {
-                        background: "rgba(0, 0, 0, 0.2)",
-                        borderRadius: "999px",
-                      },
-                    }}
-                  >
-                    {/* ADD HOST FORM */}
-                    <Collapse in={isAddingHost} animateOpacity>
-                      <Box pt={0} pb={3}>
-                        <AddHostForm
-                          inboundTags={inboundTags}
-                          defaultInboundTag={
-                            inboundFilter || inboundTags[0] || ""
-                          }
-                          bots={bots}
-                          nodes={nodes}
-                          inboundMap={inboundMap}
-                          onAdded={handleHostAdded}
-                        />
+                          {/* HOSTS LIST */}
+                          <HostsList
+                            fields={fields}
+                            inboundTags={inboundTags}
+                            inboundFilter={inboundFilter}
+                            botFilter={botFilter}
+                            activeOnly={activeOnly}
+                            search={search}
+                            bots={bots}
+                            nodes={nodes}
+                            inboundMap={inboundMap}
+                            insert={insert}
+                            move={move}
+                            remove={remove}
+                          />
+                        </Box>
                       </Box>
-                    </Collapse>
+                    </TabPanel>
 
-                    {/* HOSTS LIST */}
-                    <HostsList
-                      fields={fields}
-                      inboundTags={inboundTags}
-                      inboundFilter={inboundFilter}
-                      botFilter={botFilter}
-                      activeOnly={activeOnly}
-                      search={search}
-                      bots={bots}
-                      nodes={nodes}
-                      inboundMap={inboundMap}
-                      insert={insert}
-                      move={move}
-                      remove={remove}
-                    />
-                  </Box>
-                </>
+                    {hasBotTab && (
+                      <TabPanel px={0} pt={3} pb={0} h="full">
+                        <BotHostsTab fields={fields} bots={bots} />
+                      </TabPanel>
+                    )}
+                  </TabPanels>
+                </Tabs>
               )}
 
               <Stack
@@ -525,7 +595,10 @@ export const HostsDialog: FC = () => {
                   whiteSpace="nowrap"
                   _hover={{ bg: "primary.500", color: "white" }}
                   disabled={isPostLoading}
-                  onClick={form.handleSubmit(handleFormSubmitAndContinue)}
+                  onClick={form.handleSubmit(
+                    handleFormSubmitAndContinue,
+                    handleInvalidSubmit
+                  )}
                 >
                   {t("hostsDialog.applyAndContinue")}
                 </Button>

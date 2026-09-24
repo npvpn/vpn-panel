@@ -338,7 +338,6 @@ export const HostRow = memo(function HostRow({
 
   const tdBorder = {
     borderBottom: "1px solid",
-    borderRight: "1px solid",
     borderColor: "gray.100",
     _dark: { borderColor: "gray.600" },
   };
