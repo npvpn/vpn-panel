@@ -52,6 +52,7 @@ import {
   proxyHostSecurity,
 } from "constants/Proxies";
 import { NodeType } from "contexts/NodesContext";
+import { hostsTableSx } from "./constants";
 import { hostsFormSchema } from "./schema";
 import { HostRow } from "./HostRow";
 
@@ -334,16 +335,13 @@ export const HostsList: FC<Props> = ({
 
   const thBorder = {
     px: 3,
-    pb: 1.5,
+    py: 2,
     textAlign: "center" as const,
-    borderBottom: "1px solid",
-    borderColor: "gray.200",
-    bg: "white",
     color: "gray.600",
     position: "sticky" as const,
     top: 0,
     zIndex: 1,
-    _dark: { borderColor: "gray.600", bg: "gray.700", color: "gray.400" },
+    _dark: { color: "gray.400" },
   };
 
   const rows = visibleIndexes.map((index, visiblePos) => {
@@ -399,7 +397,7 @@ export const HostsList: FC<Props> = ({
           measuring={dndMeasuring}
           onDragEnd={handleDragEnd}
         >
-          <Table size="sm" variant="unstyled" layout="fixed">
+          <Table size="sm" variant="unstyled" layout="fixed" sx={hostsTableSx}>
             <colgroup>
               <col style={{ width: `${columnWidths.drag}px` }} />
               <col style={{ width: `${columnWidths.inbound}px` }} />

@@ -2,8 +2,7 @@ import {
   Box,
   Button,
   Collapse,
-  FormControl,
-  FormLabel,
+  Flex,
   HStack,
   Input,
   InputGroup,
@@ -14,9 +13,8 @@ import {
   ModalContent,
   ModalHeader,
   ModalOverlay,
-  Select,
+  Spinner,
   Stack,
-  Switch,
   Tab,
   TabList,
   TabPanel,
@@ -26,10 +24,7 @@ import {
   useToast,
 } from "@chakra-ui/react";
 import { PlusIcon as HeroIconPlusIcon } from "@heroicons/react/24/outline";
-import {
-  ChevronDownIcon,
-  MagnifyingGlassIcon,
-} from "@heroicons/react/24/outline";
+import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useHosts } from "contexts/HostsContext";
 import { FC, useCallback, useEffect, useMemo, useState } from "react";
@@ -42,10 +37,15 @@ import { useDashboard } from "../contexts/DashboardContext";
 import { NodeType } from "../contexts/NodesContext";
 import { Icon } from "./Icon";
 import { hostItemSchema, hostsFormSchema } from "./hostsDialog/schema";
-import { ModalIcon } from "./hostsDialog/constants";
+import { filterFieldProps, ModalIcon, Select } from "./hostsDialog/constants";
+import { ActiveOnlySelect } from "./hostsDialog/ActiveOnlySelect";
 import { HostsList } from "./hostsDialog/HostsList";
 import { AddHostForm, EMPTY_HOST } from "./hostsDialog/AddHostForm";
-import { BotHostsTab } from "./hostsDialog/BotHostsTab";
+import {
+  BotHostsTab,
+  BotTabFilters,
+  EMPTY_BOT_TAB_FILTERS,
+} from "./hostsDialog/BotHostsTab";
 
 type HostsDict = Record<string, any[]>;
 
@@ -102,6 +102,10 @@ export const HostsDialog: FC = () => {
 
   const [bots, setBots] = useState<Bot[]>([]);
   const [nodes, setNodes] = useState<NodeType[]>([]);
+  // Боты и ноды грузятся отдельно от хостов (useHosts знает только о своих).
+  // Пока их нет, держим лоадер: иначе интерфейс появлялся без вкладок, а они
+  // «впрыгивали» позже и сдвигали всё вниз.
+  const [isAuxLoading, setIsAuxLoading] = useState(true);
 
   const [search, setSearch] = useState("");
   const [inboundFilter, setInboundFilter] = useState("");
@@ -110,6 +114,14 @@ export const HostsDialog: FC = () => {
 
   const [isAddingHost, setIsAddingHost] = useState(false);
   const [tabIndex, setTabIndex] = useState(0);
+  const [botTabFilters, setBotTabFilters] = useState<BotTabFilters>(
+    EMPTY_BOT_TAB_FILTERS
+  );
+  const updateBotTabFilters = useCallback(
+    (update: Partial<BotTabFilters>) =>
+      setBotTabFilters((prev) => ({ ...prev, ...update })),
+    []
+  );
 
   // С одним ботом вкладка «По ботам» бессмысленна: единственного бота у хоста
   // не выключить (пустой список = «все боты»), все переключатели заблокированы.
@@ -136,10 +148,11 @@ export const HostsDialog: FC = () => {
     if (!isEditingHosts) return;
 
     const loadData = async () => {
-      try {
-        await fetchHosts();
+      setIsAuxLoading(true);
 
-        const [botsData, nodesData] = await Promise.all([
+      try {
+        const [, botsData, nodesData] = await Promise.all([
+          fetchHosts(),
           fetch<Bot[]>("/bots").catch(() => [] as Bot[]),
           fetch<NodeType[]>("/nodes").catch(() => [] as NodeType[]),
         ]);
@@ -148,6 +161,8 @@ export const HostsDialog: FC = () => {
         setNodes(nodesData);
       } catch (error) {
         console.error("Failed to load data:", error);
+      } finally {
+        setIsAuxLoading(false);
       }
     };
 
@@ -177,6 +192,7 @@ export const HostsDialog: FC = () => {
       setInboundFilter("");
       setBotFilter("");
       setActiveOnly(false);
+      setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
     }
   }, [hosts, isEditingHosts, form]);
 
@@ -185,8 +201,10 @@ export const HostsDialog: FC = () => {
     setInboundFilter("");
     setBotFilter("");
     setActiveOnly(false);
+    setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
     setIsAddingHost(false);
     setTabIndex(0);
+    setIsAuxLoading(true);
 
     onEditingHosts(false);
   }, [onEditingHosts]);
@@ -256,6 +274,50 @@ export const HostsDialog: FC = () => {
   // Ошибки валидации подсвечиваются только в строках вкладки «Хосты» —
   // если сохраняют с вкладки «Боты», переводим туда, чтобы их было видно.
   const handleInvalidSubmit = useCallback(() => setTabIndex(0), []);
+
+  // Добавление хоста — действие редкое, поэтому компактная кнопка: справа в
+  // строке вкладок (только на «Хостах»), а без вкладок — в конце строки
+  // фильтров. Форма по-прежнему раскрывается над списком; плюс в раскрытом
+  // состоянии поворачивается в крестик.
+  // Активная вкладка — ещё и полужирным, не только цветом подчёркивания.
+  // Через sx, а не _selected: проп _selected заменил бы стиль темы для
+  // выбранной вкладки целиком (цвет и подчёркивание), а не дополнил его.
+  const tabProps = {
+    fontWeight: "medium",
+    sx: { "&[aria-selected=true]": { fontWeight: "semibold" } },
+  };
+
+  const addHostButton = (
+    <Button
+      size="sm"
+      flexShrink={0}
+      variant="outline"
+      colorScheme="primary"
+      borderRadius="6px"
+      // В палитре primary и 50/100 — насыщенные, штатный hover outline-кнопки
+      // (bg primary.50) сливается с текстом; берём полупрозрачный primary.500.
+      _hover={{ bg: "rgba(57, 111, 228, 0.08)" }}
+      _active={{ bg: "rgba(57, 111, 228, 0.16)" }}
+      _dark={{
+        _hover: { bg: "rgba(116, 154, 236, 0.12)" },
+        _active: { bg: "rgba(116, 154, 236, 0.2)" },
+      }}
+      aria-expanded={isAddingHost}
+      leftIcon={
+        <HeroIconPlusIcon
+          width="16px"
+          strokeWidth={2}
+          style={{
+            transform: isAddingHost ? "rotate(45deg)" : "rotate(0deg)",
+            transition: "transform 0.2s ease",
+          }}
+        />
+      }
+      onClick={() => setIsAddingHost((prev) => !prev)}
+    >
+      {t("hostsDialog.addNewHost")}
+    </Button>
+  );
 
   const handleHostAdded = useCallback(
     (host: z.infer<typeof hostItemSchema>) => {
@@ -331,14 +393,31 @@ export const HostsDialog: FC = () => {
                 overflow: "hidden",
               }}
             >
-              {isLoading ? (
-                <Text>{t("hostsDialog.loading")}</Text>
+              {isLoading || isAuxLoading ? (
+                <Flex
+                  flex="1"
+                  direction="column"
+                  align="center"
+                  justify="center"
+                  gap={3}
+                >
+                  <Spinner
+                    size="lg"
+                    thickness="3px"
+                    color="primary.500"
+                    emptyColor="gray.200"
+                    _dark={{ emptyColor: "gray.600" }}
+                  />
+                  <Text fontSize="sm" opacity={0.7}>
+                    {t("hostsDialog.loading")}
+                  </Text>
+                </Flex>
               ) : (
                 <Tabs
                   index={hasBotTab ? tabIndex : 0}
                   onChange={setTabIndex}
                   colorScheme="primary"
-                  size="sm"
+                  size="md"
                   isLazy
                   lazyBehavior="keepMounted"
                   display="flex"
@@ -348,8 +427,18 @@ export const HostsDialog: FC = () => {
                 >
                   {hasBotTab && (
                     <TabList flexShrink={0}>
-                      <Tab>{t("hostsDialog.tabHosts")}</Tab>
-                      <Tab>{t("hostsDialog.tabBots")}</Tab>
+                      <Tab {...tabProps}>{t("hostsDialog.tabHosts")}</Tab>
+                      <Tab {...tabProps}>{t("hostsDialog.tabBots")}</Tab>
+                      {/* Не убираем, а прячем: кнопка выше вкладок, и без неё
+                          строка вкладок проседала при переключении. */}
+                      <Box
+                        ml="auto"
+                        alignSelf="center"
+                        pb={1}
+                        visibility={tabIndex === 0 ? "visible" : "hidden"}
+                      >
+                        {addHostButton}
+                      </Box>
                     </TabList>
                   )}
 
@@ -377,7 +466,7 @@ export const HostsDialog: FC = () => {
                                   t("hostsDialog.search") ??
                                   "Search by remark or address..."
                                 }
-                                borderRadius="6px"
+                                {...filterFieldProps}
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
                               />
@@ -387,6 +476,7 @@ export const HostsDialog: FC = () => {
                               size="sm"
                               flex="1"
                               minW="140px"
+                              {...filterFieldProps}
                               aria-label={
                                 t("hostsDialog.filterInbound") ?? undefined
                               }
@@ -414,6 +504,7 @@ export const HostsDialog: FC = () => {
                                 size="sm"
                                 flex="1"
                                 minW="140px"
+                                {...filterFieldProps}
                                 aria-label={
                                   t("hostsDialog.filterBot") ?? undefined
                                 }
@@ -441,71 +532,36 @@ export const HostsDialog: FC = () => {
                               </Select>
                             )}
 
-                            <FormControl
-                              display="flex"
-                              alignItems="center"
-                              w="auto"
-                              flexShrink={0}
-                              h="32px"
-                              px={3}
-                              border="1px solid"
-                              borderColor="gray.200"
-                              borderRadius="6px"
-                              _dark={{ borderColor: "gray.600" }}
-                            >
-                              <Switch
-                                id="active-only-filter"
-                                colorScheme="primary"
-                                aria-label={
-                                  t("hostsDialog.filterActiveOnly") ?? undefined
-                                }
-                                isChecked={activeOnly}
-                                onChange={(e) =>
-                                  setActiveOnly(e.target.checked)
-                                }
-                              />
+                            <ActiveOnlySelect
+                              isActive={activeOnly}
+                              onChange={setActiveOnly}
+                              activeLabel={t("hostsDialog.activeOnly")}
+                            />
 
-                              <FormLabel
-                                htmlFor="active-only-filter"
-                                mb={0}
-                                ml={2}
-                                fontSize="sm"
-                                whiteSpace="nowrap"
-                                cursor="pointer"
-                              >
-                                {t("hostsDialog.activeOnly")}
-                              </FormLabel>
-                            </FormControl>
+                            {!hasBotTab && addHostButton}
                           </HStack>
 
-                          {/* ADD HOST BUTTON */}
-                          <Button
-                            mt={3}
-                            w="full"
-                            size="sm"
-                            variant="outline"
-                            leftIcon={
-                              <HeroIconPlusIcon width="20px" strokeWidth={2} />
-                            }
-                            rightIcon={
-                              <ChevronDownIcon
-                                width="16px"
-                                style={{
-                                  transform: isAddingHost
-                                    ? "rotate(180deg)"
-                                    : "rotate(0deg)",
-                                  transition: "transform 0.2s ease",
-                                }}
+                          {/* ADD HOST FORM — в закреплённой части, вне
+                              прокрутки: список можно листать, не закрывая
+                              форму. pr как у области прокрутки списка. */}
+                          <Collapse in={isAddingHost} animateOpacity>
+                            <Box pt={2} pr={1}>
+                              <AddHostForm
+                                inboundTags={inboundTags}
+                                defaultInboundTag={
+                                  inboundFilter || inboundTags[0] || ""
+                                }
+                                bots={bots}
+                                nodes={nodes}
+                                inboundMap={inboundMap}
+                                onAdded={handleHostAdded}
                               />
-                            }
-                            onClick={() => setIsAddingHost((prev) => !prev)}
-                          >
-                            {t("hostsDialog.addNewHost")}
-                          </Button>
+                            </Box>
+                          </Collapse>
                         </Box>
 
                         <Box
-                          mt={3}
+                          mt={2}
                           flex="1 1 0"
                           minH={0}
                           overflowY="auto"
@@ -529,22 +585,6 @@ export const HostsDialog: FC = () => {
                             },
                           }}
                         >
-                          {/* ADD HOST FORM */}
-                          <Collapse in={isAddingHost} animateOpacity>
-                            <Box pt={0} pb={3}>
-                              <AddHostForm
-                                inboundTags={inboundTags}
-                                defaultInboundTag={
-                                  inboundFilter || inboundTags[0] || ""
-                                }
-                                bots={bots}
-                                nodes={nodes}
-                                inboundMap={inboundMap}
-                                onAdded={handleHostAdded}
-                              />
-                            </Box>
-                          </Collapse>
-
                           {/* HOSTS LIST */}
                           <HostsList
                             fields={fields}
@@ -566,7 +606,15 @@ export const HostsDialog: FC = () => {
 
                     {hasBotTab && (
                       <TabPanel px={0} pt={3} pb={0} h="full">
-                        <BotHostsTab fields={fields} bots={bots} />
+                        {/* Только пока вкладка открыта — см. BotTabFilters. */}
+                        {tabIndex === 1 && (
+                          <BotHostsTab
+                            fields={fields}
+                            bots={bots}
+                            filters={botTabFilters}
+                            onFiltersChange={updateBotTabFilters}
+                          />
+                        )}
                       </TabPanel>
                     )}
                   </TabPanels>

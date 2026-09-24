@@ -8,13 +8,16 @@ import {
   Badge,
   VStack,
   Text,
-  Tr,
   Td,
 } from "@chakra-ui/react";
+import {
+  DraggableAttributes,
+  DraggableSyntheticListeners,
+} from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { NodeType } from "contexts/NodesContext";
-import { memo, useMemo, useState } from "react";
+import { memo, ReactNode, useMemo, useState } from "react";
 import { Controller, useFormContext } from "react-hook-form";
 import { Bot } from "types/Bot";
 import {
@@ -60,6 +63,89 @@ type HostRowProps = {
 
 const HOST_KEY = "hosts";
 
+// Строка таблицы для перетаскивания. useSortable подписан на состояние
+// перетаскивания dnd-kit и перерисовывает компонент на каждое движение мыши
+// (у всех строк сразу) — memo это не останавливает. Поэтому хук живёт только в
+// этой обёртке, и она сделана максимально лёгкой:
+// - тяжёлые ячейки приходят готовыми через children из HostRow (он под memo и
+//   на перетаскивание не подписан): children — тот же элемент, React их не
+//   трогает;
+// - ручка — отдельный memo-компонент: attributes/listeners у dnd-kit
+//   мемоизированы, так что при движении она не перерисовывается;
+// - сама строка — обычный <tr> с инлайн-стилями, а не Chakra Tr: тот на
+//   каждую перерисовку заново считал бы стили через emotion. Стилей темы для
+//   tr здесь нет (variant="unstyled", оформление — hostsTableSx по td).
+const SortableHostTr = ({
+  id,
+  dragLabel,
+  children,
+}: {
+  id: string;
+  dragLabel: string;
+  children: ReactNode;
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  return (
+    <tr
+      ref={setNodeRef}
+      data-row-id={id}
+      style={{
+        // transition — плавный сдвиг соседних строк, пока хост тащат.
+        transform: CSS.Transform.toString(transform),
+        transition,
+        position: "relative",
+        zIndex: isDragging ? 1 : undefined,
+        opacity: isDragging ? 0.6 : 1,
+      }}
+    >
+      <DragHandleCell
+        label={dragLabel}
+        attributes={attributes}
+        listeners={listeners}
+      />
+
+      {children}
+    </tr>
+  );
+};
+
+const DragHandleCell = memo(function DragHandleCell({
+  label,
+  attributes,
+  listeners,
+}: {
+  label: string;
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+}) {
+  return (
+    <Td px={1} py={2}>
+      <Tooltip label={label} placement="top">
+        <IconButton
+          aria-label={label}
+          size="xs"
+          variant="ghost"
+          cursor="grab"
+          _active={{ cursor: "grabbing" }}
+          sx={{ touchAction: "none" }}
+          {...attributes}
+          {...listeners}
+        >
+          <DragHandleIcon />
+        </IconButton>
+      </Tooltip>
+    </Td>
+  );
+});
+
 export const HostRow = memo(function HostRow({
   id,
   index,
@@ -88,18 +174,6 @@ export const HostRow = memo(function HostRow({
     useFormContext<z.infer<typeof hostsFormSchema>>();
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-
-  const {
-    attributes: dragAttributes,
-    listeners: dragListeners,
-    setNodeRef: setDragNodeRef,
-    transform: dragTransform,
-    isDragging,
-  } = useSortable({ id, disabled: !isTableView });
-
-  const dragStyle = {
-    transform: CSS.Transform.toString(dragTransform),
-  };
 
   const botNames = (botUsernames || []).map((username) => {
     const bot = bots.find((b) => b.username === username);
@@ -336,17 +410,10 @@ export const HostRow = memo(function HostRow({
     </>
   );
 
-  const tdBorder = {
-    borderBottom: "1px solid",
-    borderColor: "gray.100",
-    _dark: { borderColor: "gray.600" },
-  };
-
   const dataCells = useMemo(
     () => (
       <>
         <Td
-          {...tdBorder}
           px={3}
           py={2}
           whiteSpace="nowrap"
@@ -369,7 +436,6 @@ export const HostRow = memo(function HostRow({
         </Td>
 
         <Td
-          {...tdBorder}
           px={3}
           py={2}
           textAlign="center"
@@ -393,7 +459,6 @@ export const HostRow = memo(function HostRow({
         </Td>
 
         <Td
-          {...tdBorder}
           px={3}
           py={2}
           textAlign="center"
@@ -418,7 +483,6 @@ export const HostRow = memo(function HostRow({
         </Td>
 
         <Td
-          {...tdBorder}
           px={3}
           py={2}
           whiteSpace="nowrap"
@@ -455,44 +519,10 @@ export const HostRow = memo(function HostRow({
   );
 
   const renderTableLayout = () => (
-    <Tr
-      ref={setDragNodeRef}
-      style={dragStyle}
-      data-row-id={id}
-      position="relative"
-      zIndex={isDragging ? 1 : undefined}
-      opacity={isDragging ? 0.6 : 1}
-      _hover={{
-        bg: "gray.50",
-        _dark: { bg: "gray.750" },
-      }}
-    >
-      <Td
-        {...tdBorder}
-        px={1}
-        py={2}
-        w={columnWidths ? `${columnWidths.drag}px` : undefined}
-      >
-        <Tooltip label={t("hostsDialog.dragToReorder")} placement="top">
-          <IconButton
-            aria-label={t("hostsDialog.dragToReorder")}
-            size="xs"
-            variant="ghost"
-            cursor="grab"
-            _active={{ cursor: "grabbing" }}
-            sx={{ touchAction: "none" }}
-            {...dragAttributes}
-            {...dragListeners}
-          >
-            <DragHandleIcon />
-          </IconButton>
-        </Tooltip>
-      </Td>
-
+    <SortableHostTr id={id} dragLabel={t("hostsDialog.dragToReorder")}>
       {dataCells}
 
       <Td
-        {...tdBorder}
         px={3}
         py={2}
         textAlign="center"
@@ -502,7 +532,6 @@ export const HostRow = memo(function HostRow({
       </Td>
 
       <Td
-        {...tdBorder}
         px={3}
         py={2}
         whiteSpace="nowrap"
@@ -535,7 +564,7 @@ export const HostRow = memo(function HostRow({
           </Tooltip>
         </HStack>
       </Td>
-    </Tr>
+    </SortableHostTr>
   );
 
   return (

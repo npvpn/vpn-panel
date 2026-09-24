@@ -2,8 +2,6 @@ import {
   Badge,
   Box,
   Button,
-  FormControl,
-  FormLabel,
   HStack,
   Input,
   InputGroup,
@@ -15,7 +13,6 @@ import {
   PopoverContent,
   PopoverTrigger,
   Portal,
-  Select,
   Switch,
   Table,
   Tbody,
@@ -27,18 +24,38 @@ import {
   Tr,
 } from "@chakra-ui/react";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
-import { FC, useCallback, useEffect, useMemo, useState } from "react";
+import { FC, useCallback, useEffect, useMemo } from "react";
 import { FieldArrayWithId, useFormContext, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Bot } from "types/Bot";
 import { z } from "zod";
+import { ActiveOnlySelect } from "./ActiveOnlySelect";
+import { filterFieldProps, hostsTableSx, Select } from "./constants";
 import { hostsFormSchema } from "./schema";
 
 type HostField = FieldArrayWithId<z.infer<typeof hostsFormSchema>, "hosts">;
 
+// Выбранный бот, поиск и фильтр живут в HostsDialog: сама вкладка
+// монтируется, только пока открыта (иначе она, подписанная на все хосты,
+// пересчитывалась бы в фоне на каждое изменение на вкладке «Хосты»), а эти
+// значения должны переживать переключение вкладок.
+export type BotTabFilters = {
+  selectedBot: string;
+  search: string;
+  activeOnly: boolean;
+};
+
+export const EMPTY_BOT_TAB_FILTERS: BotTabFilters = {
+  selectedBot: "",
+  search: "",
+  activeOnly: false,
+};
+
 type Props = {
   fields: HostField[];
   bots: Bot[];
+  filters: BotTabFilters;
+  onFiltersChange: (update: Partial<BotTabFilters>) => void;
 };
 
 // Пустой bot_usernames значит «хост доступен всем ботам» (см.
@@ -171,13 +188,39 @@ const LockedHostSwitch: FC<{
 // Колонки, которые на узком экране прячутся — остаются remark и переключатель.
 const wideOnly = { base: "none", md: "table-cell" };
 
-export const BotHostsTab: FC<Props> = ({ fields, bots }) => {
+// На узком экране колонка инбаунда скрыта, и левый край карточки строки
+// рисует remark — вторая ячейка.
+const botTableSx = {
+  ...hostsTableSx,
+  "tbody td:nth-of-type(2)": {
+    borderLeft: {
+      base: "1px solid var(--hosts-row-border) !important",
+      md: "none !important",
+    },
+    borderTopLeftRadius: { base: "6px !important", md: "0 !important" },
+    borderBottomLeftRadius: { base: "6px !important", md: "0 !important" },
+  },
+  "th:nth-of-type(2)": {
+    borderTopLeftRadius: { base: "6px !important", md: "0 !important" },
+    borderBottomLeftRadius: { base: "6px !important", md: "0 !important" },
+  },
+};
+
+export const BotHostsTab: FC<Props> = ({
+  fields,
+  bots,
+  filters,
+  onFiltersChange,
+}) => {
   const { t } = useTranslation();
   const form = useFormContext<z.infer<typeof hostsFormSchema>>();
 
-  const [selectedBot, setSelectedBot] = useState(bots[0]?.username ?? "");
-  const [search, setSearch] = useState("");
-  const [activeOnly, setActiveOnly] = useState(false);
+  const { selectedBot, search, activeOnly } = filters;
+  const setSelectedBot = (selectedBot: string) =>
+    onFiltersChange({ selectedBot });
+  const setSearch = (search: string) => onFiltersChange({ search });
+  const setActiveOnly = (activeOnly: boolean) =>
+    onFiltersChange({ activeOnly });
 
   useEffect(() => {
     if (!bots.some((bot) => bot.username === selectedBot)) {
@@ -207,49 +250,51 @@ export const BotHostsTab: FC<Props> = ({ fields, bots }) => {
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return fields
-      .map((field, index) => {
-        const host = watchedHosts?.[index];
-        const botUsernames: string[] = host?.bot_usernames || [];
-        const isAvailable =
-          botUsernames.length === 0 || botUsernames.includes(selectedBot);
-        const canDisable =
-          nextBotUsernames(botUsernames, selectedBot, false, allBotUsernames)
-            .length > 0;
+    return (
+      fields
+        .map((field, index) => {
+          const host = watchedHosts?.[index];
+          const botUsernames: string[] = host?.bot_usernames || [];
+          const isAvailable =
+            botUsernames.length === 0 || botUsernames.includes(selectedBot);
+          const canDisable =
+            nextBotUsernames(botUsernames, selectedBot, false, allBotUsernames)
+              .length > 0;
 
-        return {
-          id: field.id,
-          index,
-          inboundTag: host?.inbound_tag ?? "",
-          remark: host?.remark ?? "",
-          address: host?.address ?? "",
-          isHostDisabled: !!host?.is_disabled,
-          botsLabel:
-            botUsernames.length === 0
-              ? t("hostsDialog.availableBots.all")
-              : botUsernames.map((username) => `@${username}`).join(", "),
-          botsTooltip: (botUsernames.length === 0
-            ? allBotUsernames
-            : botUsernames
-          )
-            .map(
-              (username) => botDisplayNames.get(username) ?? `@${username}`
+          return {
+            id: field.id,
+            index,
+            inboundTag: host?.inbound_tag ?? "",
+            remark: host?.remark ?? "",
+            address: host?.address ?? "",
+            isHostDisabled: !!host?.is_disabled,
+            botsLabel:
+              botUsernames.length === 0
+                ? t("hostsDialog.availableBots.all")
+                : botUsernames.map((username) => `@${username}`).join(", "),
+            botsTooltip: (botUsernames.length === 0
+              ? allBotUsernames
+              : botUsernames
             )
-            .join(", "),
-          isAvailable,
-          isLocked: isAvailable && !canDisable,
-        };
-      })
-      // «Активный» здесь — строка с включённым тумблером: доступная выбранному
-      // боту, а у строки с замком (см. LockedHostSwitch) — ещё и не выключенная.
-      .filter(
-        (row) =>
-          (!activeOnly ||
-            (row.isAvailable && !(row.isLocked && row.isHostDisabled))) &&
-          (!query ||
-            row.remark.toLowerCase().includes(query) ||
-            row.address.toLowerCase().includes(query))
-      );
+              .map(
+                (username) => botDisplayNames.get(username) ?? `@${username}`
+              )
+              .join(", "),
+            isAvailable,
+            isLocked: isAvailable && !canDisable,
+          };
+        })
+        // «Активный» здесь — строка с включённым тумблером: доступная выбранному
+        // боту, а у строки с замком (см. LockedHostSwitch) — ещё и не выключенная.
+        .filter(
+          (row) =>
+            (!activeOnly ||
+              (row.isAvailable && !(row.isLocked && row.isHostDisabled))) &&
+            (!query ||
+              row.remark.toLowerCase().includes(query) ||
+              row.address.toLowerCase().includes(query))
+        )
+    );
   }, [
     fields,
     watchedHosts,
@@ -307,34 +352,42 @@ export const BotHostsTab: FC<Props> = ({ fields, bots }) => {
 
   const thCell = {
     px: 3,
-    pb: 1.5,
+    py: 2,
     textAlign: "center" as const,
-    borderBottom: "1px solid",
-    borderColor: "gray.200",
-    bg: "white",
     color: "gray.600",
     position: "sticky" as const,
     top: 0,
     zIndex: 1,
-    _dark: { borderColor: "gray.600", bg: "gray.700", color: "gray.400" },
+    _dark: { color: "gray.400" },
   };
 
   const tdCell = {
     px: 3,
     py: 2,
     textAlign: "center" as const,
-    borderBottom: "1px solid",
-    borderColor: "gray.100",
-    _dark: { borderColor: "gray.600" },
   };
 
   return (
     <Box display="flex" flexDirection="column" minH={0} h="full">
       <HStack mt={1} spacing={2} rowGap={2} flexWrap="wrap" flexShrink={0}>
+        <InputGroup flex="2" minW="180px" size="sm">
+          <InputLeftElement pointerEvents="none">
+            <MagnifyingGlassIcon width="16px" color="gray" />
+          </InputLeftElement>
+
+          <Input
+            placeholder={t("hostsDialog.search") ?? undefined}
+            {...filterFieldProps}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </InputGroup>
+
         <Select
           size="sm"
           flex="1"
-          minW="180px"
+          minW="140px"
+          {...filterFieldProps}
           aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
           value={selectedBot}
           onChange={(e) => setSelectedBot(e.target.value)}
@@ -347,50 +400,11 @@ export const BotHostsTab: FC<Props> = ({ fields, bots }) => {
           ))}
         </Select>
 
-        <InputGroup flex="2" minW="180px" size="sm">
-          <InputLeftElement pointerEvents="none">
-            <MagnifyingGlassIcon width="16px" color="gray" />
-          </InputLeftElement>
-
-          <Input
-            placeholder={t("hostsDialog.search") ?? undefined}
-            borderRadius="6px"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </InputGroup>
-
-        <FormControl
-          display="flex"
-          alignItems="center"
-          w="auto"
-          flexShrink={0}
-          h="32px"
-          px={3}
-          border="1px solid"
-          borderColor="gray.200"
-          borderRadius="6px"
-          _dark={{ borderColor: "gray.600" }}
-        >
-          <Switch
-            id="bot-tab-active-only-filter"
-            colorScheme="primary"
-            aria-label={t("hostsDialog.filterActiveOnly") ?? undefined}
-            isChecked={activeOnly}
-            onChange={(e) => setActiveOnly(e.target.checked)}
-          />
-
-          <FormLabel
-            htmlFor="bot-tab-active-only-filter"
-            mb={0}
-            ml={2}
-            fontSize="sm"
-            whiteSpace="nowrap"
-            cursor="pointer"
-          >
-            {t("hostsDialog.activeOnly")}
-          </FormLabel>
-        </FormControl>
+        <ActiveOnlySelect
+          isActive={activeOnly}
+          onChange={setActiveOnly}
+          activeLabel={t("hostsDialog.botTab.availableOnly")}
+        />
       </HStack>
 
       <HStack
@@ -407,7 +421,7 @@ export const BotHostsTab: FC<Props> = ({ fields, bots }) => {
             total: rows.length,
           })}
           {availableDisabledCount > 0 &&
-            `, ${t("hostsDialog.botTab.summaryDisabled", {
+            ` · ${t("hostsDialog.botTab.summaryDisabled", {
               disabled: availableDisabledCount,
             })}`}
         </Text>
@@ -416,7 +430,6 @@ export const BotHostsTab: FC<Props> = ({ fields, bots }) => {
           <Button
             size="xs"
             variant="outline"
-            colorScheme="primary"
             isDisabled={!canEnableAll}
             onClick={() => toggleAllVisible(true)}
           >
@@ -455,7 +468,7 @@ export const BotHostsTab: FC<Props> = ({ fields, bots }) => {
             {t("hostsDialog.notFound")}
           </Text>
         ) : (
-          <Table size="sm" variant="unstyled" layout="fixed">
+          <Table size="sm" variant="unstyled" layout="fixed" sx={botTableSx}>
             <Thead>
               <Tr>
                 <Th {...thCell} w="18%" display={wideOnly}>
@@ -477,10 +490,7 @@ export const BotHostsTab: FC<Props> = ({ fields, bots }) => {
             </Thead>
             <Tbody>
               {rows.map((row) => (
-                <Tr
-                  key={row.id}
-                  _hover={{ bg: "gray.50", _dark: { bg: "gray.750" } }}
-                >
+                <Tr key={row.id}>
                   <Td {...tdCell} textAlign="left" display={wideOnly}>
                     <Tooltip label={row.inboundTag} placement="top">
                       <Badge
