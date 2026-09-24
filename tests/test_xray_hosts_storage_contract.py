@@ -112,6 +112,28 @@ def test_hosts_storage_client_config_id_comes_from_the_host_column():
     )
 
 
+def test_hosts_storage_dict_has_is_bs_key():
+    """В storage-словаре хоста есть ключ "is_bs" — признак БС-хоста для заголовка подписки."""
+    assert "is_bs" in _dict_keys(_host_dict_literal())
+
+
+def test_hosts_storage_is_bs_value_comes_from_resolver():
+    """В "is_bs" кладётся host_has_bs_node(host), а не сырой обход host.nodes.
+
+    Резолвер смотрит на visible_nodes — то же множество, что у адресов и node_ids.
+    Подмена на host.nodes снова учла бы disabled-ноду, чей адрес в подписку не попадает.
+    """
+    value = _value_for_key(_host_dict_literal(), "is_bs")
+
+    assert isinstance(value, ast.Call), 'значение "is_bs" должно быть вызовом резолвера'
+    assert isinstance(value.func, ast.Name) and value.func.id == "host_has_bs_node", (
+        'значение "is_bs" должно строиться через host_has_bs_node() из app/xray/host_addresses.py'
+    )
+    assert [arg.id for arg in value.args if isinstance(arg, ast.Name)] == ["host"], (
+        "host_has_bs_node должен вызываться от хоста текущей итерации"
+    )
+
+
 def test_hosts_storage_has_addresses_from_nodes_key_derived_from_host_address():
     """NPVPN-2072: AddressContext.pick больше не угадывает происхождение адресов по
     совпадению длин node_ids/address (app/subscription/address_context.py) — признак

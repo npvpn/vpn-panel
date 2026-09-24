@@ -36,6 +36,7 @@ from app.subscription.user_info import (
 )
 from app.templates import render_template
 from app.utils.jwt import get_subscription_payload
+from app.xray.host_addresses import bot_has_bs_hosts
 from config import (
     SUBSCRIPTION_PAGE_FILENAME,
     USE_CUSTOM_JSON_DEFAULT,
@@ -170,7 +171,13 @@ def build_render_context(
         bot_settings=bot_settings,
         get_user_note=get_user_note,
     )
-    user_info = get_subscription_user_info(user, db=db, panel_settings=panel_settings, user_id=cast(int, dbuser.id))
+    user_info = get_subscription_user_info(
+        user,
+        db=db,
+        panel_settings=panel_settings,
+        user_id=cast(int, dbuser.id),
+        use_bs_bar=bot_has_bs_hosts(xray.hosts, user.bot_username),
+    )
     subscription_userinfo = "; ".join(f"{key}={val}" for key, val in user_info.items())
     response_headers = build_subscription_response_headers(
         request=request,

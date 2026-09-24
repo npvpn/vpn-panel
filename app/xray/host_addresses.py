@@ -45,6 +45,30 @@ def resolve_host_node_ids(host) -> list[int]:
     return [node.id for node in visible_nodes(host)]
 
 
+def host_has_bs_node(host) -> bool:
+    """Хост — БС, если среди видимых нод есть хотя бы одна с is_bs.
+
+    То же множество, что у адресов и node_ids: БС-лимит в заголовке подписки не
+    должен включаться нодой, чей адрес клиенту уже не отдаётся.
+    """
+    return any(node.is_bs for node in visible_nodes(host))
+
+
+def bot_has_bs_hosts(hosts_by_tag, bot_username: str | None) -> bool:
+    """Есть ли у бота хотя бы один БС-хост в кэше подписки.
+
+    Выключенные хосты в кэш не попадают. Пустой bot_usernames — хост доступен всем,
+    тот же фильтр, что у рендера подписки (host_allowed_for_bot).
+    """
+    for hosts in hosts_by_tag.values():
+        for host in hosts:
+            if not host.get("is_bs"):
+                continue
+            if host_allowed_for_bot(host.get("bot_usernames") or [], bot_username):
+                return True
+    return False
+
+
 def host_allowed_for_bot(bot_usernames: list[str], user_bot_username: str | None) -> bool:
     """Хост доступен этому юзеру по привязке хоста к боту.
 
