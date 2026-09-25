@@ -26,9 +26,13 @@ import {
   VStack,
   chakra,
 } from "@chakra-ui/react";
-import { PlusIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import {
+  ChevronDownIcon,
+  PlusIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import dayjs from "dayjs";
-import { FC, useEffect, useState } from "react";
+import { FC, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   XrayTemplateDocument,
@@ -63,7 +67,12 @@ const normalizeBody = (body: string): string => {
   if (!body.trim()) return "";
   try {
     const parsed = JSON.parse(body);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length === 0) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      Object.keys(parsed).length === 0
+    ) {
       return "";
     }
   } catch {
@@ -187,6 +196,16 @@ export const XrayTemplatesPanel: FC = () => {
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // История свёрнута: иначе её заголовок торчит из-под края модалки,
+  // и неочевидно, что ниже есть содержимое.
+  const [showHistory, setShowHistory] = useState(false);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  // История раскрывается у нижнего края модалки — докручиваем к ней,
+  // иначе после клика её почти не видно.
+  useEffect(() => {
+    if (showHistory) historyRef.current?.scrollIntoView({ block: "nearest" });
+  }, [showHistory]);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -316,7 +335,9 @@ export const XrayTemplatesPanel: FC = () => {
       .then(() => {
         if (selectedId != null) loadVersions(selectedId);
       })
-      .catch((err) => showErrorToast("panelSettings.xrayTemplates.revertFailed", err));
+      .catch((err) =>
+        showErrorToast("panelSettings.xrayTemplates.revertFailed", err)
+      );
   };
 
   const handleVersionClick = (version: number) => {
@@ -357,7 +378,10 @@ export const XrayTemplatesPanel: FC = () => {
         if (err?.response?.status === 409) {
           showErrorToast("panelSettings.xrayTemplates.deleteFailed", err);
         } else {
-          showErrorToast("panelSettings.xrayTemplates.deleteGenericFailed", err);
+          showErrorToast(
+            "panelSettings.xrayTemplates.deleteGenericFailed",
+            err
+          );
         }
       })
       .finally(() => setDeletingId(null));
@@ -436,89 +460,116 @@ export const XrayTemplatesPanel: FC = () => {
       </FormControl>
 
       <FormControl>
-        <FormLabel>{t("panelSettings.xrayTemplates.comment")}</FormLabel>
-        <HStack>
-          <Input
-            size="sm"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-          />
-          <Button
-            size="sm"
-            colorScheme="primary"
-            isLoading={saving}
-            isDisabled={loading || selectedId == null}
-            onClick={handleSave}
-          >
-            {t("panelSettings.xrayTemplates.save")}
-          </Button>
-        </HStack>
+        <FormLabel>{t("panelSettings.xrayTemplates.versionComment")}</FormLabel>
+        <Input
+          size="sm"
+          value={comment}
+          placeholder={t("panelSettings.xrayTemplates.versionCommentHint")}
+          onChange={(e) => setComment(e.target.value)}
+        />
       </FormControl>
 
-      <FormControl>
-        <FormLabel>{t("panelSettings.xrayTemplates.history")}</FormLabel>
-        <Box maxH="220px" overflowY="auto" borderWidth="1px" borderRadius="md">
-          <Table size="sm">
-            <Thead position="sticky" top={0} bg="chakra-body-bg">
-              <Tr>
-                <Th>{t("panelSettings.xrayTemplates.version")}</Th>
-                <Th>{t("panelSettings.xrayTemplates.author")}</Th>
-                <Th>{t("panelSettings.xrayTemplates.date")}</Th>
-                <Th>{t("panelSettings.xrayTemplates.comment")}</Th>
-                <Th />
-              </Tr>
-            </Thead>
-            <Tbody>
-              {versions.map((v) => (
-                <Tr
-                  key={v.version}
-                  cursor="pointer"
-                  onClick={() => handleVersionClick(v.version)}
-                  _hover={{ bg: "gray.50", _dark: { bg: "gray.700" } }}
-                >
-                  <Td>{v.version}</Td>
-                  <Td>{v.author_username}</Td>
-                  <Td>
-                    {v.created_at
-                      ? dayjs(v.created_at).format("YYYY-MM-DD HH:mm")
-                      : ""}
-                  </Td>
-                  <Td>{v.comment}</Td>
-                  <Td>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRevert(v.version);
-                      }}
-                    >
-                      {t("panelSettings.xrayTemplates.restore")}
-                    </Button>
-                  </Td>
+      <HStack justify="space-between">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowHistory((v) => !v)}
+          aria-expanded={showHistory}
+          rightIcon={
+            <ChevronDownIcon
+              width={16}
+              height={16}
+              style={{
+                transform: showHistory ? "rotate(180deg)" : "rotate(0deg)",
+              }}
+            />
+          }
+        >
+          {t("panelSettings.xrayTemplates.history")}
+          <Badge ml={2} borderRadius="full" px={2}>
+            {versions.length}
+          </Badge>
+        </Button>
+        <Button
+          colorScheme="primary"
+          isLoading={saving}
+          isDisabled={loading || selectedId == null}
+          onClick={handleSave}
+        >
+          {t("panelSettings.xrayTemplates.save")}
+        </Button>
+      </HStack>
+
+      {showHistory && (
+        <FormControl ref={historyRef}>
+          <Box
+            maxH="220px"
+            overflowY="auto"
+            borderWidth="1px"
+            borderRadius="md"
+          >
+            <Table size="sm">
+              <Thead position="sticky" top={0} bg="chakra-body-bg">
+                <Tr>
+                  <Th>{t("panelSettings.xrayTemplates.version")}</Th>
+                  <Th>{t("panelSettings.xrayTemplates.author")}</Th>
+                  <Th>{t("panelSettings.xrayTemplates.date")}</Th>
+                  <Th>{t("panelSettings.xrayTemplates.comment")}</Th>
+                  <Th />
                 </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </Box>
-        {preview && (
-          <Box mt={2}>
-            <Text fontSize="xs" opacity={0.7} mb={1}>
-              {t("panelSettings.xrayTemplates.version")} {preview.version}
-            </Text>
-            <Box minH="160px">
-              <JsonEditor
-                json={parseBody(preview.body)}
-                onChange={() => undefined}
-                mode="view"
-              />
-            </Box>
+              </Thead>
+              <Tbody>
+                {versions.map((v) => (
+                  <Tr
+                    key={v.version}
+                    cursor="pointer"
+                    onClick={() => handleVersionClick(v.version)}
+                    _hover={{ bg: "gray.50", _dark: { bg: "gray.700" } }}
+                  >
+                    <Td>{v.version}</Td>
+                    <Td>{v.author_username}</Td>
+                    <Td>
+                      {v.created_at
+                        ? dayjs(v.created_at).format("YYYY-MM-DD HH:mm")
+                        : ""}
+                    </Td>
+                    <Td>{v.comment}</Td>
+                    <Td>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRevert(v.version);
+                        }}
+                      >
+                        {t("panelSettings.xrayTemplates.restore")}
+                      </Button>
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
           </Box>
-        )}
-        <FormHelperText>
-          {t("panelSettings.xrayTemplates.historyHint")}
-        </FormHelperText>
-      </FormControl>
+          {preview && (
+            <Box mt={2}>
+              <Text fontSize="xs" opacity={0.7} mb={1}>
+                {t("panelSettings.xrayTemplates.version")} {preview.version}
+              </Text>
+              <Box minH="160px">
+                <JsonEditor
+                  json={parseBody(preview.body)}
+                  onChange={() => undefined}
+                  mode="view"
+                />
+              </Box>
+            </Box>
+          )}
+          <FormHelperText>
+            {t("panelSettings.xrayTemplates.historyHint")}
+          </FormHelperText>
+        </FormControl>
+      )}
     </VStack>
   );
 };
