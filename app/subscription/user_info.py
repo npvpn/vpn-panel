@@ -37,43 +37,14 @@ def get_user_note(user: UserResponse, note_template: str) -> str:
     return note_template.replace("<days_left>", str(days_left))
 
 
-def get_subscription_user_info(
-    user: UserResponse,
-    *,
-    db=None,
-    panel_settings=None,
-    user_id: int | None = None,
-    use_bs_bar: bool = False,
-) -> dict:
-    """upload/download/total/expire для Happ.
-
-    БС-пара (месячный расход и эффективный лимит) подставляется только если у бота
-    есть БС-хост (`use_bs_bar`) и на панели задан bs_monthly_limit. Иначе download/total
-    — обычный расход и data_limit, без обращения к БС-таблицам.
-    """
-    info = {
+def get_subscription_user_info(user: UserResponse) -> dict:
+    """upload/download/total/expire для Happ: обычный расход и data_limit."""
+    return {
         "upload": 0,
         "download": user.used_traffic,
         "total": user.data_limit if user.data_limit is not None else 0,
         "expire": user.expire if user.expire is not None else 0,
     }
-    if not use_bs_bar or db is None or panel_settings is None or user_id is None:
-        return info
-
-    monthly_limit = panel_settings.get("bs_monthly_limit") or 0
-    if not monthly_limit:
-        return info
-
-    from app.xray.bs_limit import monthly_effective_limit, period_keys, pick_bs_bar
-
-    yyyymm = period_keys(datetime.utcnow())
-    pool = crud.normalize_bs_extra_period(db, user_id, monthly_limit, yyyymm, persist=False)
-    monthly_limit_eff = monthly_effective_limit(monthly_limit, pool)
-    monthly_used = crud.get_bs_usage_totals(db, user_id, yyyymm)
-    bar = pick_bs_bar(monthly_used, monthly_limit_eff)
-    if bar is not None:
-        info["download"], info["total"] = bar
-    return info
 
 
 def get_empty_subscription_user(user: UserResponse) -> UserResponse:

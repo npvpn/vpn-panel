@@ -1,12 +1,7 @@
 import types
 
 from app.models.node import NodeStatus
-from app.xray.host_addresses import (
-    bot_has_bs_hosts,
-    host_has_bs_node,
-    resolve_host_addresses,
-    resolve_host_node_ids,
-)
+from app.xray.host_addresses import host_has_bs_node, resolve_host_addresses, resolve_host_node_ids
 
 
 def _node(address, status, node_id=0, is_bs=False):
@@ -123,24 +118,3 @@ def test_host_has_bs_node_static_address_counts_disabled_bs_node():
 def test_host_has_bs_node_ignores_disabled_bs_node_when_addresses_come_from_nodes():
     host = _host("", [_node("10.0.0.2", NodeStatus.disabled, node_id=2, is_bs=True)])
     assert host_has_bs_node(host) is False
-
-
-def _cached_host(*, is_bs, bot_usernames):
-    return {"is_bs": is_bs, "bot_usernames": bot_usernames}
-
-
-def test_bot_has_bs_hosts_for_own_bot():
-    hosts = {"vless": [_cached_host(is_bs=True, bot_usernames=["bot_a"])]}
-    assert bot_has_bs_hosts(hosts, "bot_a") is True
-    assert bot_has_bs_hosts(hosts, "bot_b") is False
-
-
-def test_bot_has_bs_hosts_unrestricted_host_counts_for_every_bot():
-    hosts = {"vless": [_cached_host(is_bs=True, bot_usernames=[])]}
-    assert bot_has_bs_hosts(hosts, "bot_a") is True
-    assert bot_has_bs_hosts(hosts, "bot_b") is True
-
-
-def test_bot_has_bs_hosts_ignores_plain_hosts():
-    hosts = {"vless": [_cached_host(is_bs=False, bot_usernames=["bot_a"])]}
-    assert bot_has_bs_hosts(hosts, "bot_a") is False

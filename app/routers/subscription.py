@@ -15,7 +15,7 @@ from app.services.panel_settings import get_panel_settings
 from app.subscription.address_context import collect_rotation_periods
 from app.subscription.address_context_builder import build_address_context
 from app.subscription.bot_settings import resolve_bot_settings
-from app.subscription.bs_context_builder import build_bs_context
+from app.subscription.bs_context_builder import build_bs_context, load_bs_usage_suffix
 from app.subscription.headers import build_content_disposition, get_routing_header
 from app.subscription.not_found import render_not_found
 from app.subscription.page import build_subscription_page_context
@@ -36,7 +36,6 @@ from app.subscription.user_info import (
 )
 from app.templates import render_template
 from app.utils.jwt import get_subscription_payload
-from app.xray.host_addresses import bot_has_bs_hosts
 from config import (
     SUBSCRIPTION_PAGE_FILENAME,
     USE_CUSTOM_JSON_DEFAULT,
@@ -171,13 +170,7 @@ def build_render_context(
         bot_settings=bot_settings,
         get_user_note=get_user_note,
     )
-    user_info = get_subscription_user_info(
-        user,
-        db=db,
-        panel_settings=panel_settings,
-        user_id=cast(int, dbuser.id),
-        use_bs_bar=bot_has_bs_hosts(xray.hosts, user.bot_username),
-    )
+    user_info = get_subscription_user_info(user)
     subscription_userinfo = "; ".join(f"{key}={val}" for key, val in user_info.items())
     response_headers = build_subscription_response_headers(
         request=request,
@@ -202,6 +195,7 @@ def build_render_context(
         bs=bs,
         subset=subset,
         response_headers=response_headers,
+        user_id=cast(int, dbuser.id),
     )
 
 
@@ -213,6 +207,9 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
     клиентского конфига (app.services.xray_templates, NPVPN-2024) через процессный
     кэш; привязка документа к серверу лежит прямо на хосте (host["client_config_id"]).
     """
+    monthly_limit = int(ctx.panel_settings.get("bs_monthly_limit") or 0)
+    # Загрузчик не создаём без лимита: тогда рендер не пойдёт в таблицы БС-расхода.
+    bs_usage_suffix = (lambda: load_bs_usage_suffix(db, ctx.user_id, monthly_limit)) if monthly_limit else None
     conf = generate_subscription(
         user=ctx.user,
         config_format=plan.config_format,
@@ -227,6 +224,7 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
         bs=ctx.bs,
         db=db,
         subset=ctx.subset,
+        bs_usage_suffix=bs_usage_suffix,
     )
     return Response(content=conf, media_type=plan.media_type, headers=ctx.response_headers)
 

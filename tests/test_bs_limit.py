@@ -6,6 +6,7 @@ from app.xray.bs_limit import (
     bs_stub_remark,
     carry_over_pool,
     diff_blocks,
+    format_bs_usage_suffix,
     monthly_effective_limit,
     over_limit,
     over_limit_monthly_pool,
@@ -108,6 +109,18 @@ def test_over_limit_only_set_limits():
 def test_pick_bs_bar_monthly():
     assert pick_bs_bar(8, 10) == (8, 10)
     assert pick_bs_bar(8, 0) is None
+
+
+def test_format_bs_usage_suffix_one_decimal_and_whole_limit():
+    gib = 1024**3
+    used = (12 * gib) // 10
+    assert format_bs_usage_suffix(used, 3 * gib) == " - (1,2/3 ГБ)"
+
+
+def test_format_bs_usage_suffix_zero_used_and_whole_numbers():
+    gib = 1024**3
+    assert format_bs_usage_suffix(0, 3 * gib) == " - (0/3 ГБ)"
+    assert format_bs_usage_suffix(2 * gib, 3 * gib) == " - (2/3 ГБ)"
 
 
 def test_monthly_pool_ceiling_is_stable_within_month():
