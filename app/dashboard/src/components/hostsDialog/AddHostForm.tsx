@@ -4,7 +4,6 @@ import {
   Flex,
   FormControl,
   IconButton,
-  Select,
   Switch,
   Tooltip,
 } from "@chakra-ui/react";
@@ -20,7 +19,7 @@ import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Bot } from "types/Bot";
 import { z } from "zod";
-import { GearIcon, hasAdvancedFieldErrors } from "./constants";
+import { GearIcon, hasAdvancedFieldErrors, Select } from "./constants";
 import { HostAdvancedOptionsModal } from "./HostAdvancedOptionsModal";
 import { HostInfoPopover } from "./HostInfoPopover";
 import { RHFInput } from "./RHFInput";
@@ -124,14 +123,16 @@ export const AddHostForm: FC<Props> = ({
 
   return (
     <FormProvider {...form}>
+      {/* Карточка того же вида, что строки таблицы хостов (hostsTableSx), но с
+          рамкой primary — черновик «нулевой строки»: новый хост встаёт в
+          начало списка. */}
       <Box
         border="1px solid"
-        _dark={{ borderColor: "gray.600" }}
-        _light={{ borderColor: "gray.200" }}
-        borderRadius="4px"
-        p={3}
+        borderColor="primary.300"
+        borderRadius="6px"
+        px={3}
+        py={2}
         w="full"
-        mb={3}
       >
         {inboundTag ? (
           <Flex wrap="wrap" gap={2} align="flex-start">

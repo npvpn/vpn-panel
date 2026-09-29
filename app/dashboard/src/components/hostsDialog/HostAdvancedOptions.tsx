@@ -14,7 +14,6 @@ import {
   Button,
   Checkbox,
   FormLabel,
-  Select,
   Input,
   InputGroup,
   InputLeftElement,
@@ -31,7 +30,7 @@ import { ChangeEvent, memo, useEffect, useState } from "react";
 import { Control, Controller, UseFormRegister } from "react-hook-form";
 import { XrayTemplateDocument, listTemplates } from "service/xrayTemplates";
 import { Bot } from "types/Bot";
-import { InfoIcon, PencilIcon, Error } from "./constants";
+import { InfoIcon, PencilIcon, Error, Select } from "./constants";
 import { Trans } from "react-i18next";
 import { RHFInput } from "./RHFInput";
 import { RHFCheckbox } from "./RHFCheckbox";
