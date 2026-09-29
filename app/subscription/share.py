@@ -81,6 +81,7 @@ def _render(
     stub: StubEndpoint | None = None,
     conf: SubscriptionConf | None = None,
     subset: AddressContext | None = None,
+    bs_usage_suffix: Callable[[], str] | None = None,
 ) -> list | str:
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
@@ -101,6 +102,7 @@ def _render(
         bs=bs,
         stub=stub,
         subset=subset,
+        bs_usage_suffix=bs_usage_suffix,
     )
 
 
@@ -142,6 +144,7 @@ def generate_subscription(
     bs: BsContext | None = None,
     db: "Session | None" = None,
     subset: AddressContext | None = None,
+    bs_usage_suffix: Callable[[], str] | None = None,
 ) -> str:
     bs = bs or BsContext.empty()
     from app.models.bot import DEFAULT_BOT_SETTINGS, apply_bot_settings_fallback
@@ -264,6 +267,7 @@ def generate_subscription(
                 bs=bs,
                 stub=stub,
                 subset=subset,
+                bs_usage_suffix=bs_usage_suffix,
             ),
         )
         if device_limit_links:
@@ -281,6 +285,7 @@ def generate_subscription(
                 bs=bs,
                 stub=stub,
                 subset=subset,
+                bs_usage_suffix=bs_usage_suffix,
             ),
         )
     elif render_format == "v2ray-json":
@@ -320,6 +325,7 @@ def generate_subscription(
                 stub=stub,
                 conf=conf,
                 subset=subset,
+                bs_usage_suffix=bs_usage_suffix,
             ),
         )
     else:
@@ -444,10 +450,23 @@ def process_inbounds_and_tags(
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
     subset: AddressContext | None = None,
+    bs_usage_suffix: Callable[[], str] | None = None,
 ) -> list | str:
     bs = bs or BsContext.empty()
     stub = stub or ZERO_STUB
     subset = subset or AddressContext.disabled()
+    # Суффикс расхода БС считается один раз, и только когда в выдачу попал живой БС-хост.
+    bs_usage_label: str | None = None
+
+    def host_remark(host: dict) -> str:
+        nonlocal bs_usage_label
+        remark = host["remark"].format_map(format_variables)
+        if bs_usage_suffix is None or not host.get("is_bs"):
+            return remark
+        if bs_usage_label is None:
+            bs_usage_label = bs_usage_suffix()
+        return f"{remark}{bs_usage_label}"
+
     _inbounds = []
     for protocol, tags in inbounds.items():
         for tag in tags:
@@ -572,7 +591,7 @@ def process_inbounds_and_tags(
                     "host_inbound": host_inbound,
                     "settings": settings.model_dump(),
                     "add_kwargs": add_kwargs,
-                    "remark": host["remark"].format_map(format_variables),
+                    "remark": host_remark(host),
                     "balanced": balanced and isinstance(conf, V2rayJsonConfig),
                 }
                 if candidate["balanced"]:

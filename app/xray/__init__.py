@@ -8,7 +8,7 @@ from app.utils.system import check_port
 from app.xray import operations
 from app.xray.config import XRayConfig
 from app.xray.core import XRayCore
-from app.xray.host_addresses import resolve_host_addresses, resolve_host_node_ids
+from app.xray.host_addresses import host_has_bs_node, resolve_host_addresses, resolve_host_node_ids
 from app.xray.inbound_filter import apply_inbound_filter
 from app.xray.node import XRayNode
 from config import XRAY_ASSETS_PATH, XRAY_EXECUTABLE_PATH, XRAY_JSON
@@ -66,6 +66,9 @@ def hosts(storage: dict):
                     # Инвариант: адреса и node_ids строятся по одному множеству нод —
                     # обе функции живут рядом в host_addresses.py.
                     "node_ids": resolve_host_node_ids(host),
+                    # БС-хост для суффикса расхода в имени: хотя бы одна видимая нода с is_bs.
+                    # Считается здесь, чтобы /sub не ходил в БД за признаком.
+                    "is_bs": host_has_bs_node(host),
                     # Профиль клиентского routing этого хоста (NPVPN-2024). Лежит прямо
                     # в кэше, поэтому share.py не делает ни одного запроса к БД за
                     # привязками на каждую подписку.

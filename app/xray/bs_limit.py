@@ -71,6 +71,24 @@ def over_limit_monthly_pool(monthly_used, monthly_limit, bs_extra_remaining):
     return int(monthly_used) >= monthly_effective_limit(monthly_limit, bs_extra_remaining)
 
 
+_GIB = 1024**3
+
+
+def format_gib_label(n_bytes) -> str:
+    """Гибибайты с одной цифрой после запятой. Целые без дроби: 3, не 3,0."""
+    n = max(0, int(n_bytes or 0))
+    tenths = (n * 10 + _GIB // 2) // _GIB
+    whole, frac = divmod(tenths, 10)
+    if frac == 0:
+        return str(whole)
+    return f"{whole},{frac}"
+
+
+def format_bs_usage_suffix(used_bytes, limit_bytes) -> str:
+    """Хвост имени БС-хоста: « - (1,2/3 ГБ)»."""
+    return f" - ({format_gib_label(used_bytes)}/{format_gib_label(limit_bytes)} ГБ)"
+
+
 def pick_bs_bar(monthly_used, monthly_limit_eff):
     """(used, total) для месячного лимита; None, если лимит не задан."""
     if not monthly_limit_eff:

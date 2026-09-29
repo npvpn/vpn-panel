@@ -28,7 +28,10 @@ from app.db.crud import (  # noqa: E402
     register_user_device,
 )
 from app.db.models import User, UserDevice  # noqa: E402
-from app.subscription.user_info import resolve_device_limit_subscription_state  # noqa: E402
+from app.subscription.user_info import (  # noqa: E402
+    get_subscription_user_info,
+    resolve_device_limit_subscription_state,
+)
 
 if sys.modules.get("app.subscription.share") is _share_stub:
     del sys.modules["app.subscription.share"]
@@ -191,3 +194,20 @@ def test_unknown_hwid_constant_used_for_empty_header(db):
     registered, unsupported = register_user_device(db, dbuser, None, None, None, None, "Happ/1.0", hard_mode=False)
     assert (registered, unsupported) == (True, False)
     assert get_user_device_by_hwid(db, dbuser, UNKNOWN_DEVICE_HWID) is not None
+
+
+def test_subscription_user_info_uses_regular_traffic():
+    user = types.SimpleNamespace(used_traffic=50, data_limit=1000, expire=123)
+
+    info = get_subscription_user_info(user)
+
+    assert info == {"upload": 0, "download": 50, "total": 1000, "expire": 123}
+
+
+def test_subscription_user_info_total_is_zero_without_data_limit():
+    user = types.SimpleNamespace(used_traffic=50, data_limit=None, expire=0)
+
+    info = get_subscription_user_info(user)
+
+    assert info["download"] == 50
+    assert info["total"] == 0

@@ -45,6 +45,15 @@ def resolve_host_node_ids(host) -> list[int]:
     return [node.id for node in visible_nodes(host)]
 
 
+def host_has_bs_node(host) -> bool:
+    """Хост — БС, если среди видимых нод есть хотя бы одна с is_bs.
+
+    То же множество, что у адресов и node_ids: суффикс расхода в имени не должен
+    появляться у хоста, чья БС-нода клиенту уже не отдаётся.
+    """
+    return any(node.is_bs for node in visible_nodes(host))
+
+
 def host_allowed_for_bot(bot_usernames: list[str], user_bot_username: str | None) -> bool:
     """Хост доступен этому юзеру по привязке хоста к боту.
 
