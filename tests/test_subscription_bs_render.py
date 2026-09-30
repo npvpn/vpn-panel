@@ -157,6 +157,7 @@ def _host(
     addresses_from_nodes: bool = True,
     subset_size: int | None = None,
     rotation_days: int = 1,
+    is_bs: bool = False,
 ) -> dict:
     """Хост подписки: адрес — ДОМЕН (маскировка), нода привязана по node_ids.
 
@@ -193,6 +194,7 @@ def _host(
         "use_sni_as_host": False,
         "bot_usernames": [],
         "order": order,
+        "is_bs": is_bs,
     }
 
 
@@ -213,7 +215,7 @@ def xray_stub(monkeypatch):
     return _apply
 
 
-def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB, subset=None):
+def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB, subset=None, bs_usage_suffix=None):
     # setup_format_variables тянет app.models.user → app.db; подставляем готовые переменные.
     format_variables = defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": None})
     protocol = _Protocol()
@@ -225,6 +227,7 @@ def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB, subset=None):
         bs=bs,
         stub=stub,
         subset=subset,
+        bs_usage_suffix=bs_usage_suffix,
     )
 
 
@@ -259,6 +262,63 @@ def test_non_bs_host_is_not_stubbed(xray_stub):
 
     assert conf.calls[0]["remark"] == "BS server"
     assert conf.calls[0]["address"] == "plain.example.com"
+
+
+def test_bs_host_remark_appends_usage_suffix_once(xray_stub):
+    calls = []
+
+    def loader():
+        calls.append(1)
+        return " - (1,2/3 ГБ)"
+
+    xray_stub(
+        [
+            _host("plain.example.com", remark="Обычный", node_ids=[42]),
+            _host("bs.example.com", remark="Нидерланды БС", node_ids=[BS_NODE_ID], is_bs=True),
+            _host("bs2.example.com", remark="Финляндия БС", node_ids=[BS_NODE_ID], is_bs=True, order=1),
+        ]
+    )
+    conf = _FakeConf()
+
+    _render(conf, BsContext.empty(), bs_usage_suffix=loader)
+
+    assert [call["remark"] for call in conf.calls] == [
+        "Обычный",
+        "Нидерланды БС - (1,2/3 ГБ)",
+        "Финляндия БС - (1,2/3 ГБ)",
+    ]
+    assert calls == [1]
+
+
+def test_bs_usage_loader_skipped_without_bs_hosts(xray_stub):
+    calls = []
+    xray_stub([_host("plain.example.com", remark="Обычный", node_ids=[42])])
+    conf = _FakeConf()
+
+    _render(conf, BsContext.empty(), bs_usage_suffix=lambda: calls.append(1) or " - (0/3 ГБ)")
+
+    assert conf.calls[0]["remark"] == "Обычный"
+    assert calls == []
+
+
+def test_bs_host_remark_unchanged_without_usage_loader(xray_stub):
+    xray_stub([_host("bs.example.com", remark="Нидерланды БС", is_bs=True)])
+    conf = _FakeConf()
+
+    _render(conf, BsContext.empty())
+
+    assert conf.calls[0]["remark"] == "Нидерланды БС"
+
+
+def test_blocked_bs_host_keeps_stub_and_does_not_load_usage(xray_stub):
+    calls = []
+    xray_stub([_host("bs.example.com", node_ids=[BS_NODE_ID], is_bs=True, remark="Нидерланды БС")])
+    conf = _FakeConf()
+
+    _render(conf, _blocked_ctx(), bs_usage_suffix=lambda: calls.append(1) or " - (3/3 ГБ)")
+
+    assert conf.calls[0]["remark"] == STUB_TEXT
+    assert calls == []
 
 
 def test_hosts_emitted_sorted_by_global_order(monkeypatch):

@@ -54,6 +54,7 @@ class SubscriptionRenderContext:
     bs: BsContext
     subset: AddressContext
     response_headers: dict[str, str]
+    user_id: int
 
 
 def _version_gte(version_str: str, min_version: str) -> bool:

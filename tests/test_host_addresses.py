@@ -1,11 +1,11 @@
 import types
 
 from app.models.node import NodeStatus
-from app.xray.host_addresses import resolve_host_addresses, resolve_host_node_ids
+from app.xray.host_addresses import host_has_bs_node, resolve_host_addresses, resolve_host_node_ids
 
 
-def _node(address, status, node_id=0):
-    return types.SimpleNamespace(id=node_id, address=address, status=status)
+def _node(address, status, node_id=0, is_bs=False):
+    return types.SimpleNamespace(id=node_id, address=address, status=status, is_bs=is_bs)
 
 
 def _host(address, nodes):
@@ -92,3 +92,29 @@ def test_node_ids_and_addresses_are_built_from_the_same_nodes():
 def test_node_ids_empty_without_nodes():
     assert resolve_host_node_ids(_host("bs.example.com", [])) == []
     assert resolve_host_node_ids(_host("", [])) == []
+
+
+def test_host_has_bs_node_when_any_visible_node_is_bs():
+    host = _host(
+        "",
+        [
+            _node("10.0.0.1", NodeStatus.connected, node_id=1, is_bs=False),
+            _node("10.0.0.2", NodeStatus.connected, node_id=2, is_bs=True),
+        ],
+    )
+    assert host_has_bs_node(host) is True
+
+
+def test_host_has_bs_node_false_without_bs_nodes():
+    host = _host("", [_node("10.0.0.1", NodeStatus.connected, node_id=1)])
+    assert host_has_bs_node(host) is False
+
+
+def test_host_has_bs_node_static_address_counts_disabled_bs_node():
+    host = _host("bs.example.com", [_node("10.0.0.2", NodeStatus.disabled, node_id=2, is_bs=True)])
+    assert host_has_bs_node(host) is True
+
+
+def test_host_has_bs_node_ignores_disabled_bs_node_when_addresses_come_from_nodes():
+    host = _host("", [_node("10.0.0.2", NodeStatus.disabled, node_id=2, is_bs=True)])
+    assert host_has_bs_node(host) is False
