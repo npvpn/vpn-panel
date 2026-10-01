@@ -1,10 +1,15 @@
 import json
 import re
+from decimal import Decimal
 from enum import Enum
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.host_visibility import (
+    HOST_VISIBILITY_RESTRICTED,
+    HOST_VISIBILITY_VALUES,
+)
 from app.utils.system import random_password
 from xray_api.types.account import (
     ShadowsocksAccount,
@@ -165,6 +170,11 @@ class ProxyHost(BaseModel):
     address_subset_enabled: bool = False
     address_subset_size: int | None = None
     address_rotation_days: int | None = None
+    # NPVPN-2044. Один класс используется и на чтение, и на запись
+    # (crud.py: ProxyHost as ProxyHostModify), поэтому поля видны в обе стороны.
+    visibility: str = HOST_VISIBILITY_RESTRICTED
+    is_sellable: bool = False
+    catalog_price: Decimal | None = None
     order: int | None = None  # None on write = append to the end
     model_config = ConfigDict(from_attributes=True)
 
@@ -185,6 +195,31 @@ class ProxyHost(BaseModel):
             raise ValueError("Invalid formatting variables")
 
         return v
+
+    @field_validator("visibility", mode="after")
+    @classmethod
+    def validate_visibility(cls, v):
+        if v not in HOST_VISIBILITY_VALUES:
+            raise ValueError(f"visibility must be one of {', '.join(HOST_VISIBILITY_VALUES)}")
+        return v
+
+    @field_validator("catalog_price", mode="after")
+    @classmethod
+    def validate_catalog_price(cls, v):
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("catalog_price must not be negative")
+        if v.as_tuple().exponent < -2:
+            raise ValueError("catalog_price must have at most 2 decimal places")
+        return v
+
+    @model_validator(mode="after")
+    def validate_sellable_requires_restricted(self):
+        """shared-хост достаётся всем ботам бесплатно — продавать его нечем."""
+        if self.is_sellable and self.visibility != HOST_VISIBILITY_RESTRICTED:
+            raise ValueError("is_sellable requires visibility=restricted")
+        return self
 
     @field_validator("fragment_setting", check_fields=False)
     @classmethod
