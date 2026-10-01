@@ -41,6 +41,11 @@ host_bot_association = Table(
     Base.metadata,
     Column("host_id", ForeignKey("hosts.id", ondelete="CASCADE"), primary_key=True),
     Column("bot_id", ForeignKey("bots.id", ondelete="CASCADE"), primary_key=True),
+    # NPVPN-2044: когда и как бот получил этот хост. Свойство пары, а не хоста:
+    # один хост может быть отдан нескольким ботам, и «когда взяли» у них разное.
+    # Дефолт manual — существующие привязки сделаны руками, начислять за них аренду нельзя.
+    Column("rented_at", DateTime, nullable=True),
+    Column("source", String(16), nullable=False, server_default=text("'manual'")),
 )
 
 host_nodes_association = Table(
