@@ -144,6 +144,11 @@ class FormatVariables(dict):
 
 
 class ProxyHost(BaseModel):
+    # NPVPN-2044: id нужен для upsert в update_hosts. None на запись = новый хост.
+    # Класс один на чтение и запись (crud.py: ProxyHost as ProxyHostModify), поэтому
+    # id заодно появляется в ответе GET — фронт обязан вернуть его назад, иначе хост
+    # будет пересоздан и потеряет пины с отметкой аренды.
+    id: int | None = None
     remark: str
     address: str
     port: int | None = Field(None, nullable=True)

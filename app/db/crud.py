@@ -227,8 +227,14 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
 
 
 def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostModify]) -> list[ProxyHost]:
-    """
-    Updates hosts for a given inbound tag.
+    """Обновляет хосты инбаунда, сохраняя identity существующих строк.
+
+    NPVPN-2044: раньше здесь было `inbound.hosts = [ProxyHost(...) ...]`, то есть
+    полное пересоздание на каждое сохранение формы. hosts.id менялся, а на него
+    ссылаются user_node_pins с ondelete=CASCADE — закрепления пользователей
+    молча исчезали, — и HostCompositionSnapshot.host_id пришлось оставить без FK.
+    Отметка аренды на host_bot_association умирала бы так же, поэтому сохранение
+    переведено на upsert по id.
 
     Args:
         db (Session): Database session.
@@ -240,36 +246,57 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
     """
     inbound = get_or_create_inbound(db, inbound_tag)
     orders = _resolve_host_orders(db, inbound_tag, modified_hosts)
-    inbound.hosts = [
-        ProxyHost(
-            remark=host.remark,
-            address=host.address,
-            port=host.port,
-            path=host.path,
-            sni=host.sni,
-            host=host.host,
-            inbound=inbound,
-            security=host.security,
-            alpn=host.alpn,
-            fingerprint=host.fingerprint,
-            allowinsecure=host.allowinsecure,
-            is_disabled=host.is_disabled,
-            mux_enable=host.mux_enable,
-            fragment_setting=host.fragment_setting,
-            noise_setting=host.noise_setting,
-            random_user_agent=host.random_user_agent,
-            use_sni_as_host=host.use_sni_as_host,
-            xhttp_extra=host.xhttp_extra,
-            order=order,
-            client_config_id=host.client_config_id,
-            address_subset_enabled=host.address_subset_enabled,
-            address_subset_size=host.address_subset_size,
-            address_rotation_days=host.address_rotation_days,
-            bots=_get_bots_by_usernames(db, host.bot_usernames),
-            nodes=_get_nodes_by_ids(db, host.node_ids),
-        )
-        for host, order in zip(modified_hosts, orders)
-    ]
+
+    incoming_ids = [host.id for host in modified_hosts if host.id is not None]
+    if len(incoming_ids) != len(set(incoming_ids)):
+        raise ValueError("duplicate host id in payload")
+
+    existing = {host.id: host for host in inbound.hosts}
+    unknown = set(incoming_ids) - set(existing)
+    if unknown:
+        raise ValueError(f"host id does not belong to inbound {inbound_tag}: {sorted(unknown)}")
+
+    incoming_id_set = set(incoming_ids)
+    for host, order in zip(modified_hosts, orders):
+        target = existing[host.id] if host.id is not None else ProxyHost(inbound=inbound)
+        target.remark = host.remark
+        target.address = host.address
+        target.port = host.port
+        target.path = host.path
+        target.sni = host.sni
+        target.host = host.host
+        target.security = host.security
+        target.alpn = host.alpn
+        target.fingerprint = host.fingerprint
+        target.allowinsecure = host.allowinsecure
+        target.is_disabled = host.is_disabled
+        target.fragment_setting = host.fragment_setting
+        target.noise_setting = host.noise_setting
+        # Эти три колонки NOT NULL с server_default, а в схеме они `bool | None`.
+        # None значит «клиент не передал поле», а не «сбросить»: присваивание
+        # None падало бы IntegrityError. False проходит и выключает флаг.
+        for _not_null_flag in ("mux_enable", "random_user_agent", "use_sni_as_host"):
+            _value = getattr(host, _not_null_flag)
+            if _value is not None:
+                setattr(target, _not_null_flag, _value)
+        target.xhttp_extra = host.xhttp_extra
+        target.order = order
+        target.client_config_id = host.client_config_id
+        target.address_subset_enabled = host.address_subset_enabled
+        target.address_subset_size = host.address_subset_size
+        target.address_rotation_days = host.address_rotation_days
+        target.visibility = host.visibility
+        target.is_sellable = host.is_sellable
+        target.catalog_price = host.catalog_price
+        target.bots = _get_bots_by_usernames(db, host.bot_usernames)
+        target.nodes = _get_nodes_by_ids(db, host.node_ids)
+        if host.id is None:
+            db.add(target)
+
+    for host_id, host in existing.items():
+        if host_id not in incoming_id_set:
+            db.delete(host)
+
     db.commit()
     db.refresh(inbound)
     return get_hosts(db, inbound_tag)
