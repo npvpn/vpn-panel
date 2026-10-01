@@ -267,7 +267,12 @@ export const HostsList: FC<Props> = ({
 
       if (!value) return;
 
-      insert(index + 1, structuredClone(value), {
+      // NPVPN-2044: host_id копии обязан быть пустым — это НОВЫЙ хост.
+      // structuredClone унёс бы id оригинала, и сохранение упало бы с 400
+      // «duplicate host id in payload» (upsert в crud.update_hosts).
+      const { host_id: _discarded, ...copy } = structuredClone(value);
+
+      insert(index + 1, copy, {
         shouldFocus: false,
       });
     },
