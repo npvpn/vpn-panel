@@ -2,6 +2,15 @@ import { z } from "zod";
 
 export const hostItemSchema = z
   .object({
+    // NPVPN-2044: id хоста обязателен к передаче назад — без него бэкенд
+    // пересоздаст хост (upsert в crud.update_hosts сопоставляет по id) и потеряет
+    // отметку аренды вместе с закреплениями пользователей. undefined = новый хост.
+    //
+    // Поле названо host_id, а не id, НАМЕРЕННО: useFieldArray из react-hook-form
+    // занимает имя `id` под свой строковый ключ строки и перетёр бы число —
+    // payload уехал бы с ключом формы вместо настоящего id. Переименование
+    // обратно в `id` делает groupHosts при отправке.
+    host_id: z.number().optional(),
     inbound_tag: z.string().min(1),
     order: z.number().int(),
     remark: z.string().min(1, "Remark is required"),
@@ -50,6 +59,20 @@ export const hostItemSchema = z
         { message: "Must be a valid JSON object" }
       ),
     bot_usernames: z.array(z.string()).default([]),
+    // NPVPN-2044: видимость хоста. restricted — виден только привязанным ботам,
+    // shared — всем ботам панели. Дефолт restricted совпадает с бэкендом.
+    visibility: z.enum(["shared", "restricted"]).default("restricted"),
+    is_sellable: z.boolean().default(false),
+    catalog_price: z
+      .string()
+      .or(z.number())
+      .nullable()
+      .optional()
+      .transform((value) => {
+        if (value === null || value === undefined || value === "") return null;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+      }),
     node_ids: z.array(z.number()).default([]),
     client_config_id: z.number().nullable().default(null),
     // NPVPN-2072: сужение адресов настраивается на хосте. Пустое поле = null
@@ -77,6 +100,15 @@ export const hostItemSchema = z
       }),
   })
   .superRefine((data, ctx) => {
+    // Зеркалит валидацию бэкенда (`is_sellable requires visibility=restricted`):
+    // shared-хост достаётся всем ботам бесплатно, продавать его нечем.
+    if (data.is_sellable && data.visibility !== "restricted") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["is_sellable"],
+        message: "Only restricted hosts can be sold",
+      });
+    }
     if (!data.address && (!data.node_ids || data.node_ids.length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

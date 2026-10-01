@@ -43,6 +43,8 @@ type HostRowProps = {
   remark?: string;
   address?: string;
   botUsernames?: string[];
+  // NPVPN-2044: кому хост виден, решает видимость, а не пустота привязки.
+  visibility?: string;
   columnWidths?: HostColumnWidths;
   bots: Bot[];
   nodes: NodeType[];
@@ -153,6 +155,7 @@ export const HostRow = memo(function HostRow({
   remark,
   address,
   botUsernames,
+  visibility,
   columnWidths,
   bots,
   nodes,
@@ -180,12 +183,19 @@ export const HostRow = memo(function HostRow({
     return bot?.title ? `${bot.title} (@${username})` : `@${username}`;
   });
 
-  const isAvailableToAllBots = botNames.length === 0;
+  // NPVPN-2044: раньше здесь была третья копия костыля «пустая привязка = всем».
+  // Теперь «виден всем» — это visibility=shared, а restricted без привязок значит
+  // «не виден никому»: при дефолте restricted только эта метка и отличает
+  // «хост ещё не отдали» от «хост забыли отдать».
+  const isAvailableToAllBots = visibility === "shared";
+  const isVisibleToNobody = !isAvailableToAllBots && botNames.length === 0;
 
   const botBadgeLabel = isAvailableToAllBots
     ? bots.length > 1
       ? t("hostsDialog.availableBots.all")
       : null
+    : isVisibleToNobody
+    ? t("hostsDialog.availableBots.none")
     : botNames.length === 1
     ? botNames[0]
     : `${botNames[0]} +${botNames.length - 1}`;
@@ -196,6 +206,8 @@ export const HostRow = memo(function HostRow({
 
   const botBadgeTooltip = isAvailableToAllBots
     ? allBotNames.join(", ") || null
+    : isVisibleToNobody
+    ? t("hostsDialog.availableBots.noneHint")
     : botNames.join(", ") || null;
 
   const hasAdvancedErrors = hasAdvancedFieldErrors(

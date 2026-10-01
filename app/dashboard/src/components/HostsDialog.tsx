@@ -53,8 +53,11 @@ function flattenHosts(hosts: HostsDict | null | undefined) {
   if (!hosts) return [];
 
   const items = Object.entries(hosts).flatMap(([inbound_tag, hostList]) =>
-    (hostList as any[]).map((host) => ({
+    (hostList as any[]).map(({ id, ...host }) => ({
       ...host,
+      // NPVPN-2044: id с бэкенда переносим в host_id — имя `id` в форме занято
+      // ключом useFieldArray, см. комментарий в hostsDialog/schema.tsx.
+      host_id: typeof id === "number" ? id : undefined,
       inbound_tag,
       order: typeof host.order === "number" ? host.order : 0,
       xhttp_extra: host.xhttp_extra
@@ -75,7 +78,7 @@ function groupHosts(
   );
 
   hosts.forEach((host, index) => {
-    const { inbound_tag, ...rest } = host;
+    const { inbound_tag, host_id, ...rest } = host;
 
     if (!payload[inbound_tag]) {
       payload[inbound_tag] = [];
@@ -83,6 +86,8 @@ function groupHosts(
 
     payload[inbound_tag].push({
       ...rest,
+      // Назад бэкенду — под именем id; без него хост будет пересоздан.
+      ...(typeof host_id === "number" ? { id: host_id } : {}),
       order: index,
       xhttp_extra: rest.xhttp_extra ? JSON.parse(rest.xhttp_extra) : null,
     });
