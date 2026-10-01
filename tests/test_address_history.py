@@ -39,6 +39,10 @@ from app.db.models import (  # noqa: E402
     User,
     UserNodePin,
 )
+from app.models.host_visibility import (  # noqa: E402
+    HOST_VISIBILITY_RESTRICTED,
+    HOST_VISIBILITY_SHARED,
+)
 from app.models.proxy import ProxyTypes  # noqa: E402
 from app.services.address_history import (  # noqa: E402
     day_start_at,
@@ -98,6 +102,9 @@ def _make_host(
         address_subset_enabled=subset_enabled,
         address_subset_size=subset_size,
         address_rotation_days=rotation_days,
+        # NPVPN-2044: хост без явной привязки изображал «виден всем ботам» —
+        # прежде это выражалось пустым bot_usernames, теперь явным shared.
+        visibility=HOST_VISIBILITY_RESTRICTED if bots else HOST_VISIBILITY_SHARED,
     )
     host.nodes = nodes
     if bots:

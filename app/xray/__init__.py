@@ -100,6 +100,9 @@ def hosts(storage: dict):
                     "random_user_agent": host.random_user_agent,
                     "use_sni_as_host": host.use_sni_as_host,
                     "bot_usernames": host.bot_usernames,
+                    # NPVPN-2044: видимость лежит в кэше рядом с привязкой —
+                    # рендер подписки не делает за ней запроса в БД.
+                    "visibility": host.visibility,
                     "xhttp_extra": host.xhttp_extra,
                     "order": host.order,
                 }

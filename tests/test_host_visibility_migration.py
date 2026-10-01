@@ -64,7 +64,9 @@ def test_migration_preserves_who_sees_what(db):
     db.commit()
 
     hosts = [bound, unbound_enabled, unbound_disabled]
-    viewers = ["AppleGurruBot", "vpnZabBot", None]
+    # Только зрители с известным ботом: случай «бот неизвестен» меняется
+    # намеренно, см. test_user_without_bot_loses_access_to_restricted_hosts.
+    viewers = ["AppleGurruBot", "vpnZabBot"]
 
     before = {(host.remark, viewer): old_predicate(host.bot_usernames, viewer) for host in hosts for viewer in viewers}
 
@@ -100,3 +102,29 @@ def test_disabled_unbound_host_becomes_shared(db):
     db.refresh(host)
 
     assert host.visibility == HOST_VISIBILITY_SHARED
+
+
+def test_user_without_bot_loses_access_to_restricted_hosts(db):
+    """Единственное намеренное изменение поведения миграции.
+
+    Прежний предикат на `not (bot_usernames and user_bot_username and ...)`
+    отдавал привязанный хост пользователю, у которого бот неизвестен
+    (`users.bot_id IS NULL`): `["bot"] and None` даёт None, `not None` — True.
+    То есть персональный платный хост партнёра утекал тому, кто за него не платит.
+    На проде npvpn таких пользователей 86, из них активных 7 (01.10.2026).
+
+    После правки им остаются только shared-хосты. Это и есть цель задачи:
+    хост получает тот, кому его отдали.
+    """
+    inbound = ProxyInbound(tag="VLESS TCP REALITY")
+    bot = Bot(username="AppleGurruBot")
+    db.add_all([inbound, bot])
+    db.flush()
+    private = ProxyHost(remark="Персональный", address="1.1.1.1", inbound=inbound, bots=[bot])
+    common = ProxyHost(remark="Общий", address="2.2.2.2", inbound=inbound, visibility=HOST_VISIBILITY_SHARED)
+    db.add_all([private, common])
+    db.commit()
+
+    assert old_predicate(private.bot_usernames, None) is True
+    assert new_predicate(private.visibility, private.bot_usernames, None) is False
+    assert new_predicate(common.visibility, common.bot_usernames, None) is True

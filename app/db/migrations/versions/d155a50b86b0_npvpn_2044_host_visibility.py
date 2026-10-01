@@ -10,7 +10,7 @@
 после — новый хост не должен молча уйти всем партнёрам.
 
 Revision ID: d155a50b86b0
-Revises: c3dff0f8e830
+Revises: 7c2f4a8e1b6d
 Create Date: 2026-10-01 20:50:13.048132
 
 """
@@ -20,7 +20,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "d155a50b86b0"
-down_revision = "c3dff0f8e830"
+down_revision = "7c2f4a8e1b6d"
 branch_labels = None
 depends_on = None
 

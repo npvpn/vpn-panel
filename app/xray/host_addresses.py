@@ -54,10 +54,17 @@ def host_has_bs_node(host) -> bool:
     return any(node.is_bs for node in visible_nodes(host))
 
 
-def host_allowed_for_bot(bot_usernames: list[str], user_bot_username: str | None) -> bool:
-    """Хост доступен этому юзеру по привязке хоста к боту.
+def host_allowed_for_bot(visibility: str, bot_usernames: list[str], user_bot_username: str | None) -> bool:
+    """Хост доступен этому юзеру по видимости хоста и привязке к боту.
 
-    Пустой `bot_usernames` значит «хост доступен любому боту» — отсеивать не надо.
+    NPVPN-2044: видимость читается из колонки `hosts.visibility`, а не выводится
+    из пустого списка привязок. Прежний фолбэк «пустой bot_usernames значит всем»
+    убран: пока он жив, выбор хостов партнёром не значит ничего — партнёр и так
+    получает всё непривязанное, и тарифицировать аренду нечем.
+
+    `shared` старше привязки: хост, объявленный общим, виден всем ботам панели
+    независимо от того, привязан ли к нему кто-то вручную.
+
     Единый предикат для ТРЁХ вызывающих (NPVPN-2072, I4): рендера подписки
     (`app/subscription/share.py`), восстановления истории (`reconstruct`) и
     списка локаций для формы закрепления (`list_pinnable_hosts`) — оба сервиса
@@ -65,5 +72,11 @@ def host_allowed_for_bot(bot_usernames: list[str], user_bot_username: str | None
     этом листовом модуле (без pydantic/crud/БД), а не в address_history.py: именно
     разъезд копий этого условия по share.py и остальным местам дал Critical-
     находку раньше в этой фиче — share.py горячий путь подписки и не должен
-    тянуть за собой тяжёлый сервисный слой ради одной проверки."""
-    return not (bot_usernames and user_bot_username and user_bot_username not in bot_usernames)
+    тянуть за собой тяжёлый сервисный слой ради одной проверки. Поэтому
+    видимость приходит ПАРАМЕТРОМ, а модуль не начинает ходить в БД, и значение
+    "shared" остаётся здесь литералом (импорт константы вернул бы зависимость
+    от app.db.models) — литерал закреплён тестом.
+    """
+    if visibility == "shared":
+        return True
+    return bool(user_bot_username) and user_bot_username in bot_usernames

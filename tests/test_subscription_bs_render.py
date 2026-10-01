@@ -193,6 +193,9 @@ def _host(
         "xhttp_extra": None,
         "use_sni_as_host": False,
         "bot_usernames": [],
+        # NPVPN-2044: фикстура изображает общий хост — в прежней семантике это
+        # была пустая привязка, теперь явный shared.
+        "visibility": "shared",
         "order": order,
         "is_bs": is_bs,
     }
