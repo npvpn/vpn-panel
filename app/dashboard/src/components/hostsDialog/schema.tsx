@@ -59,9 +59,9 @@ export const hostItemSchema = z
         { message: "Must be a valid JSON object" }
       ),
     bot_usernames: z.array(z.string()).default([]),
-    // NPVPN-2044: видимость хоста. restricted — виден только привязанным ботам,
-    // shared — всем ботам панели. Дефолт restricted совпадает с бэкендом.
-    visibility: z.enum(["shared", "restricted"]).default("restricted"),
+    // NPVPN-2044: боты, которым хост отмечен арендованным. Подмножество
+    // bot_usernames — бэкенд отвергает аренду без привязки.
+    rented_bot_usernames: z.array(z.string()).default([]),
     node_ids: z.array(z.number()).default([]),
     client_config_id: z.number().nullable().default(null),
     // NPVPN-2072: сужение адресов настраивается на хосте. Пустое поле = null

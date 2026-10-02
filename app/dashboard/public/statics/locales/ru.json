@@ -103,11 +103,6 @@
   "hostsDialog.botTab.availableOnly": "Только доступные",
   "hostsDialog.botTab.summary": "Доступно боту: {{available}} из {{total}}",
   "hostsDialog.botTab.summaryDisabled": "выключено: {{disabled}}",
-  "hostsDialog.botTab.lockedHint": "Хост доступен только этому боту. Отключить его для бота можно, только выключив хост целиком — тогда его не получит никто.",
-  "hostsDialog.botTab.lockedTooltip": "Хост доступен только этому боту — нажмите, чтобы узнать подробнее",
-  "hostsDialog.botTab.lockedHintDisabled": "Хост доступен только этому боту и сейчас выключен целиком — его не получает никто.",
-  "hostsDialog.botTab.disableHost": "Выключить хост",
-  "hostsDialog.botTab.enableHost": "Включить хост",
   "hostsDialog.botTab.enableAll": "Включить все",
   "hostsDialog.botTab.disableAll": "Отключить все",
   "hostsDialog.botTab.hostDisabled": "Выключен",
@@ -528,8 +523,8 @@
   "addressPins.noPinnableHosts": "У этого пользователя нет доступных для закрепления локаций.",
   "hostsDialog.availableBots.none": "никому",
   "hostsDialog.availableBots.noneHint": "Хост не виден ни одному боту: включите его для нужных ботов на вкладке «Боты» или сделайте общим",
-  "hostsDialog.botTab.sharedTooltip": "Хост общий — виден всем ботам панели. Чтобы отдать его только отдельным ботам, смените видимость на вкладке «Хосты»",
-  "hostsDialog.visibility": "Видимость",
-  "hostsDialog.visibilityShared": "Общий — всем ботам",
-  "hostsDialog.visibilityRestricted": "Только привязанным"
+  "hostsDialog.botTab.columnRented": "Аренда",
+  "hostsDialog.botTab.rentedHint": "Сначала дайте боту доступ к хосту — аренду отмечают только у выданного хоста",
+  "hostsDialog.grantToAll": "Выдать всем ботам",
+  "hostsDialog.revokeFromAll": "Отозвать у всех"
 }

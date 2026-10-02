@@ -531,20 +531,6 @@ export const HostAdvancedOptions = memo(
           </FormControl>
         )}
 
-        {/* NPVPN-2044: кому виден хост. «Продаётся партнёрам» и цена живут не
-            здесь, а в БД бота и его админке, рядом с тарифами и счетами. */}
-        <RHFSelect
-          label={t("hostsDialog.visibility")}
-          registerProps={register(`${hostKey}.${index}.visibility`)}
-          formControlProps={{ height: "66px" }}
-          selectProps={{ size: "sm" }}
-        >
-          <option value="restricted">
-            {t("hostsDialog.visibilityRestricted")}
-          </option>
-          <option value="shared">{t("hostsDialog.visibilityShared")}</option>
-        </RHFSelect>
-
         <RHFCheckbox
           label={t("hostsDialog.useSniAsHost")}
           registerProps={register(`${hostKey}.${index}.use_sni_as_host`)}

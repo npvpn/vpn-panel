@@ -103,11 +103,6 @@
   "hostsDialog.botTab.availableOnly": "Available only",
   "hostsDialog.botTab.summary": "Available to this bot: {{available}} of {{total}}",
   "hostsDialog.botTab.summaryDisabled": "disabled: {{disabled}}",
-  "hostsDialog.botTab.lockedHint": "This host is available only to this bot. It can be turned off for the bot only by disabling the whole host — then no one will get it.",
-  "hostsDialog.botTab.lockedTooltip": "This host is available only to this bot — click for details",
-  "hostsDialog.botTab.lockedHintDisabled": "This host is available only to this bot and is currently disabled entirely — no one gets it.",
-  "hostsDialog.botTab.disableHost": "Disable host",
-  "hostsDialog.botTab.enableHost": "Enable host",
   "hostsDialog.botTab.enableAll": "Enable all",
   "hostsDialog.botTab.disableAll": "Disable all",
   "hostsDialog.botTab.hostDisabled": "Disabled",
@@ -527,8 +522,8 @@
   "addressPins.noPinnableHosts": "This user has no node-based locations available to pin.",
   "hostsDialog.availableBots.none": "nobody",
   "hostsDialog.availableBots.noneHint": "This host is not visible to any bot: enable it for the bots you need on the Bots tab, or make it shared",
-  "hostsDialog.botTab.sharedTooltip": "This host is shared — visible to every bot of the panel. To give it to specific bots only, change its visibility on the Hosts tab",
-  "hostsDialog.visibility": "Visibility",
-  "hostsDialog.visibilityShared": "Shared — all bots",
-  "hostsDialog.visibilityRestricted": "Bound bots only"
+  "hostsDialog.botTab.columnRented": "Rented",
+  "hostsDialog.botTab.rentedHint": "Grant the bot access first — only a granted host can be marked as rented",
+  "hostsDialog.grantToAll": "Grant to all bots",
+  "hostsDialog.revokeFromAll": "Revoke from all"
 }

@@ -178,7 +178,7 @@ export const HostsList: FC<Props> = ({
             `hosts.${i}.inbound_tag`,
             `hosts.${i}.bot_usernames`,
             `hosts.${i}.is_disabled`,
-            `hosts.${i}.visibility`,
+            `hosts.${i}.rented_bot_usernames`,
           ] as const
       ),
     [fields.length]
@@ -195,7 +195,7 @@ export const HostsList: FC<Props> = ({
         inbound_tag: watchedValues?.[i * 6 + 2] as string | undefined,
         bot_usernames: watchedValues?.[i * 6 + 3] as string[] | undefined,
         is_disabled: watchedValues?.[i * 6 + 4] as boolean | undefined,
-        visibility: watchedValues?.[i * 6 + 5] as string | undefined,
+        rented_bot_usernames: watchedValues?.[i * 6 + 5] as string[] | undefined,
       })),
     [watchedValues, fields.length]
   );
@@ -260,6 +260,25 @@ export const HostsList: FC<Props> = ({
     search,
     focusedId,
   ]);
+
+  // NPVPN-2044: без флага «общий» новая локация иначе требует переключения у
+  // каждого бота по очереди. Аренда при этом НЕ отмечается: общие локации не
+  // тарифицируются, их отдают всем даром.
+  const grantToAllBots = useCallback(
+    (index: number, grant: boolean) => {
+      form.setValue(
+        `hosts.${index}.bot_usernames`,
+        grant ? bots.map((bot) => bot.username) : [],
+        { shouldDirty: true }
+      );
+      if (!grant) {
+        form.setValue(`hosts.${index}.rented_bot_usernames`, [], {
+          shouldDirty: true,
+        });
+      }
+    },
+    [form, bots]
+  );
 
   const duplicateHost = useCallback(
     (index: number) => {
@@ -366,10 +385,10 @@ export const HostsList: FC<Props> = ({
         remark={watchedHosts?.[index]?.remark}
         address={watchedHosts?.[index]?.address}
         botUsernames={watchedHosts?.[index]?.bot_usernames}
-        visibility={watchedHosts?.[index]?.visibility}
         canMoveUp={visiblePos > 0}
         canMoveDown={visiblePos < visibleIndexes.length - 1}
         duplicateHost={duplicateHost}
+        grantToAllBots={grantToAllBots}
         moveHostPosition={moveHostPosition}
         removeHost={removeHost}
         bots={bots}

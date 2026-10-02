@@ -43,14 +43,13 @@ type HostRowProps = {
   remark?: string;
   address?: string;
   botUsernames?: string[];
-  // NPVPN-2044: кому хост виден, решает видимость, а не пустота привязки.
-  visibility?: string;
   columnWidths?: HostColumnWidths;
   bots: Bot[];
   nodes: NodeType[];
   accordionErrors?: any;
   t: (key: string, opts?: any) => string;
   duplicateHost: (index: number) => void;
+  grantToAllBots: (index: number, grant: boolean) => void;
   moveHostPosition: (index: number, direction: "up" | "down") => void;
   removeHost: (index: number) => void;
   canMoveUp: boolean;
@@ -155,7 +154,6 @@ export const HostRow = memo(function HostRow({
   remark,
   address,
   botUsernames,
-  visibility,
   columnWidths,
   bots,
   nodes,
@@ -163,6 +161,7 @@ export const HostRow = memo(function HostRow({
   accordionErrors,
   t,
   duplicateHost,
+  grantToAllBots,
   moveHostPosition,
   removeHost,
   canMoveUp,
@@ -183,12 +182,11 @@ export const HostRow = memo(function HostRow({
     return bot?.title ? `${bot.title} (@${username})` : `@${username}`;
   });
 
-  // NPVPN-2044: раньше здесь была третья копия костыля «пустая привязка = всем».
-  // Теперь «виден всем» — это visibility=shared, а restricted без привязок значит
-  // «не виден никому»: при дефолте restricted только эта метка и отличает
-  // «хост ещё не отдали» от «хост забыли отдать».
-  const isAvailableToAllBots = visibility === "shared";
-  const isVisibleToNobody = !isAvailableToAllBots && botNames.length === 0;
+  // NPVPN-2044: «всем» — это привязка ко всем ботам панели, отдельного флага
+  // больше нет. Пустая привязка значит «никому», и при правиле «только по
+  // привязке» именно эта метка отличает «ещё не выдали» от «забыли выдать».
+  const isAvailableToAllBots = bots.length > 0 && botNames.length === bots.length;
+  const isVisibleToNobody = botNames.length === 0;
 
   const botBadgeLabel = isAvailableToAllBots
     ? bots.length > 1
@@ -372,6 +370,33 @@ export const HostRow = memo(function HostRow({
                 onClick={() => duplicateHost(index)}
               >
                 <DuplicateIcon />
+              </IconButton>
+            </Tooltip>
+
+            {/* NPVPN-2044: массовая выдача — без неё общая локация требует
+                переключения у каждого бота по очереди на вкладке «Боты». */}
+            <Tooltip
+              label={
+                isAvailableToAllBots
+                  ? t("hostsDialog.revokeFromAll")
+                  : t("hostsDialog.grantToAll")
+              }
+              placement="left"
+            >
+              <IconButton
+                aria-label={
+                  isAvailableToAllBots
+                    ? t("hostsDialog.revokeFromAll")
+                    : t("hostsDialog.grantToAll")
+                }
+                size="xs"
+                colorScheme="white"
+                variant="ghost"
+                onClick={() => grantToAllBots(index, !isAvailableToAllBots)}
+              >
+                <Text fontSize="xs" fontWeight="bold">
+                  {isAvailableToAllBots ? "0" : "∀"}
+                </Text>
               </IconButton>
             </Tooltip>
 
