@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -676,6 +677,35 @@ class NodeUserBsUsage(Base):
     monthly_used = Column(BigInteger, nullable=False, default=0, server_default=text("0"))
     monthly_period = Column(String(7), nullable=True)  # "YYYY-MM"
     user = relationship("User", back_populates="node_bs_usages")
+
+
+class BotBsDaily(Base):
+    """Суточный расход БС-трафика по боту и ноде (NPVPN-2044).
+
+    Источник колонки «БС-трафик» в счёте партнёру. Считать можно и из сырого
+    node_user_usages, но тогда счета держатся на том, что никто не выставит
+    NODE_USER_USAGE_RETENTION_DAYS, — а та таблица 11 ГБ и растёт на 1.6 млн
+    строк в месяц. Здесь 27 ботов x 4 БС-ноды x 365 дней ~= 39 тысяч строк в год,
+    и ретеншн не нужен вовсе.
+
+    bot_id и node_id НАРОЧНО без FK — та же причина, что у NodeWeightSnapshot и
+    HostCompositionSnapshot: это архивная запись, а не текущее состояние.
+    Удаление ноды или бота не должно стирать трафик, за который партнёру уже
+    выставили счёт; иначе прошлый период молча обнулится и будет выглядеть как
+    «трафика не было». Индексы на месте, ссылочной целостности нет.
+
+    Зерно с нодой, а не только с ботом: при споре «откуда 527 ГБ» надо отвечать
+    «вот на этих локациях», а стоимость та же.
+    """
+
+    __tablename__ = "bot_bs_daily"
+    __table_args__ = (UniqueConstraint("bot_id", "node_id", "day", name="uq_bot_bs_daily"),)
+
+    id = Column(Integer, primary_key=True)
+    bot_id = Column(Integer, nullable=False, index=True)
+    node_id = Column(Integer, nullable=False, index=True)
+    day = Column(Date, nullable=False, index=True)
+    used_bytes = Column(BigInteger, nullable=False, default=0, server_default=text("0"))
 
 
 class NodeUserBlock(Base):

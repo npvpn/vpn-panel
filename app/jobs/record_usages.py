@@ -1,15 +1,18 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from operator import attrgetter
+from typing import Any
 
 from pymysql.err import OperationalError
 from sqlalchemy import and_, bindparam, insert, select, text, update
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.dml import Insert
 
 from app import logger, scheduler, xray
 from app.db import GetDB, crud
-from app.db.models import Admin, Node, NodeUsage, NodeUserBsUsage, NodeUserUsage, System, User
+from app.db.models import Admin, BotBsDaily, Node, NodeUsage, NodeUserBsUsage, NodeUserUsage, System, User
 from app.utils.concurrency import get_xray_executor
 from app.xray.bs_limit import bs_counter_step, period_keys
 from config import (
@@ -99,6 +102,48 @@ def record_user_stats(params: list, node_id: int | None, consumption_factor: int
             )
         )
         safe_execute(db, stmt, params)
+
+
+def record_bot_bs_daily(db, node_id: int, deltas: dict[int, int], day: date) -> None:
+    """Складывает дельты БС-трафика в суточный агрегат по ботам (NPVPN-2044).
+
+    Вызывается из record_bs_user_stats — единственного места, где дельта уже
+    посчитана, коэффициент ноды применён, а нода гарантированно БС (вызов стоит
+    под `if node_id in bs_node_ids`, и node_id=None туда не попадает).
+
+    Не коммитит: должна лечь той же транзакцией, что инкремент node_user_bs_usage.
+    """
+    if not deltas:
+        return
+
+    bot_by_user = dict(
+        db.query(User.id, User.bot_id).filter(User.id.in_(list(deltas.keys())), User.bot_id.isnot(None)).all()
+    )
+    if not bot_by_user:
+        return
+
+    per_bot: dict[int, int] = {}
+    for uid, delta in deltas.items():
+        bot_id = bot_by_user.get(uid)
+        if bot_id is None:
+            continue
+        per_bot[bot_id] = per_bot.get(bot_id, 0) + int(delta)
+
+    for bot_id, used in per_bot.items():
+        values = {"bot_id": bot_id, "node_id": node_id, "day": day, "used_bytes": used}
+        # Any, потому что диалектные Insert у mysql и sqlite — разные типы;
+        # тот же приём, что в app/db/crud.py:write_host_composition_snapshot.
+        stmt: Any
+        if db.bind is not None and db.bind.dialect.name == "mysql":
+            mysql_stmt = mysql_insert(BotBsDaily).values(**values)
+            stmt = mysql_stmt.on_duplicate_key_update(used_bytes=BotBsDaily.used_bytes + mysql_stmt.inserted.used_bytes)
+        else:
+            sqlite_stmt = sqlite_insert(BotBsDaily).values(**values)
+            stmt = sqlite_stmt.on_conflict_do_update(
+                index_elements=["bot_id", "node_id", "day"],
+                set_={"used_bytes": BotBsDaily.used_bytes + sqlite_stmt.excluded.used_bytes},
+            )
+        db.execute(stmt)
 
 
 def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1):
@@ -192,6 +237,11 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
                 )
             )
             db.connection().execute(stmt, to_update)
+
+        # NPVPN-2044: тот же тик пишет суточный агрегат по ботам — одной
+        # транзакцией с инкрементом, чтобы расход не мог попасть в одну таблицу
+        # и потеряться в другой.
+        record_bot_bs_daily(db, node_id, deltas, datetime.utcnow().date())
 
         db.commit()
 
