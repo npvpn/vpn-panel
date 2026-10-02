@@ -531,7 +531,5 @@
   "hostsDialog.botTab.sharedTooltip": "Хост общий — виден всем ботам панели. Чтобы отдать его только отдельным ботам, смените видимость на вкладке «Хосты»",
   "hostsDialog.visibility": "Видимость",
   "hostsDialog.visibilityShared": "Общий — всем ботам",
-  "hostsDialog.visibilityRestricted": "Только привязанным",
-  "hostsDialog.isSellable": "Продаётся партнёрам",
-  "hostsDialog.catalogPrice": "Цена за период"
+  "hostsDialog.visibilityRestricted": "Только привязанным"
 }

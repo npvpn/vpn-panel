@@ -30,8 +30,6 @@ def upgrade() -> None:
         "hosts",
         sa.Column("visibility", sa.String(length=16), nullable=False, server_default=sa.text("'restricted'")),
     )
-    op.add_column("hosts", sa.Column("is_sellable", sa.Boolean(), nullable=False, server_default=sa.text("0")))
-    op.add_column("hosts", sa.Column("catalog_price", sa.Numeric(10, 2), nullable=True))
 
     # Перенос текущей видимости в колонку. Непривязанный хост раздавался всем ботам
     # (app/xray/host_addresses.py:host_allowed_for_bot), значит он shared.
@@ -43,6 +41,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("hosts", "catalog_price")
-    op.drop_column("hosts", "is_sellable")
     op.drop_column("hosts", "visibility")

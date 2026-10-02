@@ -12,7 +12,6 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
-    Numeric,
     String,
     Table,
     Text,
@@ -525,9 +524,6 @@ class ProxyHost(Base):
     visibility = Column(
         String(16), nullable=False, default=HOST_VISIBILITY_RESTRICTED, server_default=text("'restricted'")
     )
-    # Продаётся ли хост партнёру через каталог и за сколько за один расчётный период.
-    is_sellable = Column(Boolean, nullable=False, default=False, server_default=text("0"))
-    catalog_price = Column(Numeric(10, 2), nullable=True)
     bots = relationship("Bot", secondary=host_bot_association, back_populates="hosts")
 
     @property

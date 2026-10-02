@@ -33,35 +33,19 @@ def test_host_has_visibility_column_defaulting_to_restricted():
     assert HOST_VISIBILITY_RESTRICTED in str(column.server_default.arg)
 
 
-def test_host_has_sellable_and_price_columns():
-    assert ProxyHost.__table__.columns["is_sellable"].nullable is False
-    assert ProxyHost.__table__.columns["catalog_price"].nullable is True
-
-
 def _host(**overrides) -> dict:
     payload = {"remark": "Нидерланды", "address": "1.2.3.4"}
     payload.update(overrides)
     return payload
 
 
-def test_catalog_price_rejects_negative():
+def test_visibility_rejects_unknown_value():
+    """Опечатка в значении не должна молча превратиться в «виден всем»:
+    предикат сравнивает с литералом "shared", всё прочее читается как restricted."""
     with pytest.raises(ValidationError):
-        ProxyHostSchema(**_host(catalog_price="-1.00"))
+        ProxyHostSchema(**_host(visibility="public"))
 
 
-def test_catalog_price_rejects_three_decimals():
-    """Иначе счёт подпроекта 2 молча округлит цену, и партнёр увидит не ту сумму."""
-    with pytest.raises(ValidationError):
-        ProxyHostSchema(**_host(catalog_price="10.001"))
-
-
-def test_sellable_shared_host_is_rejected():
-    """shared-хост и так достаётся всем бесплатно — продавать его нечем,
-    а каталог подпроекта 3 показал бы товар, который уже отдан."""
-    with pytest.raises(ValidationError):
-        ProxyHostSchema(**_host(visibility="shared", is_sellable=True))
-
-
-def test_restricted_sellable_host_is_accepted():
-    host = ProxyHostSchema(**_host(visibility="restricted", is_sellable=True, catalog_price="890.00"))
-    assert host.is_sellable is True
+def test_visibility_accepts_shared_and_restricted():
+    assert ProxyHostSchema(**_host(visibility="shared")).visibility == "shared"
+    assert ProxyHostSchema(**_host(visibility="restricted")).visibility == "restricted"

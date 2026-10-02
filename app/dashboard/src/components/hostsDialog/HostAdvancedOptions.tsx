@@ -531,9 +531,8 @@ export const HostAdvancedOptions = memo(
           </FormControl>
         )}
 
-        {/* NPVPN-2044: видимость и каталог. Поля блокируются при shared —
-            зеркалит валидацию бэкенда (is_sellable requires visibility=restricted),
-            иначе пользователь получит 422 уже после нажатия «Применить». */}
+        {/* NPVPN-2044: кому виден хост. «Продаётся партнёрам» и цена живут не
+            здесь, а в БД бота и его админке, рядом с тарифами и счетами. */}
         <RHFSelect
           label={t("hostsDialog.visibility")}
           registerProps={register(`${hostKey}.${index}.visibility`)}
@@ -545,20 +544,6 @@ export const HostAdvancedOptions = memo(
           </option>
           <option value="shared">{t("hostsDialog.visibilityShared")}</option>
         </RHFSelect>
-
-        <RHFCheckbox
-          label={t("hostsDialog.isSellable")}
-          registerProps={register(`${hostKey}.${index}.is_sellable`)}
-          error={accordionErrors?.is_sellable}
-        />
-
-        <RHFInput
-          label={t("hostsDialog.catalogPrice")}
-          registerProps={register(`${hostKey}.${index}.catalog_price`)}
-          error={accordionErrors?.catalog_price}
-          type="number"
-          inputProps={{ size: "sm", step: "0.01", min: "0" }}
-        />
 
         <RHFCheckbox
           label={t("hostsDialog.useSniAsHost")}

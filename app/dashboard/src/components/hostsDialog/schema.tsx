@@ -62,17 +62,6 @@ export const hostItemSchema = z
     // NPVPN-2044: видимость хоста. restricted — виден только привязанным ботам,
     // shared — всем ботам панели. Дефолт restricted совпадает с бэкендом.
     visibility: z.enum(["shared", "restricted"]).default("restricted"),
-    is_sellable: z.boolean().default(false),
-    catalog_price: z
-      .string()
-      .or(z.number())
-      .nullable()
-      .optional()
-      .transform((value) => {
-        if (value === null || value === undefined || value === "") return null;
-        const parsed = Number(value);
-        return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-      }),
     node_ids: z.array(z.number()).default([]),
     client_config_id: z.number().nullable().default(null),
     // NPVPN-2072: сужение адресов настраивается на хосте. Пустое поле = null
@@ -100,15 +89,6 @@ export const hostItemSchema = z
       }),
   })
   .superRefine((data, ctx) => {
-    // Зеркалит валидацию бэкенда (`is_sellable requires visibility=restricted`):
-    // shared-хост достаётся всем ботам бесплатно, продавать его нечем.
-    if (data.is_sellable && data.visibility !== "restricted") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["is_sellable"],
-        message: "Only restricted hosts can be sold",
-      });
-    }
     if (!data.address && (!data.node_ids || data.node_ids.length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
