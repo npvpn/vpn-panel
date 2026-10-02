@@ -154,6 +154,9 @@ class ProxyHost(BaseModel):
     alpn: ProxyHostALPN = ProxyHostALPN.none
     fingerprint: ProxyHostFingerprint = ProxyHostFingerprint.none
     bot_usernames: list[str] = Field(default_factory=list)
+    # NPVPN-2044: боты, которым этот хост отмечен арендованным. Подмножество
+    # bot_usernames — аренда без доступа бессмысленна (проверяется в update_hosts).
+    rented_bot_usernames: list[str] = Field(default_factory=list)
     node_ids: list[int] = Field(default_factory=list)
     # Профиль клиентского routing (NPVPN-2024). None — фолбэк на профиль `default`.
     client_config_id: int | None = None

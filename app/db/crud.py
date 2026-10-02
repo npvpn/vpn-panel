@@ -42,6 +42,7 @@ from app.db.models import (
     UserNodePin,
     UserTemplate,
     UserUsageResetLogs,
+    host_bot_association,
     master_inbounds_association,
 )
 from app.models.admin import AdminCreate, AdminModify, AdminPartialModify
@@ -143,6 +144,40 @@ def _resolve_host_orders(db: Session, inbound_tag: str, modified_hosts: list[Pro
             resolved.append(int(host.order))
             next_order = max(next_order, int(host.order))
     return resolved
+
+
+def _apply_rental_marks(db: Session, host: ProxyHost, rented_bot_usernames: list[str]) -> None:
+    """Проставляет и снимает host_bot_association.rented_at (NPVPN-2044).
+
+    Дата НЕ переставляется у уже отмеченных: «арендует с такого числа» не должно
+    превращаться в «арендует с сегодня» при каждом сохранении формы.
+
+    Работает через Core по (host_id, bot_id), а не через relationship: аренда —
+    атрибут строки association, а переназначение коллекции host.bots удалило бы
+    и вставило эти строки заново, потеряв отметку.
+    """
+    wanted = {name for name in (_normalize_bot_username(n) for n in rented_bot_usernames or []) if name}
+    bound = {bot.username: bot.id for bot in host.bots}
+
+    unknown = wanted - set(bound)
+    if unknown:
+        raise ValueError(f"rented bot is not bound to host: {sorted(unknown)}")
+
+    db.flush()  # у нового хоста id появляется только после flush
+    wanted_ids = {bound[name] for name in wanted}
+    for bot_id in bound.values():
+        condition = and_(
+            host_bot_association.c.host_id == host.id,
+            host_bot_association.c.bot_id == bot_id,
+        )
+        if bot_id in wanted_ids:
+            db.execute(
+                host_bot_association.update()
+                .where(condition, host_bot_association.c.rented_at.is_(None))
+                .values(rented_at=datetime.utcnow())
+            )
+        else:
+            db.execute(host_bot_association.update().where(condition).values(rented_at=None))
 
 
 def _get_bots_by_usernames(db: Session, bot_usernames: list[str]) -> list[Bot]:
@@ -286,6 +321,7 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
         target.address_subset_size = host.address_subset_size
         target.address_rotation_days = host.address_rotation_days
         target.bots = _get_bots_by_usernames(db, host.bot_usernames)
+        _apply_rental_marks(db, target, host.rented_bot_usernames)
         target.nodes = _get_nodes_by_ids(db, host.node_ids)
         if host.id is None:
             db.add(target)

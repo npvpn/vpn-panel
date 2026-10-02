@@ -1,17 +1,15 @@
-"""Отметка аренды живёт на привязке хоста к боту (NPVPN-2044).
+"""Отметка аренды на привязке хоста к боту (NPVPN-2044).
 
-На хосте её держать нельзя: один хост может быть отдан нескольким ботам,
-и «когда и как его взяли» — свойство пары, а не хоста.
+Аренда — свойство пары (хост, бот): один хост может быть отдан нескольким
+ботам, и «за что платит этот» — про конкретную пару. Пустая отметка значит
+служебную привязку, которая в счёт не идёт.
 """
 
 from __future__ import annotations
 
 import sys
 import types
-from datetime import datetime
 
-# Заглушки app.* снимаются на время импорта и возвращаются обратно — см.
-# объяснение в tests/test_update_hosts_upsert.py.
 _saved_stubs: dict[str, types.ModuleType] = {}
 for _name, _module in list(sys.modules.items()):
     if _name.startswith("app.") and not hasattr(_module, "__file__") and not hasattr(_module, "__path__"):
@@ -39,18 +37,12 @@ sys.modules.update(_saved_stubs)
 TAG = "VLESS TCP REALITY"
 
 
-def test_association_has_rental_columns():
+def test_association_has_rented_at_and_no_source():
     columns = host_bot_association.columns
     assert "rented_at" in columns
     assert columns["rented_at"].nullable is True
-
-
-def test_source_defaults_to_manual():
-    """Дефолт manual: все существующие привязки сделаны руками, и объявлять их
-    самообслуживанием значило бы начислить аренду за то, что мы отдали сами."""
-    column = host_bot_association.columns["source"]
-    assert column.nullable is False
-    assert "manual" in str(column.server_default.arg)
+    # source убран: самообслуживания в задаче нет, колонка всегда была бы 'manual'.
+    assert "source" not in columns
 
 
 @pytest.fixture
@@ -68,61 +60,93 @@ def db():
         yield session
 
 
-def test_upsert_preserves_rental_mark(db):
-    """Сохранение формы хостов не должно сбрасывать отметку аренды —
-    ровно то, из-за чего Task 3 переводил update_hosts на upsert."""
+@pytest.fixture
+def seeded(db):
     inbound = ProxyInbound(tag=TAG)
-    bot = Bot(username="AppleGurruBot")
-    db.add_all([inbound, bot])
+    apple = Bot(username="AppleGurruBot")
+    zab = Bot(username="vpnZabBot")
+    db.add_all([inbound, apple, zab])
     db.flush()
-    host = ProxyHost(remark="Нидерланды", address="1.1.1.1", inbound=inbound, bots=[bot])
+    host = ProxyHost(remark="Нидерланды", address="1.1.1.1", inbound=inbound, bots=[apple, zab])
     db.add(host)
     db.commit()
+    return host
 
-    db.execute(
-        host_bot_association.update()
-        .where(host_bot_association.c.host_id == host.id)
-        .values(rented_at=datetime(2026, 10, 1), source="self_service")
-    )
-    db.commit()
+
+def _payload(host, **overrides):
+    data = {
+        "id": host.id,
+        "remark": host.remark,
+        "address": host.address,
+        "bot_usernames": ["AppleGurruBot", "vpnZabBot"],
+    }
+    data.update(overrides)
+    return ProxyHostSchema(**data)
+
+
+def _rows(db):
+    return {r.bot_id: r.rented_at for r in db.execute(host_bot_association.select()).all()}
+
+
+def test_rental_mark_is_set_for_listed_bots_only(db, seeded):
+    crud.update_hosts(db, TAG, [_payload(seeded, rented_bot_usernames=["AppleGurruBot"])])
+
+    rows = _rows(db)
+    marked = [bot_id for bot_id, rented_at in rows.items() if rented_at is not None]
+    assert len(marked) == 1
+    apple_id = db.query(Bot.id).filter(Bot.username == "AppleGurruBot").scalar()
+    assert marked == [apple_id]
+
+
+def test_rental_mark_is_kept_on_resave(db, seeded):
+    """Дата аренды не должна переставляться при каждом сохранении формы:
+    иначе «арендует с такого числа» превратится в «арендует с сегодня»."""
+    crud.update_hosts(db, TAG, [_payload(seeded, rented_bot_usernames=["AppleGurruBot"])])
+    first = [v for v in _rows(db).values() if v is not None][0]
+
+    crud.update_hosts(db, TAG, [_payload(seeded, rented_bot_usernames=["AppleGurruBot"])])
+    second = [v for v in _rows(db).values() if v is not None][0]
+
+    assert first == second
+
+
+def test_rental_mark_is_cleared_when_bot_removed_from_list(db, seeded):
+    crud.update_hosts(db, TAG, [_payload(seeded, rented_bot_usernames=["AppleGurruBot"])])
+    crud.update_hosts(db, TAG, [_payload(seeded, rented_bot_usernames=[])])
+
+    assert all(rented_at is None for rented_at in _rows(db).values())
+
+
+def test_rental_for_unbound_bot_is_rejected(db, seeded):
+    """Review Focus 1: аренда без доступа бессмысленна, а бот попал бы в счёт,
+    не имея хоста."""
+    with pytest.raises(ValueError):
+        crud.update_hosts(
+            db,
+            TAG,
+            [_payload(seeded, bot_usernames=["AppleGurruBot"], rented_bot_usernames=["vpnZabBot"])],
+        )
+
+
+def test_rented_bot_usernames_is_exposed_on_read(db, seeded):
+    crud.update_hosts(db, TAG, [_payload(seeded, rented_bot_usernames=["AppleGurruBot"])])
+
+    db.expire_all()
+    host = db.query(ProxyHost).one()
+    assert host.rented_bot_usernames == ["AppleGurruBot"]
+
+
+def test_upsert_preserves_rental_mark_when_other_bot_unbound(db, seeded):
+    """Отвязка одного бота не должна сбрасывать отметку у соседа."""
+    crud.update_hosts(db, TAG, [_payload(seeded, rented_bot_usernames=["AppleGurruBot"])])
+    rented_before = [v for v in _rows(db).values() if v is not None][0]
 
     crud.update_hosts(
         db,
         TAG,
-        [ProxyHostSchema(id=host.id, remark="Нидерланды", address="1.1.1.1", bot_usernames=["AppleGurruBot"])],
+        [_payload(seeded, bot_usernames=["AppleGurruBot"], rented_bot_usernames=["AppleGurruBot"])],
     )
 
-    row = db.execute(host_bot_association.select().where(host_bot_association.c.host_id == host.id)).one()
-    assert row.source == "self_service"
-    assert row.rented_at == datetime(2026, 10, 1)
-
-
-def test_unbinding_a_bot_does_not_touch_other_bots_marks(db):
-    """Отвязка одного бота не должна пересоздавать привязки остальных:
-    иначе отметка аренды у соседа обнулится, а счёт за период уедет."""
-    inbound = ProxyInbound(tag=TAG)
-    kept = Bot(username="AppleGurruBot")
-    removed = Bot(username="vpnZabBot")
-    db.add_all([inbound, kept, removed])
-    db.flush()
-    host = ProxyHost(remark="Нидерланды", address="1.1.1.1", inbound=inbound, bots=[kept, removed])
-    db.add(host)
-    db.commit()
-
-    db.execute(
-        host_bot_association.update()
-        .where(host_bot_association.c.bot_id == kept.id)
-        .values(rented_at=datetime(2026, 10, 1), source="self_service")
-    )
-    db.commit()
-
-    crud.update_hosts(
-        db,
-        TAG,
-        [ProxyHostSchema(id=host.id, remark="Нидерланды", address="1.1.1.1", bot_usernames=["AppleGurruBot"])],
-    )
-
-    rows = db.execute(host_bot_association.select()).all()
+    rows = _rows(db)
     assert len(rows) == 1
-    assert rows[0].source == "self_service"
-    assert rows[0].rented_at == datetime(2026, 10, 1)
+    assert list(rows.values())[0] == rented_before

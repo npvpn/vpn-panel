@@ -20,7 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import object_session, relationship
 from sqlalchemy.sql.expression import select, text
 
 from app import xray
@@ -39,11 +39,10 @@ host_bot_association = Table(
     Base.metadata,
     Column("host_id", ForeignKey("hosts.id", ondelete="CASCADE"), primary_key=True),
     Column("bot_id", ForeignKey("bots.id", ondelete="CASCADE"), primary_key=True),
-    # NPVPN-2044: когда и как бот получил этот хост. Свойство пары, а не хоста:
-    # один хост может быть отдан нескольким ботам, и «когда взяли» у них разное.
-    # Дефолт manual — существующие привязки сделаны руками, начислять за них аренду нельзя.
+    # NPVPN-2044: с какого момента бот арендует этот хост. Свойство пары, а не
+    # хоста: один хост может быть отдан нескольким ботам. NULL — привязка
+    # служебная (поставили на время разбирательства), в счёт она не идёт.
     Column("rented_at", DateTime, nullable=True),
-    Column("source", String(16), nullable=False, server_default=text("'manual'")),
 )
 
 host_nodes_association = Table(
@@ -521,6 +520,26 @@ class ProxyHost(Base):
     @property
     def bot_usernames(self):
         return [bot.username for bot in self.bots]
+
+    @property
+    def rented_bot_usernames(self):
+        """Боты, для которых этот хост отмечен арендованным (NPVPN-2044).
+
+        Источник колонки «арендованные хосты» в счёте: привязка без `rented_at` —
+        служебная (поставили на время разбирательства) и в счёт не идёт.
+        """
+        session = object_session(self)
+        if session is None:
+            return []
+        rented_ids = set(
+            session.execute(
+                select(host_bot_association.c.bot_id).where(
+                    host_bot_association.c.host_id == self.id,
+                    host_bot_association.c.rented_at.isnot(None),
+                )
+            ).scalars()
+        )
+        return [bot.username for bot in self.bots if bot.id in rented_ids]
 
     nodes = relationship("Node", secondary=host_nodes_association, passive_deletes=True)
 
