@@ -192,10 +192,9 @@ def _host(
         "random_user_agent": False,
         "xhttp_extra": None,
         "use_sni_as_host": False,
-        "bot_usernames": [],
-        # NPVPN-2044: фикстура изображает общий хост — в прежней семантике это
-        # была пустая привязка, теперь явный shared.
-        "visibility": "shared",
+        # NPVPN-2044: хост виден только привязанному боту, поэтому фикстура
+        # привязывает его к тому же боту, что подставлен в BOT_USERNAME ниже.
+        "bot_usernames": ["probe-bot"],
         "order": order,
         "is_bs": is_bs,
     }
@@ -220,7 +219,9 @@ def xray_stub(monkeypatch):
 
 def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB, subset=None, bs_usage_suffix=None):
     # setup_format_variables тянет app.models.user → app.db; подставляем готовые переменные.
-    format_variables = defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": None})
+    # NPVPN-2044: BOT_USERNAME обязателен — хост виден только привязанному боту,
+    # и с None предикат не отдаст ни одной локации.
+    format_variables = defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": "probe-bot"})
     protocol = _Protocol()
     return share.process_inbounds_and_tags(
         inbounds={protocol: [BS_TAG]},
@@ -357,7 +358,7 @@ def test_hosts_emitted_sorted_by_global_order(monkeypatch):
     protocol_vless = _Vless()
     protocol_trojan = _Trojan()
     conf = _FakeConf()
-    format_variables = defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": None})
+    format_variables = defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": "probe-bot"})
     share.process_inbounds_and_tags(
         inbounds={protocol_vless: [tag_a], protocol_trojan: [tag_b]},
         proxies={protocol_vless: _ProxySettings(), protocol_trojan: _ProxySettings()},
@@ -652,7 +653,7 @@ def sub_user(xray_stub, monkeypatch):
     monkeypatch.setattr(
         share,
         "setup_format_variables",
-        lambda extra_data: defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": None}),
+        lambda extra_data: defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": "probe-bot"}),
     )
     protocol = _Protocol()
     return types.SimpleNamespace(proxies={protocol: _ProxySettings()}, inbounds={protocol: [BS_TAG]})

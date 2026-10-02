@@ -173,8 +173,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
             nodes=[PinnableNode(node_id=cast(int, node.id), name=cast(str, node.name)) for node in visible_nodes(host)],
         )
         for host in hosts
-        if host_allowed_for_bot(cast(str, host.visibility), host.bot_usernames, user_bot_username)
-        and host.inbound_tag in visible_tags
+        if host_allowed_for_bot(host.bot_usernames, user_bot_username) and host.inbound_tag in visible_tags
     ]
 
 
@@ -243,7 +242,7 @@ def _build_scope(db: Session, user_id: int, first_day: int, last_day: int) -> _H
         host
         for host in all_hosts
         if not host.is_disabled
-        and host_allowed_for_bot(cast(str, host.visibility), host.bot_usernames, user_bot_username)
+        and host_allowed_for_bot(host.bot_usernames, user_bot_username)
         and (dbuser is None or host.inbound_tag in visible_tags)
     ]
     return _HistoryScope(

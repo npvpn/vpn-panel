@@ -285,7 +285,6 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
         target.address_subset_enabled = host.address_subset_enabled
         target.address_subset_size = host.address_subset_size
         target.address_rotation_days = host.address_rotation_days
-        target.visibility = host.visibility
         target.bots = _get_bots_by_usernames(db, host.bot_usernames)
         target.nodes = _get_nodes_by_ids(db, host.node_ids)
         if host.id is None:

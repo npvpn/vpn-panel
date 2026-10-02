@@ -10,29 +10,20 @@ import pytest
 
 from app.xray.host_addresses import host_allowed_for_bot
 
-SHARED = "shared"
-RESTRICTED = "restricted"
-
 
 @pytest.mark.parametrize(
-    ("visibility", "bot_usernames", "viewer", "expected"),
+    ("bot_usernames", "viewer", "expected"),
     [
-        (SHARED, [], "AppleGurruBot", True),
-        (SHARED, [], None, True),
-        (RESTRICTED, ["AppleGurruBot"], "AppleGurruBot", True),
-        (RESTRICTED, ["AppleGurruBot"], "vpnZabBot", False),
-        # Ровно то поведение, которого раньше не было: пустая привязка больше не
-        # означает «всем», иначе выбор хостов партнёром не значил бы ничего.
-        (RESTRICTED, [], "AppleGurruBot", False),
-        (RESTRICTED, [], None, False),
-        # Review Focus 2: бот удалён из панели, его имени нет в привязке —
-        # хост не должен стать видимым от того, что бот исчез.
-        (RESTRICTED, ["AppleGurruBot"], None, False),
-        # Review Focus 1: противоречивое состояние достижимо вручную;
-        # shared старше привязки, иначе «виден всем» переставало бы работать
-        # от добавления одного бота.
-        (SHARED, ["AppleGurruBot"], "vpnZabBot", True),
+        (["AppleGurruBot"], "AppleGurruBot", True),
+        (["AppleGurruBot", "vpnZabBot"], "vpnZabBot", True),
+        (["AppleGurruBot"], "vpnZabBot", False),
+        # Пустая привязка больше не значит «всем»: это «никому».
+        ([], "AppleGurruBot", False),
+        ([], None, False),
+        # Бот юзера неизвестен (users.bot_id IS NULL) — хост не отдаётся.
+        # Прежний предикат отдавал ему ВСЕ хосты, включая платные персональные.
+        (["AppleGurruBot"], None, False),
     ],
 )
-def test_host_allowed_for_bot(visibility, bot_usernames, viewer, expected):
-    assert host_allowed_for_bot(visibility, bot_usernames, viewer) is expected
+def test_host_allowed_for_bot(bot_usernames, viewer, expected):
+    assert host_allowed_for_bot(bot_usernames, viewer) is expected

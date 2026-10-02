@@ -39,10 +39,6 @@ from app.db.models import (  # noqa: E402
     User,
     UserNodePin,
 )
-from app.models.host_visibility import (  # noqa: E402
-    HOST_VISIBILITY_RESTRICTED,
-    HOST_VISIBILITY_SHARED,
-)
 from app.models.proxy import ProxyTypes  # noqa: E402
 from app.services.address_history import (  # noqa: E402
     day_start_at,
@@ -102,13 +98,11 @@ def _make_host(
         address_subset_enabled=subset_enabled,
         address_subset_size=subset_size,
         address_rotation_days=rotation_days,
-        # NPVPN-2044: хост без явной привязки изображал «виден всем ботам» —
-        # прежде это выражалось пустым bot_usernames, теперь явным shared.
-        visibility=HOST_VISIBILITY_RESTRICTED if bots else HOST_VISIBILITY_SHARED,
     )
     host.nodes = nodes
-    if bots:
-        host.bots = bots
+    # NPVPN-2044: без привязки хост не виден никому, поэтому фикстура без явных
+    # ботов привязывается к боту по умолчанию — тому же, что у _make_user.
+    host.bots = bots if bots else [_default_bot(db)]
     db.add(host)
     db.commit()
     db.refresh(host)
@@ -116,7 +110,12 @@ def _make_host(
 
 
 def _make_user(db, user_id: int = USER_ID, *, bot: Bot | None = None) -> User:
-    user = User(id=user_id, username=f"u{user_id}", address_rotation_offset=0, bot=bot)
+    user = User(
+        id=user_id,
+        username=f"u{user_id}",
+        address_rotation_offset=0,
+        bot=bot if bot is not None else _default_bot(db),
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -128,6 +127,23 @@ def _make_bot(db, username: str) -> Bot:
     db.add(bot)
     db.commit()
     db.refresh(bot)
+    return bot
+
+
+DEFAULT_BOT_USERNAME = "probe-bot"
+
+
+def _default_bot(db) -> Bot:
+    """Бот по умолчанию для фикстур (NPVPN-2044).
+
+    Хост виден только привязанному боту, а юзер без `bot_id` не видит ничего,
+    поэтому фикстурам, которые раньше обходились пустой привязкой, нужен общий
+    бот: и у хоста, и у пользователя. Тесты этого файла про сужение адресов и
+    журнал выдачи, а не про доступ, — доступ им нужен просто чтобы быть.
+    """
+    bot = db.query(Bot).filter(Bot.username == DEFAULT_BOT_USERNAME).first()
+    if bot is None:
+        bot = _make_bot(db, DEFAULT_BOT_USERNAME)
     return bot
 
 
@@ -319,9 +335,14 @@ def test_day_start_at_roundtrips_with_day_index():
 def test_hides_hosts_restricted_to_other_bots(db, monkeypatch):
     """История не должна показывать юзеру локации, которые ему в принципе не
     могли достаться: тот же фильтр по bot_usernames, что и рендер подписки
-    (app/subscription/share.py). Хост, привязанный только к чужому боту,
-    обязан выпасть из ответа; хост без ограничений (bot_usernames пуст) —
-    остаться."""
+    (app/subscription/share.py). Хост, привязанный только к чужому боту, обязан
+    выпасть из ответа; хост, привязанный и его боту тоже, — остаться.
+
+    NPVPN-2044: раньше вторым случаем был «хост без ограничений (bot_usernames
+    пуст)», который считался доступным всем. Такого понятия больше нет — пустая
+    привязка значит «никому», — поэтому «общий» хост выражается привязкой к
+    обоим ботам.
+    """
     bot_a = _make_bot(db, "bot_a")
     bot_b = _make_bot(db, "bot_b")
     user = _make_user(db, bot=bot_a)
@@ -330,17 +351,17 @@ def test_hides_hosts_restricted_to_other_bots(db, monkeypatch):
     host_for_bot_b = _make_host(db, nodes=nodes_restricted, remark="only-bot-b", bots=[bot_b])
 
     nodes_open = [_make_node(db, f"o{i}", f"6.6.6.{i}") for i in range(1, 3)]
-    host_unrestricted = _make_host(db, nodes=nodes_open, remark="open-to-all")
+    host_for_both = _make_host(db, nodes=nodes_open, remark="open-to-all", bots=[bot_a, bot_b])
 
-    for host, nodes in ((host_for_bot_b, nodes_restricted), (host_unrestricted, nodes_open)):
+    for host, nodes in ((host_for_bot_b, nodes_restricted), (host_for_both, nodes_open)):
         write_host_composition_snapshot(db, DAY, host.id, [{"node_id": n.id, "address": n.address} for n in nodes])
     db.commit()
-    _grant_inbound_access(monkeypatch, db, user, [host_for_bot_b, host_unrestricted])
+    _grant_inbound_access(monkeypatch, db, user, [host_for_bot_b, host_for_both])
 
     result = reconstruct(db, USER_ID, DAY)
     host_ids = {a.host_id for a in result}
 
-    assert host_unrestricted.id in host_ids
+    assert host_for_both.id in host_ids
     assert host_for_bot_b.id not in host_ids
 
 

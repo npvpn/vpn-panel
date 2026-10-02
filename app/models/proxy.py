@@ -5,10 +5,6 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.host_visibility import (
-    HOST_VISIBILITY_RESTRICTED,
-    HOST_VISIBILITY_VALUES,
-)
 from app.utils.system import random_password
 from xray_api.types.account import (
     ShadowsocksAccount,
@@ -174,9 +170,6 @@ class ProxyHost(BaseModel):
     address_subset_enabled: bool = False
     address_subset_size: int | None = None
     address_rotation_days: int | None = None
-    # NPVPN-2044. Один класс используется и на чтение, и на запись
-    # (crud.py: ProxyHost as ProxyHostModify), поэтому поля видны в обе стороны.
-    visibility: str = HOST_VISIBILITY_RESTRICTED
     order: int | None = None  # None on write = append to the end
     model_config = ConfigDict(from_attributes=True)
 
@@ -196,13 +189,6 @@ class ProxyHost(BaseModel):
         except ValueError as exc:
             raise ValueError("Invalid formatting variables")
 
-        return v
-
-    @field_validator("visibility", mode="after")
-    @classmethod
-    def validate_visibility(cls, v):
-        if v not in HOST_VISIBILITY_VALUES:
-            raise ValueError(f"visibility must be one of {', '.join(HOST_VISIBILITY_VALUES)}")
         return v
 
     @field_validator("fragment_setting", check_fields=False)

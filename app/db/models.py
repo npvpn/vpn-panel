@@ -25,7 +25,6 @@ from sqlalchemy.sql.expression import select, text
 
 from app import xray
 from app.db.base import Base
-from app.models.host_visibility import HOST_VISIBILITY_RESTRICTED
 from app.models.node import NodeBalancerStrategy, NodeProtocol, NodeRole, NodeStatus
 from app.models.proxy import (
     ProxyHostALPN,
@@ -517,13 +516,6 @@ class ProxyHost(Base):
     address_subset_enabled = Column(Boolean, nullable=False, default=False, server_default="0")
     address_subset_size = Column(Integer, nullable=True)
     address_rotation_days = Column(Integer, nullable=True)
-    # NPVPN-2044: видимость хоста задаётся колонкой, а не отсутствием привязки.
-    # shared — виден всем ботам своей панели; restricted — только привязанным.
-    # Дефолт restricted: новый хост не должен молча уйти всем партнёрам, иначе
-    # прежний костыль «пустая привязка = всем» снят лишь формально.
-    visibility = Column(
-        String(16), nullable=False, default=HOST_VISIBILITY_RESTRICTED, server_default=text("'restricted'")
-    )
     bots = relationship("Bot", secondary=host_bot_association, back_populates="hosts")
 
     @property

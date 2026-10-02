@@ -491,13 +491,7 @@ def process_inbounds_and_tags(
             format_variables.update({"TRANSPORT": inbound["network"]})
             for host in xray.hosts.get(tag, []):
                 allowed_bot_usernames = host.get("bot_usernames") or []
-                # Фолбэк "restricted" — на время раскатки: кэш хостов мог быть собран
-                # прежней версией процесса и не содержать ключа. Фолбэк намеренно в
-                # сторону «не виден»: пропавшая локация заметна и обратима, а лишняя
-                # уходит партнёру, который за неё не платит.
-                if not host_allowed_for_bot(
-                    host.get("visibility") or "restricted", allowed_bot_usernames, user_bot_username
-                ):
+                if not host_allowed_for_bot(allowed_bot_usernames, user_bot_username):
                     continue
 
                 host_inbound = inbound.copy()
