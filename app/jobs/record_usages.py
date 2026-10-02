@@ -129,21 +129,24 @@ def record_bot_bs_daily(db, node_id: int, deltas: dict[int, int], day: date) -> 
             continue
         per_bot[bot_id] = per_bot.get(bot_id, 0) + int(delta)
 
-    for bot_id, used in per_bot.items():
-        values = {"bot_id": bot_id, "node_id": node_id, "day": day, "used_bytes": used}
-        # Any, потому что диалектные Insert у mysql и sqlite — разные типы;
-        # тот же приём, что в app/db/crud.py:write_host_composition_snapshot.
-        stmt: Any
-        if db.bind is not None and db.bind.dialect.name == "mysql":
-            mysql_stmt = mysql_insert(BotBsDaily).values(**values)
-            stmt = mysql_stmt.on_duplicate_key_update(used_bytes=BotBsDaily.used_bytes + mysql_stmt.inserted.used_bytes)
-        else:
-            sqlite_stmt = sqlite_insert(BotBsDaily).values(**values)
-            stmt = sqlite_stmt.on_conflict_do_update(
-                index_elements=["bot_id", "node_id", "day"],
-                set_={"used_bytes": BotBsDaily.used_bytes + sqlite_stmt.excluded.used_bytes},
-            )
-        db.execute(stmt)
+    # Один bulk-UPSERT на все боты ноды, а не оператор на бота: джоба тикает
+    # каждые 10 секунд по каждой БС-ноде, и на одной ноде сидят юзеры многих
+    # ботов — поштучная запись превратила бы единицы запросов в сотни на горячем
+    # пути панели (у неё уже была беда с нагрузкой, NPVPN-1170).
+    rows = [{"bot_id": bot_id, "node_id": node_id, "day": day, "used_bytes": used} for bot_id, used in per_bot.items()]
+    # Any, потому что диалектные Insert у mysql и sqlite — разные типы;
+    # тот же приём, что в app/db/crud.py:write_host_composition_snapshot.
+    stmt: Any
+    if db.bind is not None and db.bind.dialect.name == "mysql":
+        mysql_stmt = mysql_insert(BotBsDaily).values(rows)
+        stmt = mysql_stmt.on_duplicate_key_update(used_bytes=BotBsDaily.used_bytes + mysql_stmt.inserted.used_bytes)
+    else:
+        sqlite_stmt = sqlite_insert(BotBsDaily).values(rows)
+        stmt = sqlite_stmt.on_conflict_do_update(
+            index_elements=["bot_id", "node_id", "day"],
+            set_={"used_bytes": BotBsDaily.used_bytes + sqlite_stmt.excluded.used_bytes},
+        )
+    db.execute(stmt)
 
 
 def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1):

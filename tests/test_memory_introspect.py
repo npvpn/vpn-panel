@@ -29,11 +29,14 @@ def test_heap_snapshot_reports_top_by_bytes():
     """Тип с горсткой огромных объектов не попал бы в top_by_count, но обязан
     появиться в top_by_bytes — ради этого случая и нужен уровень 2."""
 
-    class _HugeBallast:
-        def __init__(self):
-            self.payload = "z" * (2 * 1024 * 1024)
+    # Подкласс bytes, а не объект со строкой в поле: sys.getsizeof не рекурсивен,
+    # и у обычного объекта он вернул бы ~50 байт (payload весил бы как str).
+    # Тогда тип попадал в top_by_bytes лишь пока в куче мало типов — и выпадал,
+    # стоило соседним тестам создать больше объектов (NPVPN-2044).
+    class _HugeBallast(bytes):
+        pass
 
-    ballast = [_HugeBallast() for _ in range(3)]
+    ballast = [_HugeBallast(b"z" * (2 * 1024 * 1024)) for _ in range(3)]
 
     result = memory_introspect.heap_snapshot(top=2000)
 

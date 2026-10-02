@@ -20,7 +20,7 @@ _share_stub.generate_v2ray_links = lambda *args, **kwargs: []
 sys.modules.setdefault("app.subscription.share", _share_stub)
 
 import pytest  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
@@ -148,3 +148,41 @@ def test_job_fills_aggregate(db, seeded, monkeypatch):
     record_usages.record_bs_user_stats([{"uid": seeded["u1"].id, "value": 100}], seeded["node"].id, 1)
 
     assert _rows(db)[(seeded["bot"].id, seeded["node"].id, datetime.utcnow().date())] == 100
+
+
+def test_all_bots_are_written_in_one_statement(db, seeded):
+    """Запись идёт одним bulk-UPSERT, а не по оператору на бота.
+
+    Это горячий путь: джоба тикает каждые 10 секунд по каждой БС-ноде, и на одной
+    ноде могут сидеть юзеры двух десятков ботов. Оператор на бота превратил бы
+    четыре запроса в сотню — у панели уже была беда с нагрузкой (NPVPN-1170).
+    """
+    second_bot = Bot(username="vpnZabBot")
+    db.add(second_bot)
+    db.flush()
+    other_user = User(username="u3", bot_id=second_bot.id)
+    db.add(other_user)
+    db.commit()
+
+    statements: list[str] = []
+
+    def _collect(conn, cursor, statement, parameters, context, executemany):
+        if "bot_bs_daily" in statement.lower():
+            statements.append(statement)
+
+    # Слушатель обязательно снимается: оставленный на engine, он держит ссылки
+    # на замыкание и ломает tests/test_memory_introspect.py, который смотрит
+    # топ объектов кучи по байтам.
+    event.listen(db.bind, "before_cursor_execute", _collect)
+    try:
+        record_bot_bs_daily(db, seeded["node"].id, {seeded["u1"].id: 100, other_user.id: 50}, DAY)
+        db.commit()
+    finally:
+        event.remove(db.bind, "before_cursor_execute", _collect)
+
+    inserts = [st for st in statements if st.lstrip().upper().startswith("INSERT")]
+    assert len(inserts) == 1, f"ожидался один INSERT на все боты, получено {len(inserts)}"
+    assert _rows(db) == {
+        (seeded["bot"].id, seeded["node"].id, DAY): 100,
+        (second_bot.id, seeded["node"].id, DAY): 50,
+    }
