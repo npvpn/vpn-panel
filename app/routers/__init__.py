@@ -4,6 +4,7 @@ from config import MEMORY_PROFILING_ENABLED
 
 from . import (
     admin,
+    billing,
     bot,
     core,
     home,
@@ -22,6 +23,7 @@ api_router = APIRouter()
 
 routers: list[APIRouter] = [
     admin.router,
+    billing.router,  # type: ignore[has-type]
     bot.router,
     core.router,
     managed.router,  # type: ignore[has-type]
