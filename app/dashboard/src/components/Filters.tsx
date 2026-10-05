@@ -43,10 +43,10 @@ export const ReloadIcon = chakra(ArrowPathIcon, iconProps);
 const SyncIcon = chakra(ArrowsRightLeftIcon, iconProps);
 const CreateUserIcon = chakra(UserPlusIcon, iconProps);
 
-// На мобильной ширине текст кнопок не влезает в ряд фильтров — показываем
+// До lg (телефон и планшет) текст кнопок не влезает в ряд фильтров — показываем
 // вместо него иконку, текст остаётся в aria-label и подсказке.
-const mobileOnly = { base: "block", md: "none" };
-const desktopOnly = { base: "none", md: "inline" };
+const mobileOnly = { base: "block", lg: "none" };
+const desktopOnly = { base: "none", lg: "inline" };
 
 export type FilterProps = {} & BoxProps;
 const setSearchField = debounce((search: string) => {
@@ -176,10 +176,10 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       <GridItem colSpan={2} order={{ base: 1, md: 2 }}>
         <HStack justifyContent="flex-end" alignItems="center" h="full">
           <FormControl
-            w={{ base: "auto", md: "220px" }}
-            flex={{ base: 1, md: "none" }}
+            w={{ base: "auto", lg: "220px" }}
+            flex={{ base: 1, lg: "none" }}
             minW={0}
-            flexShrink={{ md: 0 }}
+            flexShrink={{ lg: 0 }}
           >
             <ReactSelect<BotOption>
               options={botOptions}
@@ -213,7 +213,7 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
             variant="outline"
             h="40px"
             minW="40px"
-            px={{ base: 0, md: 4 }}
+            px={{ base: 0, lg: 4 }}
             flexShrink={0}
             aria-label={t("syncInbounds")}
             title={t("syncInbounds")}
@@ -249,7 +249,7 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
             colorScheme="primary"
             h="40px"
             minW="40px"
-            px={{ base: 0, md: 5 }}
+            px={{ base: 0, lg: 5 }}
             flexShrink={0}
             aria-label={t("createUser")}
             title={t("createUser")}

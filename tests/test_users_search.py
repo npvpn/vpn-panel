@@ -11,11 +11,8 @@ import sys
 import types
 
 # app.subscription.share тянет за собой весь стек генерации ссылок и цикл импортов
-# через app.models.user — тот же обход, что в test_address_history.py.
-for _name, _module in list(sys.modules.items()):
-    if _name.startswith("app.") and not hasattr(_module, "__file__") and not hasattr(_module, "__path__"):
-        del sys.modules[_name]
-
+# через app.models.user — тот же обход, что в test_xray_templates_service.py.
+# Чужие заглушки в sys.modules не трогаем: от них зависят соседние тест-модули.
 _share_stub = types.ModuleType("app.subscription.share")
 _share_stub.generate_v2ray_links = lambda *args, **kwargs: []
 sys.modules.setdefault("app.subscription.share", _share_stub)
