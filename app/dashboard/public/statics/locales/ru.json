@@ -188,6 +188,8 @@
   "nodes.balancerLeastPing": "Наименьший пинг (с проверкой)",
   "nodes.balancerLeastLoad": "Наименьшая нагрузка (с проверкой)",
   "nodes.isBsNode": "БС-нода (только лимит трафика по ноде)",
+  "nodes.ownerBotId": "Владелец ноды (платит сам)",
+  "nodes.ownerBotIdOurs": "— наша нода —",
   "nodes.bsMonthlyLimitGb": "БС лимит в месяц (ГБ)",
   "on_hold": "On Hold",
   "password": "Пароль",

@@ -59,7 +59,14 @@ def collect_bot_usage(db: Session, period_from: datetime, period_to: datetime) -
         select(Bot.username, func.coalesce(func.sum(BotBsDaily.used_bytes), 0))
         .select_from(BotBsDaily)
         .join(Bot, Bot.id == BotBsDaily.bot_id)
-        .where(BotBsDaily.day >= period_from.date(), BotBsDaily.day < period_to.date())
+        .where(
+            BotBsDaily.day >= period_from.date(),
+            BotBsDaily.day < period_to.date(),
+            # Трафик партнёрских БС-нод (billable=False зафиксировано в момент
+            # записи, NPVPN-2044.1) в счёт не идёт — партнёр платит за такой
+            # сервер сам.
+            BotBsDaily.billable.is_(True),
+        )
         .group_by(Bot.username)
     ).all()
 

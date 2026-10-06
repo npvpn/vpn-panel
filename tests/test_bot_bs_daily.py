@@ -74,6 +74,10 @@ def _rows(db):
     return {(r.bot_id, r.node_id, r.day): r.used_bytes for r in db.query(BotBsDaily).all()}
 
 
+def _billable(db):
+    return {(r.bot_id, r.node_id, r.day): r.billable for r in db.query(BotBsDaily).all()}
+
+
 def test_deltas_of_one_bot_are_summed_into_one_row(db, seeded):
     record_bot_bs_daily(db, seeded["node"].id, {seeded["u1"].id: 100, seeded["u2"].id: 50}, DAY)
     db.commit()
@@ -185,4 +189,70 @@ def test_all_bots_are_written_in_one_statement(db, seeded):
     assert _rows(db) == {
         (seeded["bot"].id, seeded["node"].id, DAY): 100,
         (second_bot.id, seeded["node"].id, DAY): 50,
+    }
+
+
+def test_record_bot_bs_daily_writes_billable_true_by_default(db, seeded):
+    """Нода без owner_bot_id — наша, billable=True по умолчанию."""
+    record_bot_bs_daily(db, seeded["node"].id, {seeded["u1"].id: 100}, DAY)
+    db.commit()
+
+    assert _billable(db) == {(seeded["bot"].id, seeded["node"].id, DAY): True}
+
+
+def test_record_bot_bs_daily_writes_billable_false_for_partner_node(db, seeded):
+    """NPVPN-2044.1: вызывающий передаёт billable=False для партнёрской
+    ноды (владелец есть) — запись должна лечь с этим флагом."""
+    record_bot_bs_daily(db, seeded["node"].id, {seeded["u1"].id: 100}, DAY, billable=False)
+    db.commit()
+
+    assert _billable(db) == {(seeded["bot"].id, seeded["node"].id, DAY): False}
+
+
+def test_record_bot_bs_daily_does_not_reclassify_on_conflict(db, seeded):
+    """Классификация замораживается в момент первой записи строки за сутки:
+    повторный тик с другим billable не должен менять уже записанную строку."""
+    record_bot_bs_daily(db, seeded["node"].id, {seeded["u1"].id: 100}, DAY, billable=False)
+    db.commit()
+    record_bot_bs_daily(db, seeded["node"].id, {seeded["u1"].id: 40}, DAY, billable=True)
+    db.commit()
+
+    assert _rows(db) == {(seeded["bot"].id, seeded["node"].id, DAY): 140}
+    assert _billable(db) == {(seeded["bot"].id, seeded["node"].id, DAY): False}
+
+
+def test_job_picks_billable_from_node_owner(db, seeded, monkeypatch):
+    """record_user_usages решает billable по Node.owner_bot_id и прокидывает
+    его в record_bs_user_stats/record_bot_bs_daily без лишних запросов на
+    горячем пути."""
+    from app.jobs import record_usages
+
+    partner_bot = Bot(username="PartnerOwnerBot")
+    db.add(partner_bot)
+    db.flush()
+
+    partner_node = Node(
+        name="appleguru-cdn-node-01",
+        address="2.2.2.2",
+        port=62050,
+        api_port=62051,
+        is_bs=True,
+        owner_bot_id=partner_bot.id,
+    )
+    db.add(partner_node)
+    db.commit()
+
+    monkeypatch.setattr(record_usages, "GetDB", lambda: _FakeCtx(db))
+
+    # Наша нода (без владельца) — billable=True.
+    record_usages.record_bs_user_stats([{"uid": seeded["u1"].id, "value": 100}], seeded["node"].id, 1, billable=True)
+    # Партнёрская нода (владелец есть) — billable=False.
+    partner_user = User(username="partner_u", bot_id=partner_bot.id)
+    db.add(partner_user)
+    db.commit()
+    record_usages.record_bs_user_stats([{"uid": partner_user.id, "value": 200}], partner_node.id, 1, billable=False)
+
+    assert _billable(db) == {
+        (seeded["bot"].id, seeded["node"].id, datetime.utcnow().date()): True,
+        (partner_bot.id, partner_node.id, datetime.utcnow().date()): False,
     }

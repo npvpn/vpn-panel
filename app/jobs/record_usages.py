@@ -104,12 +104,20 @@ def record_user_stats(params: list, node_id: int | None, consumption_factor: int
         safe_execute(db, stmt, params)
 
 
-def record_bot_bs_daily(db, node_id: int, deltas: dict[int, int], day: date) -> None:
+def record_bot_bs_daily(db, node_id: int, deltas: dict[int, int], day: date, billable: bool = True) -> None:
     """Складывает дельты БС-трафика в суточный агрегат по ботам (NPVPN-2044).
 
     Вызывается из record_bs_user_stats — единственного места, где дельта уже
     посчитана, коэффициент ноды применён, а нода гарантированно БС (вызов стоит
     под `if node_id in bs_node_ids`, и node_id=None туда не попадает).
+
+    billable — приходит от вызывающего готовым (по Node.owner_bot_id ноды
+    node_id), а не высчитывается здесь отдельным запросом: джоба тикает раз в
+    10 секунд по каждой БС-ноде, лишний SELECT на горячем пути не нужен
+    (NPVPN-2044.1). Применяется ТОЛЬКО при вставке новой строки: при конфликте
+    (повторный тик того же бота/ноды/дня) billable не трогаем — классификация
+    замораживается в момент первой записи строки за сутки и не должна задним
+    числом меняться, если владелец ноды сменится в тот же день.
 
     Не коммитит: должна лечь той же транзакцией, что инкремент node_user_bs_usage.
     """
@@ -133,7 +141,10 @@ def record_bot_bs_daily(db, node_id: int, deltas: dict[int, int], day: date) -> 
     # каждые 10 секунд по каждой БС-ноде, и на одной ноде сидят юзеры многих
     # ботов — поштучная запись превратила бы единицы запросов в сотни на горячем
     # пути панели (у неё уже была беда с нагрузкой, NPVPN-1170).
-    rows = [{"bot_id": bot_id, "node_id": node_id, "day": day, "used_bytes": used} for bot_id, used in per_bot.items()]
+    rows = [
+        {"bot_id": bot_id, "node_id": node_id, "day": day, "used_bytes": used, "billable": billable}
+        for bot_id, used in per_bot.items()
+    ]
     # Any, потому что диалектные Insert у mysql и sqlite — разные типы;
     # тот же приём, что в app/db/crud.py:write_host_composition_snapshot.
     stmt: Any
@@ -149,11 +160,14 @@ def record_bot_bs_daily(db, node_id: int, deltas: dict[int, int], day: date) -> 
     db.execute(stmt)
 
 
-def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1):
+def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1, billable: bool = True):
     """Инкремент node_user_bs_usage для одной БС-ноды (ленивый сброс месяца).
 
     Купленный пул (User.bs_extra) в течение месяца не трогается — переносится на
     новый месяц нормализацией периода в начале этой же транзакции.
+
+    billable — про владельца ноды (NPVPN-2044.1), прокидывается в
+    record_bot_bs_daily как есть, см. его докстринг.
     """
     if not params:
         return
@@ -244,7 +258,7 @@ def record_bs_user_stats(params: list, node_id: int, consumption_factor: int = 1
         # NPVPN-2044: тот же тик пишет суточный агрегат по ботам — одной
         # транзакцией с инкрементом, чтобы расход не мог попасть в одну таблицу
         # и потеряться в другой.
-        record_bot_bs_daily(db, node_id, deltas, datetime.utcnow().date())
+        record_bot_bs_daily(db, node_id, deltas, datetime.utcnow().date(), billable)
 
         db.commit()
 
@@ -368,13 +382,16 @@ def record_user_usages():
     if DISABLE_RECORDING_NODE_USER_USAGE:
         return
 
-    # id всех БС-нод — для них дополнительно ведём node_user_bs_usage.
+    # id всех БС-нод — для них дополнительно ведём node_user_bs_usage. Заодно
+    # вытягиваем владельца (NPVPN-2044.1): одним запросом, не по одному на тик,
+    # чтобы не плодить лишний SELECT на горячем пути (джоба тикает каждые 10 с).
     try:
         with GetDB() as db:
-            bs_node_ids = {nid for (nid,) in db.query(Node.id).filter(Node.is_bs.is_(True)).all()}
+            bs_node_owners = dict(db.query(Node.id, Node.owner_bot_id).filter(Node.is_bs.is_(True)).all())
     except Exception as e:
         logger.warning(f"[record_user_usages] failed to load BS node ids: {type(e).__name__}: {e}")
-        bs_node_ids = set()
+        bs_node_owners = {}
+    bs_node_ids = set(bs_node_owners)
 
     for node_id, params in api_params.items():
         try:
@@ -387,7 +404,8 @@ def record_user_usages():
         # (там только целочисленные id нод из БД), поэтому БС-учёт его не трогает.
         if node_id in bs_node_ids:
             try:
-                record_bs_user_stats(params, node_id, usage_coefficient[node_id])
+                billable = bs_node_owners.get(node_id) is None
+                record_bs_user_stats(params, node_id, usage_coefficient[node_id], billable)
             except Exception as e:
                 logger.warning(
                     f"[record_user_usages] failed to record node_user_bs_usage for "

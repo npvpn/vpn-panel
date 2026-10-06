@@ -632,6 +632,14 @@ class Node(Base):
         server_default=NodeBalancerStrategy.random.value,
     )
     is_bs = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    # Чей это сервер (NPVPN-2044). NULL — нода наша, её трафик идёт в счёт
+    # партнёрам (is_bs=True на такой ноде — это «у нас арендован БС-лимит»).
+    # Непусто — нода принадлежит этому боту: он платит за сервер сам, и в счёт
+    # её трафик не должен попадать, даже когда is_bs=True (лимит на ней всё
+    # равно действует для пользователей бота). is_bs продолжает означать
+    # ИСКЛЮЧИТЕЛЬНО действие БС-лимита — владелец это отдельный, независимый
+    # признак. SET NULL, не CASCADE: удаление бота не должно удалять ноду.
+    owner_bot_id = Column(Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True)
     # Лимит трафика у хостера на этот сервер (SI-байты). NULL — лимита нет.
     hosting_traffic_limit_bytes = Column(BigInteger, nullable=True)
     # Израсходованный NIC-трафик за месяц. Панель его сама не знает: это счётчик
@@ -696,6 +704,18 @@ class BotBsDaily(Base):
 
     Зерно с нодой, а не только с ботом: при споре «откуда 527 ГБ» надо отвечать
     «вот на этих локациях», а стоимость та же.
+
+    billable — считать ли эту строку в счёте партнёру (NPVPN-2044.1). Часть
+    БС-нод принадлежит самим партнёрам (они сами платят за сервер, is_bs=True
+    у ноды — только про действующий на ней лимит), и их трафик в счёт не идёт.
+    Признак зафиксирован ЗДЕСЬ, в момент записи агрегата, а не выводится
+    джойном на nodes.owner_bot_id при построении отчёта: джойн бы означал, что
+    (а) удаление ноды тихо убирает её трафик из счёта и (б) смена владельца
+    ноды переклассифицирует задним числом все прошлые периоды — оба случая
+    это молчаливое изменение уже выставленных счетов, что здесь запрещено тем
+    же принципом, что и у bot_id/node_id без FK выше. Строки партнёрских нод
+    ПИШУТСЯ (billable=False), а не пропускаются — агрегат должен отвечать на
+    «откуда 527 ГБ» по всем локациям, даже тем, что не идут в счёт.
     """
 
     __tablename__ = "bot_bs_daily"
@@ -706,6 +726,7 @@ class BotBsDaily(Base):
     node_id = Column(Integer, nullable=False, index=True)
     day = Column(Date, nullable=False, index=True)
     used_bytes = Column(BigInteger, nullable=False, default=0, server_default=text("0"))
+    billable = Column(Boolean, nullable=False, default=True, server_default=text("1"))
 
 
 class NodeUserBlock(Base):

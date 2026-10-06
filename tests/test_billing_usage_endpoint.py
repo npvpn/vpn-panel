@@ -142,3 +142,107 @@ def test_rejects_empty_period():
     """Нулевой интервал — тоже ошибка: счёт за «ничего» не выставляют."""
     with pytest.raises(BillingPeriodError):
         validate_period(datetime(2026, 10, 1), datetime(2026, 10, 1))
+
+
+def test_partner_node_traffic_is_excluded_from_the_invoice(db, seeded):
+    """NPVPN-2044.1: трафик партнёрской БС-ноды (billable=False) в счёт не
+    идёт — партнёр платит за такой сервер сам."""
+    partner_bot = Bot(username="AppleGurruBot_owner")
+    partner_node = Node(
+        name="appleguru-cdn-node-01",
+        address="2.2.2.2",
+        port=62050,
+        api_port=62051,
+        is_bs=True,
+        owner_bot_id=None,  # владелец ноды не важен для этого теста — важен billable
+    )
+    db.add_all([partner_bot, partner_node])
+    db.flush()
+    db.add(
+        BotBsDaily(
+            bot_id=seeded["bot"].id,
+            node_id=partner_node.id,
+            day=date(2026, 9, 15),
+            used_bytes=163_200,
+            billable=False,
+        )
+    )
+    db.commit()
+
+    rows = collect_bot_usage(db, datetime(2026, 9, 1), datetime(2026, 10, 1))
+
+    # Billable-трафик с основной ноды (140) учтён, партнёрские 163200 — нет.
+    assert rows[0]["bs_bytes"] == 140
+
+
+def test_our_node_traffic_is_included_as_billable(db, seeded):
+    """Трафик с нашей (billable=True) ноды идёт в счёт как обычно."""
+    rows = collect_bot_usage(db, datetime(2026, 9, 1), datetime(2026, 10, 1))
+
+    assert rows[0]["bs_bytes"] == 140
+
+
+def test_bot_with_only_partner_node_traffic_has_zero_bs_bytes_but_stays_in_response(db, seeded):
+    """Весь трафик бота лежит на партнёрской (не билящейся) ноде: bs_bytes
+    должен стать 0, но бот не должен выпасть из ответа — у него есть другие
+    величины (арендованный хост), и ноль там не означает «нет данных»."""
+    partner_node = Node(name="appleguru-cdn-node-01", address="2.2.2.2", port=62050, api_port=62051, is_bs=True)
+    db.add(partner_node)
+    db.flush()
+
+    second_bot = Bot(username="OnlyPartnerTrafficBot")
+    inbound = ProxyInbound(tag="VLESS TCP REALITY #2")
+    db.add_all([second_bot, inbound])
+    db.flush()
+
+    rented = ProxyHost(remark="🇪🇺 второй хост", address="3.3.3.3", inbound=inbound, bots=[second_bot])
+    db.add(rented)
+    db.flush()
+    db.execute(
+        host_bot_association.update()
+        .where(host_bot_association.c.host_id == rented.id)
+        .values(rented_at=datetime(2026, 9, 1))
+    )
+    db.add(
+        BotBsDaily(
+            bot_id=second_bot.id,
+            node_id=partner_node.id,
+            day=date(2026, 9, 15),
+            used_bytes=50_000,
+            billable=False,
+        )
+    )
+    db.commit()
+
+    rows = collect_bot_usage(db, datetime(2026, 9, 1), datetime(2026, 10, 1))
+    by_bot = {r["bot_username"]: r for r in rows}
+
+    assert by_bot["OnlyPartnerTrafficBot"]["bs_bytes"] == 0
+    assert by_bot["OnlyPartnerTrafficBot"]["rented_hosts"] == 1
+
+
+def test_bot_with_only_nonbillable_traffic_and_nothing_else_is_absent(db, seeded):
+    """Зеркало предыдущего теста: бот без арендованных хостов/устройств и с
+    трафиком ТОЛЬКО на партнёрской ноде не должен появляться в ответе — у него
+    нет ни одной billable-величины, нулём притворяться нечем."""
+    partner_node = Node(name="appleguru-cdn-node-01", address="2.2.2.2", port=62050, api_port=62051, is_bs=True)
+    db.add(partner_node)
+    db.flush()
+
+    lonely_bot = Bot(username="LonelyPartnerBot")
+    db.add(lonely_bot)
+    db.flush()
+    db.add(
+        BotBsDaily(
+            bot_id=lonely_bot.id,
+            node_id=partner_node.id,
+            day=date(2026, 9, 15),
+            used_bytes=50_000,
+            billable=False,
+        )
+    )
+    db.commit()
+
+    rows = collect_bot_usage(db, datetime(2026, 9, 1), datetime(2026, 10, 1))
+
+    assert "LonelyPartnerBot" not in [r["bot_username"] for r in rows]

@@ -188,6 +188,8 @@
   "nodes.balancerLeastPing": "Least ping (with health check)",
   "nodes.balancerLeastLoad": "Least load (with health check)",
   "nodes.isBsNode": "BS node (per-node traffic limit only)",
+  "nodes.ownerBotId": "Node owner (pays for the server themselves)",
+  "nodes.ownerBotIdOurs": "— our node —",
   "nodes.bsMonthlyLimitGb": "BS monthly limit (GB)",
   "on_hold": "On Hold",
   "password": "Password",

@@ -155,6 +155,8 @@
   "nodes.usageCoefficient": "使用系数",
   "nodes.hostingTrafficLimitTb": "托管流量限额（TB）",
   "nodes.hostingTrafficLimitTbHint": "留空表示无限额。支持小数，例如 0.7。1 TB = 2⁴⁰ 字节（TiB，与主机商和 VPN Nodes 一致）。",
+  "nodes.ownerBotId": "节点所有者（自行支付服务器费用）",
+  "nodes.ownerBotIdOurs": "— 我们的节点 —",
   "on_hold": "在线",
   "password": "密码",
   "previous": "上一页",
