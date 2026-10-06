@@ -15,7 +15,9 @@ import {
 } from "@chakra-ui/react";
 import {
   ArrowPathIcon,
+  ArrowsRightLeftIcon,
   MagnifyingGlassIcon,
+  UserPlusIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import classNames from "classnames";
@@ -38,6 +40,13 @@ const iconProps = {
 const SearchIcon = chakra(MagnifyingGlassIcon, iconProps);
 const ClearIcon = chakra(XMarkIcon, iconProps);
 export const ReloadIcon = chakra(ArrowPathIcon, iconProps);
+const SyncIcon = chakra(ArrowsRightLeftIcon, iconProps);
+const CreateUserIcon = chakra(UserPlusIcon, iconProps);
+
+// До lg (телефон и планшет) текст кнопок не влезает в ряд фильтров — показываем
+// вместо него иконку, текст остаётся в aria-label и подсказке.
+const mobileOnly = { base: "block", lg: "none" };
+const desktopOnly = { base: "none", lg: "inline" };
 
 export type FilterProps = {} & BoxProps;
 const setSearchField = debounce((search: string) => {
@@ -103,8 +112,11 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       .catch(() => setBots([]));
   }, []);
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearch(e.target.value);
-    setSearchField(e.target.value);
+    // Пробелы в начале запроса не нужны и не видны глазу в результатах поиска;
+    // остальное (в т.ч. невидимые символы из Telegram) чистит бэкенд.
+    const value = e.target.value.replace(/^\s+/, "");
+    setSearch(value);
+    setSearchField(value);
   };
   const clear = () => {
     setSearch("");
@@ -163,7 +175,12 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       </GridItem>
       <GridItem colSpan={2} order={{ base: 1, md: 2 }}>
         <HStack justifyContent="flex-end" alignItems="center" h="full">
-          <FormControl w="220px" flexShrink={0}>
+          <FormControl
+            w={{ base: "auto", lg: "220px" }}
+            flex={{ base: 1, lg: "none" }}
+            minW={0}
+            flexShrink={{ lg: 0 }}
+          >
             <ReactSelect<BotOption>
               options={botOptions}
               value={selectedOption}
@@ -195,11 +212,16 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
           <Button
             variant="outline"
             h="40px"
-            px={4}
+            minW="40px"
+            px={{ base: 0, lg: 4 }}
+            flexShrink={0}
+            aria-label={t("syncInbounds")}
+            title={t("syncInbounds")}
             isLoading={isSyncingInbounds}
             onClick={() => onConfirmingSyncInbounds(true)}
           >
-            {t("syncInbounds")}
+            <SyncIcon display={mobileOnly} />
+            <chakra.span display={desktopOnly}>{t("syncInbounds")}</chakra.span>
           </Button>
           {syncStatus && (
             <HStack spacing={2}>
@@ -226,10 +248,15 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
           <Button
             colorScheme="primary"
             h="40px"
-            px={5}
+            minW="40px"
+            px={{ base: 0, lg: 5 }}
+            flexShrink={0}
+            aria-label={t("createUser")}
+            title={t("createUser")}
             onClick={() => onCreateUser(true)}
           >
-            {t("createUser")}
+            <CreateUserIcon display={mobileOnly} />
+            <chakra.span display={desktopOnly}>{t("createUser")}</chakra.span>
           </Button>
         </HStack>
       </GridItem>

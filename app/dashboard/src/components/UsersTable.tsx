@@ -259,7 +259,6 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
   const {
     filters,
     users: { users },
-    users: totalUsers,
     onEditingUser,
     onFilterChange,
   } = useDashboard();
@@ -281,7 +280,11 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
     () => window.removeEventListener("scroll", calcTop);
   }, []);
 
-  const isFiltered = users.length !== totalUsers.total;
+  // total с бэкенда уже учитывает фильтры: при пустой выдаче он тоже 0, поэтому
+  // «отфильтровано ли» смотрим по самим фильтрам, а не по сравнению счётчиков.
+  const isFiltered = Boolean(
+    filters.search || filters.status || filters.bot_username
+  );
 
   const handleSort = (column: string) => {
     let newSort = filters.sort;
@@ -315,15 +318,26 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
         display={{ base: "block", md: "none" }}
         index={selectedRow}
       >
-        <Table orientation="vertical" zIndex="docked" {...props}>
+        {/* Пять колонок на ~345px экрана: фиксированная раскладка с узкими колонками
+            цифр, имя пользователя забирает остаток ширины и обрезается многоточием.
+            Заголовкам — мелкий шрифт без разрядки, иначе они не влезают в колонки. */}
+        <Table
+          orientation="vertical"
+          zIndex="docked"
+          w="full"
+          sx={{
+            tableLayout: "fixed",
+            "& th": { fontSize: "10px", letterSpacing: "normal" },
+          }}
+          {...props}
+        >
           <Thead zIndex="docked" position="relative">
             <Tr>
               <Th
                 position="sticky"
                 top={top}
-                minW="120px"
-                pl={4}
-                pr={4}
+                pl={3}
+                pr={1}
                 cursor={"pointer"}
                 onClick={handleSort.bind(null, "username")}
               >
@@ -335,10 +349,9 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
               <Th
                 position="sticky"
                 top={top}
-                minW="50px"
                 pl={0}
                 pr={0}
-                w="140px"
+                w="56px"
                 cursor={"pointer"}
               >
                 <HStack spacing={0} position="relative">
@@ -354,6 +367,7 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
                     pointerEvents="none"
                     zIndex={1}
                     w="100%"
+                    isTruncated
                   >
                     {t("usersTable.status")}
                     {filters.status ? ": " + filters.status : ""}
@@ -386,8 +400,9 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
               <Th
                 position="sticky"
                 top={top}
-                minW="100px"
+                w="72px"
                 cursor={"pointer"}
+                pl={2}
                 pr={0}
                 onClick={handleSort.bind(null, "used_traffic")}
               >
@@ -396,19 +411,13 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
                   <Sort sort={filters.sort} column="used_traffic" />
                 </HStack>
               </Th>
-              <Th
-                position="sticky"
-                top={top}
-                minW="90px"
-                pr={2}
-              >
+              <Th position="sticky" top={top} w="72px" pl={2} pr={1}>
                 <span>{t("usersTable.bsDataUsage")}</span>
               </Th>
               <Th
                 position="sticky"
                 top={top}
-                minW="32px"
-                w="32px"
+                w="24px"
                 p={0}
                 cursor={"pointer"}
               ></Th>
@@ -423,19 +432,17 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
                       onClick={toggleAccordion.bind(null, i)}
                       cursor="pointer"
                     >
-                      <Td
-                        borderBottom={0}
-                        minW="100px"
-                        pl={4}
-                        pr={4}
-                        maxW="calc(100vw - 50px - 32px - 100px - 48px)"
-                      >
-                        <div className="flex-status">
-                          <OnlineBadge lastOnline={user.online_at} />
-                          <Text isTruncated>{user.username}</Text>
-                        </div>
+                      <Td borderBottom={0} pl={3} pr={1}>
+                        <HStack spacing={2} minW={0}>
+                          <Box flexShrink={0}>
+                            <OnlineBadge lastOnline={user.online_at} />
+                          </Box>
+                          <Text isTruncated minW={0}>
+                            {user.username}
+                          </Text>
+                        </HStack>
                       </Td>
-                      <Td borderBottom={0} minW="50px" pl={0} pr={0}>
+                      <Td borderBottom={0} pl={0} pr={0}>
                         <StatusBadge
                           compact
                           showDetail={false}
@@ -443,7 +450,7 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
                           status={user.status}
                         />
                       </Td>
-                      <Td borderBottom={0} minW="100px" pr={0}>
+                      <Td borderBottom={0} pl={2} pr={0}>
                         <UsageSliderCompact
                           totalUsedTraffic={user.lifetime_used_traffic}
                           dataLimitResetStrategy={
@@ -454,7 +461,7 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
                           colorScheme={statusColors[user.status].bandWidthColor}
                         />
                       </Td>
-                      <Td borderBottom={0} minW="90px" pr={2}>
+                      <Td borderBottom={0} pl={2} pr={1}>
                         <BsTrafficUsage
                           user={user}
                           compact
@@ -463,7 +470,7 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
                           emptyPlaceholder
                         />
                       </Td>
-                      <Td p={0} borderBottom={0} w="32px" minW="32px">
+                      <Td p={0} borderBottom={0}>
                         <AccordionArrowIcon
                           color="gray.600"
                           _dark={{
@@ -595,6 +602,13 @@ export const UsersTable: FC<UsersTableProps> = (props) => {
                   </Fragment>
                 );
               })}
+            {!useTable && users.length == 0 && (
+              <Tr>
+                <Td colSpan={5}>
+                  <EmptySection isFiltered={isFiltered} />
+                </Td>
+              </Tr>
+            )}
           </Tbody>
         </Table>
       </Accordion>
@@ -901,17 +915,17 @@ const EmptySection: FC<EmptySectionProps> = ({ isFiltered }) => {
   const { onCreateUser } = useDashboard();
   return (
     <Box
-      padding="5"
-      py="8"
+      padding={{ base: 3, md: 5 }}
+      py={{ base: 6, md: 8 }}
       display="flex"
       alignItems="center"
       flexDirection="column"
-      gap={4}
+      gap={{ base: 3, md: 4 }}
       w="full"
     >
       <EmptySectionIcon
-        maxHeight="200px"
-        maxWidth="200px"
+        maxHeight={{ base: "96px", md: "200px" }}
+        maxWidth={{ base: "96px", md: "200px" }}
         _dark={{
           'path[fill="#fff"]': {
             fill: "gray.800",
@@ -932,7 +946,13 @@ const EmptySection: FC<EmptySectionProps> = ({ isFiltered }) => {
           },
         }}
       />
-      <Text fontWeight="medium" color="gray.600" _dark={{ color: "gray.400" }}>
+      <Text
+        fontWeight="medium"
+        fontSize={{ base: "sm", md: "md" }}
+        textAlign="center"
+        color="gray.600"
+        _dark={{ color: "gray.400" }}
+      >
         {isFiltered ? t("usersTable.noUserMatched") : t("usersTable.noUser")}
       </Text>
       {!isFiltered && (
