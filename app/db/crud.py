@@ -1863,8 +1863,10 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
     """
     Retrieves usage data for all nodes within a specified time range.
 
-    Для VPN-нод с суточными снимками NIC (`node_hosting_nic_daily`, sidecar) подменяет
-    Xray-сумму на NIC in+out за календарные дни MSK в диапазоне. Master — только Xray.
+    Сначала суммирует Xray `node_usages` за период. Если sidecar заполнил
+    `node_hosting_nic_daily`, подменяет на NIC за календарные дни MSK в диапазоне.
+    Без суточных строк и без свежего hosting_used_at (отдельная панель без Prometheus)
+    остаётся только Xray. Master — только Xray.
 
     Args:
         db (Session): The database session.

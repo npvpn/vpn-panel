@@ -40,13 +40,27 @@ def nic_usage_from_daily(db: Session, start: datetime, end: datetime) -> dict[in
     return {int(node_id): (0, int(total or 0)) for node_id, total in rows}
 
 
-def fallback_usage_from_db(nodes: Sequence[Any]) -> dict[int, tuple[int, int]]:
-    """hosting_used_bytes (MTD) если суточной истории ещё нет."""
+def fallback_usage_from_db(
+    nodes: Sequence[Any],
+    *,
+    max_staleness_seconds: int = 86400,
+) -> dict[int, tuple[int, int]]:
+    """hosting_used_bytes (MTD), пока суточная история не накопилась.
+
+    Берём только ноды со свежим hosting_used_at (sidecar с Prometheus). Иначе на
+    отдельной панели без sidecar остались бы устаревшие hosting_used_bytes и
+    модалка не показывала бы Xray node_usages.
+    """
+    now = datetime.now(UTC)
     out: dict[int, tuple[int, int]] = {}
     for node in nodes:
         node_id = cast(int | None, node.id)
         used = cast(int | None, node.hosting_used_bytes)
-        if node_id is None or used is None:
+        used_at = cast(datetime | None, node.hosting_used_at)
+        if node_id is None or used is None or used_at is None:
+            continue
+        at = used_at.replace(tzinfo=UTC) if used_at.tzinfo is None else used_at.astimezone(UTC)
+        if (now - at).total_seconds() > max_staleness_seconds:
             continue
         out[node_id] = (0, int(used))
     return out

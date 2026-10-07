@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 import types
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 _saved_stubs: dict[str, types.ModuleType] = {}
 for _name, _module in list(sys.modules.items()):
@@ -80,4 +80,31 @@ def test_get_nodes_usage_overwrites_with_daily_nic():
     by_name = {r.node_name: r for r in rows}
     assert by_name["host-node"].downlink == 12000
     assert by_name["host-node"].uplink == 0
+    db.close()
+
+
+def test_get_nodes_usage_keeps_xray_without_nic_pipeline():
+    """Отдельная панель: нет daily и устаревший hosting — показываем node_usages."""
+    db = _sqlite_session()
+    node = Node(
+        name="solo",
+        address="203.0.113.2",
+        port=62050,
+        api_port=62051,
+        status=NodeStatus.connected,
+        hosting_used_bytes=50_000_000,
+        hosting_used_at=datetime(2020, 1, 1, tzinfo=UTC),
+    )
+    db.add(node)
+    db.commit()
+    hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    db.add(NodeUsage(created_at=hour, node_id=node.id, uplink=11, downlink=22))
+    db.commit()
+
+    now_msk = datetime.now(MSK)
+    start = now_msk.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    rows = get_nodes_usage(db, start, now_msk)
+    by_name = {r.node_name: r for r in rows}
+    assert by_name["solo"].uplink == 11
+    assert by_name["solo"].downlink == 22
     db.close()
