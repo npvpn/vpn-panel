@@ -139,6 +139,11 @@ class FormatVariables(dict):
 
 
 class ProxyHost(BaseModel):
+    # NPVPN-2044: id нужен для upsert в update_hosts. None на запись = новый хост.
+    # Класс один на чтение и запись (crud.py: ProxyHost as ProxyHostModify), поэтому
+    # id заодно появляется в ответе GET — фронт обязан вернуть его назад, иначе хост
+    # будет пересоздан и потеряет пины с отметкой аренды.
+    id: int | None = None
     remark: str
     address: str
     port: int | None = Field(None, nullable=True)
@@ -149,6 +154,9 @@ class ProxyHost(BaseModel):
     alpn: ProxyHostALPN = ProxyHostALPN.none
     fingerprint: ProxyHostFingerprint = ProxyHostFingerprint.none
     bot_usernames: list[str] = Field(default_factory=list)
+    # NPVPN-2044: боты, которым этот хост отмечен арендованным. Подмножество
+    # bot_usernames — аренда без доступа бессмысленна (проверяется в update_hosts).
+    rented_bot_usernames: list[str] = Field(default_factory=list)
     node_ids: list[int] = Field(default_factory=list)
     # Профиль клиентского routing (NPVPN-2024). None — фолбэк на профиль `default`.
     client_config_id: int | None = None

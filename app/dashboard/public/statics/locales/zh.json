@@ -94,11 +94,6 @@
   "hostsDialog.botTab.availableOnly": "仅可用",
   "hostsDialog.botTab.summary": "此机器人可用：{{available}} / {{total}}",
   "hostsDialog.botTab.summaryDisabled": "已禁用：{{disabled}}",
-  "hostsDialog.botTab.lockedHint": "该主机仅对此机器人可用。只能通过禁用整个主机来为该机器人关闭它——届时任何人都不会获得它。",
-  "hostsDialog.botTab.lockedTooltip": "该主机仅对此机器人可用——点击查看详情",
-  "hostsDialog.botTab.lockedHintDisabled": "该主机仅对此机器人可用，且当前已被整体禁用——任何人都不会获得它。",
-  "hostsDialog.botTab.disableHost": "禁用主机",
-  "hostsDialog.botTab.enableHost": "启用主机",
   "hostsDialog.botTab.enableAll": "全部启用",
   "hostsDialog.botTab.disableAll": "全部禁用",
   "hostsDialog.botTab.hostDisabled": "已禁用",
@@ -160,6 +155,8 @@
   "nodes.usageCoefficient": "使用系数",
   "nodes.hostingTrafficLimitTb": "托管流量限额（TB）",
   "nodes.hostingTrafficLimitTbHint": "留空表示无限额。支持小数，例如 0.7。1 TB = 2⁴⁰ 字节（TiB，与主机商和 VPN Nodes 一致）。",
+  "nodes.ownerBotId": "节点所有者（自行支付服务器费用）",
+  "nodes.ownerBotIdOurs": "— 我们的节点 —",
   "on_hold": "在线",
   "password": "密码",
   "previous": "上一页",
@@ -444,5 +441,11 @@
   "hostsDialog.addressSubsetSize": "每个用户的地址数",
   "hostsDialog.addressSubsetSize.placeholder": "全部地址",
   "hostsDialog.addressRotationDays": "每 N 天轮换一次",
-  "hostsDialog.addressRotationDays.placeholder": "2"
+  "hostsDialog.addressRotationDays.placeholder": "2",
+  "hostsDialog.availableBots.none": "nobody",
+  "hostsDialog.availableBots.noneHint": "This host is not visible to any bot: enable it for the bots you need on the Bots tab, or make it shared",
+  "hostsDialog.botTab.columnRented": "Rented",
+  "hostsDialog.botTab.rentedHint": "Grant the bot access first — only a granted host can be marked as rented",
+  "hostsDialog.grantToAll": "Grant to all bots",
+  "hostsDialog.revokeFromAll": "Revoke from all"
 }

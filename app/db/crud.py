@@ -42,6 +42,7 @@ from app.db.models import (
     UserNodePin,
     UserTemplate,
     UserUsageResetLogs,
+    host_bot_association,
     master_inbounds_association,
 )
 from app.models.admin import AdminCreate, AdminModify, AdminPartialModify
@@ -145,6 +146,40 @@ def _resolve_host_orders(db: Session, inbound_tag: str, modified_hosts: list[Pro
     return resolved
 
 
+def _apply_rental_marks(db: Session, host: ProxyHost, rented_bot_usernames: list[str]) -> None:
+    """Проставляет и снимает host_bot_association.rented_at (NPVPN-2044).
+
+    Дата НЕ переставляется у уже отмеченных: «арендует с такого числа» не должно
+    превращаться в «арендует с сегодня» при каждом сохранении формы.
+
+    Работает через Core по (host_id, bot_id), а не через relationship: аренда —
+    атрибут строки association, а переназначение коллекции host.bots удалило бы
+    и вставило эти строки заново, потеряв отметку.
+    """
+    wanted = {name for name in (_normalize_bot_username(n) for n in rented_bot_usernames or []) if name}
+    bound = {bot.username: bot.id for bot in host.bots}
+
+    unknown = wanted - set(bound)
+    if unknown:
+        raise ValueError(f"rented bot is not bound to host: {sorted(unknown)}")
+
+    db.flush()  # у нового хоста id появляется только после flush
+    wanted_ids = {bound[name] for name in wanted}
+    for bot_id in bound.values():
+        condition = and_(
+            host_bot_association.c.host_id == host.id,
+            host_bot_association.c.bot_id == bot_id,
+        )
+        if bot_id in wanted_ids:
+            db.execute(
+                host_bot_association.update()
+                .where(condition, host_bot_association.c.rented_at.is_(None))
+                .values(rented_at=datetime.utcnow())
+            )
+        else:
+            db.execute(host_bot_association.update().where(condition).values(rented_at=None))
+
+
 def _get_bots_by_usernames(db: Session, bot_usernames: list[str]) -> list[Bot]:
     normalized_usernames = []
     for username in bot_usernames or []:
@@ -227,8 +262,14 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
 
 
 def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostModify]) -> list[ProxyHost]:
-    """
-    Updates hosts for a given inbound tag.
+    """Обновляет хосты инбаунда, сохраняя identity существующих строк.
+
+    NPVPN-2044: раньше здесь было `inbound.hosts = [ProxyHost(...) ...]`, то есть
+    полное пересоздание на каждое сохранение формы. hosts.id менялся, а на него
+    ссылаются user_node_pins с ondelete=CASCADE — закрепления пользователей
+    молча исчезали, — и HostCompositionSnapshot.host_id пришлось оставить без FK.
+    Отметка аренды на host_bot_association умирала бы так же, поэтому сохранение
+    переведено на upsert по id.
 
     Args:
         db (Session): Database session.
@@ -240,36 +281,55 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
     """
     inbound = get_or_create_inbound(db, inbound_tag)
     orders = _resolve_host_orders(db, inbound_tag, modified_hosts)
-    inbound.hosts = [
-        ProxyHost(
-            remark=host.remark,
-            address=host.address,
-            port=host.port,
-            path=host.path,
-            sni=host.sni,
-            host=host.host,
-            inbound=inbound,
-            security=host.security,
-            alpn=host.alpn,
-            fingerprint=host.fingerprint,
-            allowinsecure=host.allowinsecure,
-            is_disabled=host.is_disabled,
-            mux_enable=host.mux_enable,
-            fragment_setting=host.fragment_setting,
-            noise_setting=host.noise_setting,
-            random_user_agent=host.random_user_agent,
-            use_sni_as_host=host.use_sni_as_host,
-            xhttp_extra=host.xhttp_extra,
-            order=order,
-            client_config_id=host.client_config_id,
-            address_subset_enabled=host.address_subset_enabled,
-            address_subset_size=host.address_subset_size,
-            address_rotation_days=host.address_rotation_days,
-            bots=_get_bots_by_usernames(db, host.bot_usernames),
-            nodes=_get_nodes_by_ids(db, host.node_ids),
-        )
-        for host, order in zip(modified_hosts, orders)
-    ]
+
+    incoming_ids = [host.id for host in modified_hosts if host.id is not None]
+    if len(incoming_ids) != len(set(incoming_ids)):
+        raise ValueError("duplicate host id in payload")
+
+    existing = {host.id: host for host in inbound.hosts}
+    unknown = set(incoming_ids) - set(existing)
+    if unknown:
+        raise ValueError(f"host id does not belong to inbound {inbound_tag}: {sorted(unknown)}")
+
+    incoming_id_set = set(incoming_ids)
+    for host, order in zip(modified_hosts, orders):
+        target = existing[host.id] if host.id is not None else ProxyHost(inbound=inbound)
+        target.remark = host.remark
+        target.address = host.address
+        target.port = host.port
+        target.path = host.path
+        target.sni = host.sni
+        target.host = host.host
+        target.security = host.security
+        target.alpn = host.alpn
+        target.fingerprint = host.fingerprint
+        target.allowinsecure = host.allowinsecure
+        target.is_disabled = host.is_disabled
+        target.fragment_setting = host.fragment_setting
+        target.noise_setting = host.noise_setting
+        # Эти три колонки NOT NULL с server_default, а в схеме они `bool | None`.
+        # None значит «клиент не передал поле», а не «сбросить»: присваивание
+        # None падало бы IntegrityError. False проходит и выключает флаг.
+        for _not_null_flag in ("mux_enable", "random_user_agent", "use_sni_as_host"):
+            _value = getattr(host, _not_null_flag)
+            if _value is not None:
+                setattr(target, _not_null_flag, _value)
+        target.xhttp_extra = host.xhttp_extra
+        target.order = order
+        target.client_config_id = host.client_config_id
+        target.address_subset_enabled = host.address_subset_enabled
+        target.address_subset_size = host.address_subset_size
+        target.address_rotation_days = host.address_rotation_days
+        target.bots = _get_bots_by_usernames(db, host.bot_usernames)
+        _apply_rental_marks(db, target, host.rented_bot_usernames)
+        target.nodes = _get_nodes_by_ids(db, host.node_ids)
+        if host.id is None:
+            db.add(target)
+
+    for host_id, host in existing.items():
+        if host_id not in incoming_id_set:
+            db.delete(host)
+
     db.commit()
     db.refresh(inbound)
     return get_hosts(db, inbound_tag)
@@ -1871,6 +1931,7 @@ def create_node(db: Session, node: NodeCreate) -> Node:
     dbnode.is_bs = node.is_bs
     dbnode.cascade_balancer_strategy = node.cascade_balancer_strategy
     cast(Any, dbnode).hosting_traffic_limit_bytes = node.hosting_traffic_limit_bytes
+    cast(Any, dbnode).owner_bot_id = node.owner_bot_id
     if node.cascade_routes is not None:
         _sync_cascade_routes(db, dbnode, node.cascade_routes)
 
@@ -1950,6 +2011,9 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
 
     if "hosting_traffic_limit_bytes" in modify.model_fields_set:
         cast(Any, dbnode).hosting_traffic_limit_bytes = modify.hosting_traffic_limit_bytes
+
+    if "owner_bot_id" in modify.model_fields_set:
+        cast(Any, dbnode).owner_bot_id = modify.owner_bot_id
 
     db.commit()
     db.refresh(dbnode)

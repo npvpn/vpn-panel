@@ -75,6 +75,9 @@ class Node(BaseModel):
     is_bs: bool = False
     cascade_balancer_strategy: NodeBalancerStrategy = NodeBalancerStrategy.random
     hosting_traffic_limit_bytes: int | None = None
+    # Чей это сервер (NPVPN-2044). NULL — нода наша. См. комментарий у
+    # Node.owner_bot_id в app/db/models.py — is_bs остаётся только про лимит.
+    owner_bot_id: int | None = None
 
     @field_validator("hosting_traffic_limit_bytes")
     @classmethod

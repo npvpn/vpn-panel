@@ -85,6 +85,8 @@ export const NodeSchema = z.object({
     .optional(),
   hosting_traffic_limit_bytes: z.number().nullable().optional(),
   hosting_traffic_limit_tb: hostingTrafficLimitTb,
+  // Чей это сервер (NPVPN-2044). NULL — нода наша.
+  owner_bot_id: z.number().nullable().optional(),
 });
 
 export type NodeType = z.infer<typeof NodeSchema>;
@@ -104,6 +106,7 @@ export const getNodeDefaultValues = (): NodeType => ({
   cascade_balancer_strategy: "random",
   hosting_traffic_limit_bytes: null,
   hosting_traffic_limit_tb: "",
+  owner_bot_id: null,
 });
 
 function withHostingLimitBytes(body: NodeType) {

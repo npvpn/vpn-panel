@@ -99,11 +99,6 @@
   "hostsDialog.botTab.availableOnly": "فقط در دسترس",
   "hostsDialog.botTab.summary": "در دسترس این ربات: {{available}} از {{total}}",
   "hostsDialog.botTab.summaryDisabled": "غیرفعال: {{disabled}}",
-  "hostsDialog.botTab.lockedHint": "این هاست فقط برای این ربات در دسترس است. خاموش کردن آن برای ربات فقط با غیرفعال کردن کل هاست ممکن است — در این صورت هیچ‌کس آن را دریافت نمی‌کند.",
-  "hostsDialog.botTab.lockedTooltip": "این هاست فقط برای این ربات در دسترس است — برای جزئیات کلیک کنید",
-  "hostsDialog.botTab.lockedHintDisabled": "این هاست فقط برای این ربات در دسترس است و در حال حاضر به‌طور کامل غیرفعال است — هیچ‌کس آن را دریافت نمی‌کند.",
-  "hostsDialog.botTab.disableHost": "غیرفعال کردن هاست",
-  "hostsDialog.botTab.enableHost": "فعال کردن هاست",
   "hostsDialog.botTab.enableAll": "فعال‌سازی همه",
   "hostsDialog.botTab.disableAll": "غیرفعال‌سازی همه",
   "hostsDialog.botTab.hostDisabled": "غیرفعال",
@@ -165,6 +160,8 @@
   "nodes.usageCoefficient": "ضریب گره",
   "nodes.hostingTrafficLimitTb": "سقف ترافیک هاستینگ (ترابایت)",
   "nodes.hostingTrafficLimitTbHint": "خالی یعنی بدون سقف. اعشار مجاز است: 0.7. هر ترابایت = ۲⁴⁰ بایت (مثل هاست و VPN Nodes).",
+  "nodes.ownerBotId": "مالک گره (خودش هزینه سرور را می‌پردازد)",
+  "nodes.ownerBotIdOurs": "— گره ما —",
   "on_hold": "در انتظار اتصال",
   "password": "گذرواژه",
   "previous": "قبلی",
@@ -448,5 +445,11 @@
   "hostsDialog.addressSubsetSize": "تعداد آدرس برای هر کاربر",
   "hostsDialog.addressSubsetSize.placeholder": "همه آدرس‌ها",
   "hostsDialog.addressRotationDays": "چرخش مجموعه هر N روز",
-  "hostsDialog.addressRotationDays.placeholder": "2"
+  "hostsDialog.addressRotationDays.placeholder": "2",
+  "hostsDialog.availableBots.none": "nobody",
+  "hostsDialog.availableBots.noneHint": "This host is not visible to any bot: enable it for the bots you need on the Bots tab, or make it shared",
+  "hostsDialog.botTab.columnRented": "Rented",
+  "hostsDialog.botTab.rentedHint": "Grant the bot access first — only a granted host can be marked as rented",
+  "hostsDialog.grantToAll": "Grant to all bots",
+  "hostsDialog.revokeFromAll": "Revoke from all"
 }

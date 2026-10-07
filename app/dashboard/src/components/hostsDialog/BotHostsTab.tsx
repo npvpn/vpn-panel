@@ -6,13 +6,6 @@ import {
   Input,
   InputGroup,
   InputLeftElement,
-  Popover,
-  PopoverArrow,
-  PopoverBody,
-  PopoverCloseButton,
-  PopoverContent,
-  PopoverTrigger,
-  Portal,
   Switch,
   Table,
   Tbody,
@@ -58,132 +51,21 @@ type Props = {
   onFiltersChange: (update: Partial<BotTabFilters>) => void;
 };
 
-// Пустой bot_usernames значит «хост доступен всем ботам» (см.
-// app/xray/host_addresses.py:host_allowed_for_bot), поэтому «никому» списком
-// не выразить: выключение, которое опустошило бы список, запрещено.
+// NPVPN-2044: пустой bot_usernames — законное состояние «хост не виден никому»
+// (привязок нет вовсе). Раньше выключение последнего бота
+// подставляло ВСЕХ ботов, потому что пустой список означал «всем», — то есть
+// снятие последнего тумблера давало ровно противоположное намерению.
 function nextBotUsernames(
   current: string[],
   bot: string,
-  enable: boolean,
-  allBots: string[]
+  enable: boolean
 ): string[] {
   if (enable) {
-    return current.length === 0 || current.includes(bot)
-      ? current
-      : [...current, bot];
+    return current.includes(bot) ? current : [...current, bot];
   }
 
-  const base = current.length === 0 ? allBots : current;
-  return base.filter((username) => username !== bot);
+  return current.filter((username) => username !== bot);
 }
-
-// Замок (heroicons 20/solid lock-closed) в кружке тумблера: цвет обычный —
-// хост действительно доступен, — но видно, что тумблер зафиксирован. Маска,
-// а не вложенная иконка, чтобы не менять размеры и выравнивание колонки.
-const lockIconMask = `url("data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path fill-rule="evenodd" clip-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z"/></svg>'
-)}")`;
-
-const lockedThumbSx = {
-  ".chakra-switch__thumb": { position: "relative" },
-  ".chakra-switch__thumb::after": {
-    content: '""',
-    position: "absolute",
-    inset: 0,
-    m: "auto",
-    w: "60%",
-    h: "60%",
-    bg: "primary.500",
-    maskImage: lockIconMask,
-    WebkitMaskImage: lockIconMask,
-    maskSize: "contain",
-    WebkitMaskSize: "contain",
-    maskRepeat: "no-repeat",
-    WebkitMaskRepeat: "no-repeat",
-    maskPosition: "center",
-    WebkitMaskPosition: "center",
-  },
-};
-
-// Выбранный бот — единственный у хоста: убрать его из списка нельзя (список
-// опустеет и хост уйдёт всем ботам). Вместо мёртвого тумблера — поповер по
-// клику, где хост можно выключить целиком, не уходя на вкладку «Хосты».
-// Для единственного бота «доступен» и «хост включён» — одно и то же, поэтому
-// тумблер показывает !is_disabled: после «Выключить хост» он выключается.
-const LockedHostSwitch: FC<{
-  isHostDisabled: boolean;
-  onSetHostDisabled: (disabled: boolean) => void;
-}> = ({ isHostDisabled, onSetHostDisabled }) => {
-  const { t } = useTranslation();
-
-  return (
-    <Popover isLazy placement="left">
-      {({ onClose }) => (
-        <>
-          <PopoverTrigger>
-            <Box
-              display="inline-flex"
-              verticalAlign="middle"
-              cursor="pointer"
-              role="button"
-              tabIndex={0}
-            >
-              <Tooltip
-                label={t("hostsDialog.botTab.lockedTooltip")}
-                placement="top"
-              >
-                <Box display="inline-flex">
-                  <Switch
-                    colorScheme="primary"
-                    sx={lockedThumbSx}
-                    aria-label={
-                      t("hostsDialog.botTab.columnAvailable") ?? undefined
-                    }
-                    isChecked={!isHostDisabled}
-                    isReadOnly
-                    pointerEvents="none"
-                  />
-                </Box>
-              </Tooltip>
-            </Box>
-          </PopoverTrigger>
-
-          <Portal>
-            <PopoverContent maxW="280px">
-              <PopoverArrow />
-              <PopoverCloseButton />
-              <PopoverBody pr={8}>
-                <Text fontSize="sm">
-                  {t(
-                    isHostDisabled
-                      ? "hostsDialog.botTab.lockedHintDisabled"
-                      : "hostsDialog.botTab.lockedHint"
-                  )}
-                </Text>
-                <Button
-                  mt={3}
-                  size="xs"
-                  colorScheme={isHostDisabled ? "primary" : "red"}
-                  variant="outline"
-                  onClick={() => {
-                    onSetHostDisabled(!isHostDisabled);
-                    onClose();
-                  }}
-                >
-                  {t(
-                    isHostDisabled
-                      ? "hostsDialog.botTab.enableHost"
-                      : "hostsDialog.botTab.disableHost"
-                  )}
-                </Button>
-              </PopoverBody>
-            </PopoverContent>
-          </Portal>
-        </>
-      )}
-    </Popover>
-  );
-};
 
 // Колонки, которые на узком экране прячутся — остаются remark и переключатель.
 const wideOnly = { base: "none", md: "table-cell" };
@@ -255,11 +137,11 @@ export const BotHostsTab: FC<Props> = ({
         .map((field, index) => {
           const host = watchedHosts?.[index];
           const botUsernames: string[] = host?.bot_usernames || [];
-          const isAvailable =
-            botUsernames.length === 0 || botUsernames.includes(selectedBot);
-          const canDisable =
-            nextBotUsernames(botUsernames, selectedBot, false, allBotUsernames)
-              .length > 0;
+          // NPVPN-2044: доступ даёт только привязка — исключений больше нет.
+          const isAvailable = botUsernames.includes(selectedBot);
+          // Аренда — отдельная отметка: в счёт идёт только отмеченный хост,
+          // служебную привязку (на время разбирательства) тарифицировать нельзя.
+          const isRented = (host?.rented_bot_usernames || []).includes(selectedBot);
 
           return {
             id: field.id,
@@ -270,26 +152,22 @@ export const BotHostsTab: FC<Props> = ({
             isHostDisabled: !!host?.is_disabled,
             botsLabel:
               botUsernames.length === 0
-                ? t("hostsDialog.availableBots.all")
+                ? t("hostsDialog.availableBots.none")
                 : botUsernames.map((username) => `@${username}`).join(", "),
-            botsTooltip: (botUsernames.length === 0
-              ? allBotUsernames
-              : botUsernames
-            )
+            botsTooltip: botUsernames
               .map(
                 (username) => botDisplayNames.get(username) ?? `@${username}`
               )
               .join(", "),
             isAvailable,
-            isLocked: isAvailable && !canDisable,
+            isRented,
           };
         })
         // «Активный» здесь — строка с включённым тумблером: доступная выбранному
-        // боту, а у строки с замком (см. LockedHostSwitch) — ещё и не выключенная.
+        // боту.
         .filter(
           (row) =>
-            (!activeOnly ||
-              (row.isAvailable && !(row.isLocked && row.isHostDisabled))) &&
+            (!activeOnly || row.isAvailable) &&
             (!query ||
               row.remark.toLowerCase().includes(query) ||
               row.address.toLowerCase().includes(query))
@@ -312,7 +190,7 @@ export const BotHostsTab: FC<Props> = ({
     (row) => row.isAvailable && row.isHostDisabled
   ).length;
   const canEnableAll = rows.some((row) => !row.isAvailable);
-  const canDisableAll = rows.some((row) => row.isAvailable && !row.isLocked);
+  const canDisableAll = rows.some((row) => row.isAvailable);
 
   const toggleHost = useCallback(
     (index: number, enable: boolean) => {
@@ -321,32 +199,51 @@ export const BotHostsTab: FC<Props> = ({
 
       form.setValue(
         `hosts.${index}.bot_usernames`,
-        nextBotUsernames(current, selectedBot, enable, allBotUsernames),
+        nextBotUsernames(current, selectedBot, enable),
         { shouldDirty: true }
       );
+
+      // NPVPN-2044: отбирая доступ, снимаем и аренду — иначе бэкенд ответит 400
+      // «rented bot is not bound to host» при сохранении формы.
+      if (!enable) {
+        const rented: string[] =
+          form.getValues(`hosts.${index}.rented_bot_usernames`) || [];
+        if (rented.includes(selectedBot)) {
+          form.setValue(
+            `hosts.${index}.rented_bot_usernames`,
+            rented.filter((username) => username !== selectedBot),
+            { shouldDirty: true }
+          );
+        }
+      }
     },
-    [form, selectedBot, allBotUsernames]
+    [form, selectedBot]
   );
 
-  // Тот же флаг, что тумблер «Вкл» на вкладке «Хосты»; сохраняется общей
-  // кнопкой «Применить».
-  const setHostDisabled = useCallback(
-    (index: number, disabled: boolean) => {
-      form.setValue(`hosts.${index}.is_disabled`, disabled, {
+  // NPVPN-2044: аренда — отдельная отметка. Доступ даёт привязка, а в счёт
+  // попадает только отмеченный арендованным хост.
+  const toggleRented = useCallback(
+    (index: number, enable: boolean) => {
+      const current: string[] =
+        form.getValues(`hosts.${index}.rented_bot_usernames`) || [];
+      const next = enable
+        ? current.includes(selectedBot)
+          ? current
+          : [...current, selectedBot]
+        : current.filter((username) => username !== selectedBot);
+
+      form.setValue(`hosts.${index}.rented_bot_usernames`, next, {
         shouldDirty: true,
       });
     },
-    [form]
+    [form, selectedBot]
   );
 
   // Действует только на видимые строки (с учётом поиска и фильтра), так что
-  // «отключить все» после поиска трогает лишь найденные хосты. Заблокированные
-  // строки nextBotUsernames опустошил бы — их пропускаем, как и одиночный тумблер.
+  // «отключить все» после поиска трогает лишь найденные хосты.
   const toggleAllVisible = (enable: boolean) => {
     rows
-      .filter((row) =>
-        enable ? !row.isAvailable : row.isAvailable && !row.isLocked
-      )
+      .filter((row) => (enable ? !row.isAvailable : row.isAvailable))
       .forEach((row) => toggleHost(row.index, enable));
   };
 
@@ -486,6 +383,9 @@ export const BotHostsTab: FC<Props> = ({
                 <Th {...thCell} w="112px" whiteSpace="nowrap">
                   {t("hostsDialog.botTab.columnAvailable")}
                 </Th>
+                <Th {...thCell} w="112px" whiteSpace="nowrap">
+                  {t("hostsDialog.botTab.columnRented")}
+                </Th>
               </Tr>
             </Thead>
             <Tbody>
@@ -565,14 +465,7 @@ export const BotHostsTab: FC<Props> = ({
                   </Td>
 
                   <Td {...tdCell}>
-                    {row.isLocked ? (
-                      <LockedHostSwitch
-                        isHostDisabled={row.isHostDisabled}
-                        onSetHostDisabled={(disabled) =>
-                          setHostDisabled(row.index, disabled)
-                        }
-                      />
-                    ) : (
+                    {(
                       <Switch
                         colorScheme="primary"
                         verticalAlign="middle"
@@ -585,6 +478,29 @@ export const BotHostsTab: FC<Props> = ({
                         }
                       />
                     )}
+                  </Td>
+
+                  <Td {...tdCell}>
+                    <Tooltip
+                      label={t("hostsDialog.botTab.rentedHint")}
+                      placement="top"
+                      isDisabled={row.isAvailable}
+                    >
+                      <Box display="inline-flex">
+                        <Switch
+                          colorScheme="primary"
+                          verticalAlign="middle"
+                          aria-label={
+                            t("hostsDialog.botTab.columnRented") ?? undefined
+                          }
+                          isChecked={row.isRented}
+                          isDisabled={!row.isAvailable}
+                          onChange={(e) =>
+                            toggleRented(row.index, e.target.checked)
+                          }
+                        />
+                      </Box>
+                    </Tooltip>
                   </Td>
                 </Tr>
               ))}

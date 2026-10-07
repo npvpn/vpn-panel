@@ -103,11 +103,6 @@
   "hostsDialog.botTab.availableOnly": "Available only",
   "hostsDialog.botTab.summary": "Available to this bot: {{available}} of {{total}}",
   "hostsDialog.botTab.summaryDisabled": "disabled: {{disabled}}",
-  "hostsDialog.botTab.lockedHint": "This host is available only to this bot. It can be turned off for the bot only by disabling the whole host — then no one will get it.",
-  "hostsDialog.botTab.lockedTooltip": "This host is available only to this bot — click for details",
-  "hostsDialog.botTab.lockedHintDisabled": "This host is available only to this bot and is currently disabled entirely — no one gets it.",
-  "hostsDialog.botTab.disableHost": "Disable host",
-  "hostsDialog.botTab.enableHost": "Enable host",
   "hostsDialog.botTab.enableAll": "Enable all",
   "hostsDialog.botTab.disableAll": "Disable all",
   "hostsDialog.botTab.hostDisabled": "Disabled",
@@ -193,6 +188,8 @@
   "nodes.balancerLeastPing": "Least ping (with health check)",
   "nodes.balancerLeastLoad": "Least load (with health check)",
   "nodes.isBsNode": "BS node (per-node traffic limit only)",
+  "nodes.ownerBotId": "Node owner (pays for the server themselves)",
+  "nodes.ownerBotIdOurs": "— our node —",
   "nodes.bsMonthlyLimitGb": "BS monthly limit (GB)",
   "on_hold": "On Hold",
   "password": "Password",
@@ -524,5 +521,11 @@
   "addressPins.pinCreated": "Pin created",
   "addressPins.pinCreateError": "Failed to create pin, please try again.",
   "addressPins.pinnableHostsLoadError": "Failed to load locations",
-  "addressPins.noPinnableHosts": "This user has no node-based locations available to pin."
+  "addressPins.noPinnableHosts": "This user has no node-based locations available to pin.",
+  "hostsDialog.availableBots.none": "nobody",
+  "hostsDialog.availableBots.noneHint": "This host is not visible to any bot: enable it for the bots you need on the Bots tab, or make it shared",
+  "hostsDialog.botTab.columnRented": "Rented",
+  "hostsDialog.botTab.rentedHint": "Grant the bot access first — only a granted host can be marked as rented",
+  "hostsDialog.grantToAll": "Grant to all bots",
+  "hostsDialog.revokeFromAll": "Revoke from all"
 }

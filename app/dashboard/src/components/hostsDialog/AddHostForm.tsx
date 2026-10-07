@@ -46,6 +46,8 @@ export const EMPTY_HOST: z.infer<typeof hostItemSchema> = {
   bot_usernames: [],
   node_ids: [],
   client_config_id: null,
+  // NPVPN-2044: новый хост не виден никому, пока его не привязали к боту.
+  rented_bot_usernames: [],
   address_subset_enabled: false,
   address_subset_size: null,
   address_rotation_days: null,

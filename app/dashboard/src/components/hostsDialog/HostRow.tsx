@@ -49,6 +49,7 @@ type HostRowProps = {
   accordionErrors?: any;
   t: (key: string, opts?: any) => string;
   duplicateHost: (index: number) => void;
+  grantToAllBots: (index: number, grant: boolean) => void;
   moveHostPosition: (index: number, direction: "up" | "down") => void;
   removeHost: (index: number) => void;
   canMoveUp: boolean;
@@ -160,6 +161,7 @@ export const HostRow = memo(function HostRow({
   accordionErrors,
   t,
   duplicateHost,
+  grantToAllBots,
   moveHostPosition,
   removeHost,
   canMoveUp,
@@ -180,12 +182,18 @@ export const HostRow = memo(function HostRow({
     return bot?.title ? `${bot.title} (@${username})` : `@${username}`;
   });
 
-  const isAvailableToAllBots = botNames.length === 0;
+  // NPVPN-2044: «всем» — это привязка ко всем ботам панели, отдельного флага
+  // больше нет. Пустая привязка значит «никому», и при правиле «только по
+  // привязке» именно эта метка отличает «ещё не выдали» от «забыли выдать».
+  const isAvailableToAllBots = bots.length > 0 && botNames.length === bots.length;
+  const isVisibleToNobody = botNames.length === 0;
 
   const botBadgeLabel = isAvailableToAllBots
     ? bots.length > 1
       ? t("hostsDialog.availableBots.all")
       : null
+    : isVisibleToNobody
+    ? t("hostsDialog.availableBots.none")
     : botNames.length === 1
     ? botNames[0]
     : `${botNames[0]} +${botNames.length - 1}`;
@@ -196,6 +204,8 @@ export const HostRow = memo(function HostRow({
 
   const botBadgeTooltip = isAvailableToAllBots
     ? allBotNames.join(", ") || null
+    : isVisibleToNobody
+    ? t("hostsDialog.availableBots.noneHint")
     : botNames.join(", ") || null;
 
   const hasAdvancedErrors = hasAdvancedFieldErrors(
@@ -360,6 +370,33 @@ export const HostRow = memo(function HostRow({
                 onClick={() => duplicateHost(index)}
               >
                 <DuplicateIcon />
+              </IconButton>
+            </Tooltip>
+
+            {/* NPVPN-2044: массовая выдача — без неё общая локация требует
+                переключения у каждого бота по очереди на вкладке «Боты». */}
+            <Tooltip
+              label={
+                isAvailableToAllBots
+                  ? t("hostsDialog.revokeFromAll")
+                  : t("hostsDialog.grantToAll")
+              }
+              placement="left"
+            >
+              <IconButton
+                aria-label={
+                  isAvailableToAllBots
+                    ? t("hostsDialog.revokeFromAll")
+                    : t("hostsDialog.grantToAll")
+                }
+                size="xs"
+                colorScheme="white"
+                variant="ghost"
+                onClick={() => grantToAllBots(index, !isAvailableToAllBots)}
+              >
+                <Text fontSize="xs" fontWeight="bold">
+                  {isAvailableToAllBots ? "0" : "∀"}
+                </Text>
               </IconButton>
             </Tooltip>
 

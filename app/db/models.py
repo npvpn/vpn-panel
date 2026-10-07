@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -20,7 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import object_session, relationship
 from sqlalchemy.sql.expression import select, text
 
 from app import xray
@@ -39,6 +40,10 @@ host_bot_association = Table(
     Base.metadata,
     Column("host_id", ForeignKey("hosts.id", ondelete="CASCADE"), primary_key=True),
     Column("bot_id", ForeignKey("bots.id", ondelete="CASCADE"), primary_key=True),
+    # NPVPN-2044: с какого момента бот арендует этот хост. Свойство пары, а не
+    # хоста: один хост может быть отдан нескольким ботам. NULL — привязка
+    # служебная (поставили на время разбирательства), в счёт она не идёт.
+    Column("rented_at", DateTime, nullable=True),
 )
 
 host_nodes_association = Table(
@@ -517,6 +522,26 @@ class ProxyHost(Base):
     def bot_usernames(self):
         return [bot.username for bot in self.bots]
 
+    @property
+    def rented_bot_usernames(self):
+        """Боты, для которых этот хост отмечен арендованным (NPVPN-2044).
+
+        Источник колонки «арендованные хосты» в счёте: привязка без `rented_at` —
+        служебная (поставили на время разбирательства) и в счёт не идёт.
+        """
+        session = object_session(self)
+        if session is None:
+            return []
+        rented_ids = set(
+            session.execute(
+                select(host_bot_association.c.bot_id).where(
+                    host_bot_association.c.host_id == self.id,
+                    host_bot_association.c.rented_at.isnot(None),
+                )
+            ).scalars()
+        )
+        return [bot.username for bot in self.bots if bot.id in rented_ids]
+
     nodes = relationship("Node", secondary=host_nodes_association, passive_deletes=True)
 
     @property
@@ -607,6 +632,14 @@ class Node(Base):
         server_default=NodeBalancerStrategy.random.value,
     )
     is_bs = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    # Чей это сервер (NPVPN-2044). NULL — нода наша, её трафик идёт в счёт
+    # партнёрам (is_bs=True на такой ноде — это «у нас арендован БС-лимит»).
+    # Непусто — нода принадлежит этому боту: он платит за сервер сам, и в счёт
+    # её трафик не должен попадать, даже когда is_bs=True (лимит на ней всё
+    # равно действует для пользователей бота). is_bs продолжает означать
+    # ИСКЛЮЧИТЕЛЬНО действие БС-лимита — владелец это отдельный, независимый
+    # признак. SET NULL, не CASCADE: удаление бота не должно удалять ноду.
+    owner_bot_id = Column(Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True)
     # Лимит трафика у хостера на этот сервер (SI-байты). NULL — лимита нет.
     hosting_traffic_limit_bytes = Column(BigInteger, nullable=True)
     # Израсходованный NIC-трафик за месяц. Панель его сама не знает: это счётчик
@@ -652,6 +685,48 @@ class NodeUserBsUsage(Base):
     monthly_used = Column(BigInteger, nullable=False, default=0, server_default=text("0"))
     monthly_period = Column(String(7), nullable=True)  # "YYYY-MM"
     user = relationship("User", back_populates="node_bs_usages")
+
+
+class BotBsDaily(Base):
+    """Суточный расход БС-трафика по боту и ноде (NPVPN-2044).
+
+    Источник колонки «БС-трафик» в счёте партнёру. Считать можно и из сырого
+    node_user_usages, но тогда счета держатся на том, что никто не выставит
+    NODE_USER_USAGE_RETENTION_DAYS, — а та таблица 11 ГБ и растёт на 1.6 млн
+    строк в месяц. Здесь 27 ботов x 4 БС-ноды x 365 дней ~= 39 тысяч строк в год,
+    и ретеншн не нужен вовсе.
+
+    bot_id и node_id НАРОЧНО без FK — та же причина, что у NodeWeightSnapshot и
+    HostCompositionSnapshot: это архивная запись, а не текущее состояние.
+    Удаление ноды или бота не должно стирать трафик, за который партнёру уже
+    выставили счёт; иначе прошлый период молча обнулится и будет выглядеть как
+    «трафика не было». Индексы на месте, ссылочной целостности нет.
+
+    Зерно с нодой, а не только с ботом: при споре «откуда 527 ГБ» надо отвечать
+    «вот на этих локациях», а стоимость та же.
+
+    billable — считать ли эту строку в счёте партнёру (NPVPN-2044.1). Часть
+    БС-нод принадлежит самим партнёрам (они сами платят за сервер, is_bs=True
+    у ноды — только про действующий на ней лимит), и их трафик в счёт не идёт.
+    Признак зафиксирован ЗДЕСЬ, в момент записи агрегата, а не выводится
+    джойном на nodes.owner_bot_id при построении отчёта: джойн бы означал, что
+    (а) удаление ноды тихо убирает её трафик из счёта и (б) смена владельца
+    ноды переклассифицирует задним числом все прошлые периоды — оба случая
+    это молчаливое изменение уже выставленных счетов, что здесь запрещено тем
+    же принципом, что и у bot_id/node_id без FK выше. Строки партнёрских нод
+    ПИШУТСЯ (billable=False), а не пропускаются — агрегат должен отвечать на
+    «откуда 527 ГБ» по всем локациям, даже тем, что не идут в счёт.
+    """
+
+    __tablename__ = "bot_bs_daily"
+    __table_args__ = (UniqueConstraint("bot_id", "node_id", "day", name="uq_bot_bs_daily"),)
+
+    id = Column(Integer, primary_key=True)
+    bot_id = Column(Integer, nullable=False, index=True)
+    node_id = Column(Integer, nullable=False, index=True)
+    day = Column(Date, nullable=False, index=True)
+    used_bytes = Column(BigInteger, nullable=False, default=0, server_default=text("0"))
+    billable = Column(Boolean, nullable=False, default=True, server_default=text("1"))
 
 
 class NodeUserBlock(Base):

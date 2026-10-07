@@ -2,6 +2,15 @@ import { z } from "zod";
 
 export const hostItemSchema = z
   .object({
+    // NPVPN-2044: id хоста обязателен к передаче назад — без него бэкенд
+    // пересоздаст хост (upsert в crud.update_hosts сопоставляет по id) и потеряет
+    // отметку аренды вместе с закреплениями пользователей. undefined = новый хост.
+    //
+    // Поле названо host_id, а не id, НАМЕРЕННО: useFieldArray из react-hook-form
+    // занимает имя `id` под свой строковый ключ строки и перетёр бы число —
+    // payload уехал бы с ключом формы вместо настоящего id. Переименование
+    // обратно в `id` делает groupHosts при отправке.
+    host_id: z.number().optional(),
     inbound_tag: z.string().min(1),
     order: z.number().int(),
     remark: z.string().min(1, "Remark is required"),
@@ -50,6 +59,9 @@ export const hostItemSchema = z
         { message: "Must be a valid JSON object" }
       ),
     bot_usernames: z.array(z.string()).default([]),
+    // NPVPN-2044: боты, которым хост отмечен арендованным. Подмножество
+    // bot_usernames — бэкенд отвергает аренду без привязки.
+    rented_bot_usernames: z.array(z.string()).default([]),
     node_ids: z.array(z.number()).default([]),
     client_config_id: z.number().nullable().default(null),
     // NPVPN-2072: сужение адресов настраивается на хосте. Пустое поле = null

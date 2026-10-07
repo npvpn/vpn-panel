@@ -23,8 +23,10 @@ import { FC, ReactNode, useEffect, useMemo, useState } from "react";
 import { Controller, useFieldArray, UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { UseMutateFunction } from "react-query";
+import { fetch } from "service/http";
 import "slick-carousel/slick/slick-theme.css";
 import "slick-carousel/slick/slick.css";
+import { Bot } from "types/Bot";
 import { useDashboard } from "../contexts/DashboardContext";
 import { Input } from "./Input";
 
@@ -99,6 +101,15 @@ export const NodeForm: NodeFormType = ({
     remove: removeRoute,
   } = useFieldArray({ control: form.control, name: "cascade_routes" });
   const [showCertificate, setShowCertificate] = useState(false);
+  // Список ботов для выбора владельца ноды (NPVPN-2044). Готового селекта
+  // ботов в карточке ноды не было — переиспользуем эндпоинт /bots, тот же,
+  // что HostsDialog уже тянет для вкладки «По ботам».
+  const [bots, setBots] = useState<Bot[]>([]);
+  useEffect(() => {
+    fetch<Bot[]>("/bots")
+      .then(setBots)
+      .catch(() => setBots([]));
+  }, []);
 
   const certUrl = useMemo(() => {
     if (!nodeSettings?.certificate) return null;
@@ -310,6 +321,29 @@ export const NodeForm: NodeFormType = ({
           <Checkbox {...form.register("is_bs")}>
             <FormLabel m={0}>{t("nodes.isBsNode")}</FormLabel>
           </Checkbox>
+        </FormControl>
+        <FormControl py={1}>
+          <FormLabel>{t("nodes.ownerBotId")}</FormLabel>
+          <Controller
+            name="owner_bot_id"
+            control={form.control}
+            render={({ field }) => (
+              <Select
+                size="sm"
+                value={field.value ?? ""}
+                onChange={(e) =>
+                  field.onChange(e.target.value === "" ? null : Number(e.target.value))
+                }
+              >
+                <option value="">{t("nodes.ownerBotIdOurs")}</option>
+                {bots.map((bot) => (
+                  <option key={bot.id} value={bot.id}>
+                    {bot.username}
+                  </option>
+                ))}
+              </Select>
+            )}
+          />
         </FormControl>
         {inboundTags.length > 0 && (
           <FormControl py={1}>
