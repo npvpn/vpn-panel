@@ -39,6 +39,7 @@
   "header.logout": "خروج",
   "header.nodeSettings": "تنظیمات گره‌ها",
   "header.nodesUsage": "نمودار گره‌ها",
+  "header.nodesUsageHint": "ترافیک NIC ورود+خروج (node_exporter)، مانند Grafana",
   "hostsDialog.addHost": "افزودن هاست",
   "hostsDialog.advancedOptions": "تنظیمات پیشرفته",
   "hostsDialog.allowinsecure": "Allow Insecure",

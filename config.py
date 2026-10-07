@@ -291,3 +291,9 @@ XRAY_NODE_REST_STOP_TIMEOUT = config("XRAY_NODE_REST_STOP_TIMEOUT", cast=int, de
 XRAY_NODE_GRPC_READY_TIMEOUT = config("XRAY_NODE_GRPC_READY_TIMEOUT", cast=int, default=20)
 XRAY_NODE_GRPC_READY_RETRIES = config("XRAY_NODE_GRPC_READY_RETRIES", cast=int, default=3)
 XRAY_NODE_GRPC_READY_RETRY_DELAY = config("XRAY_NODE_GRPC_READY_RETRY_DELAY", cast=int, default=2)
+
+# NIC-трафик нод для «Использование узлов» (как Grafana hosting-nodes-limits).
+PROMETHEUS_URL = config("PROMETHEUS_URL", default="http://prometheus:9090")
+VPN_NODES_PROMETHEUS_JOB = config("VPN_NODES_PROMETHEUS_JOB", default="vpn_nodes")
+VPN_NODE_EXPORTER_PORT = config("VPN_NODE_EXPORTER_PORT", cast=int, default=9100)
+VPN_NODES_RESOLVE_DNS = config("VPN_NODES_RESOLVE_DNS", cast=bool, default=False)

@@ -1863,6 +1863,9 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
     """
     Retrieves usage data for all nodes within a specified time range.
 
+    Для VPN-нод с node_exporter предпочитает NIC rx+tx из Prometheus (как Grafana).
+    Master и ноды без замера остаются на агрегате Xray outbound (`node_usages`).
+
     Args:
         db (Session): The database session.
         start (datetime): The start time of the usage period.
@@ -1871,13 +1874,26 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
     Returns:
         List[NodeUsageResponse]: A list of NodeUsageResponse objects containing usage data.
     """
+    from app.utils.hosting_nic_traffic import (
+        fallback_usage_from_db,
+        fetch_nic_usage_by_node_id,
+        is_calendar_month_to_date_msk,
+    )
+    from config import (
+        PROMETHEUS_URL,
+        VPN_NODE_EXPORTER_PORT,
+        VPN_NODES_PROMETHEUS_JOB,
+        VPN_NODES_RESOLVE_DNS,
+    )
+
     usages = {
         0: NodeUsageResponse(  # Main Core
             node_id=None, node_name="Master", uplink=0, downlink=0
         )
     }
 
-    for node in db.query(Node).all():
+    nodes = db.query(Node).all()
+    for node in nodes:
         usages[node.id] = NodeUsageResponse(node_id=node.id, node_name=node.name, uplink=0, downlink=0)
 
     cond = and_(NodeUsage.created_at >= start, NodeUsage.created_at <= end)
@@ -1888,6 +1904,25 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
             usages[v.node_id or 0].downlink += v.downlink
         except KeyError:
             pass
+
+    nic_by_node = fetch_nic_usage_by_node_id(
+        nodes,
+        start,
+        end,
+        prometheus_url=PROMETHEUS_URL,
+        job=VPN_NODES_PROMETHEUS_JOB,
+        exporter_port=VPN_NODE_EXPORTER_PORT,
+        resolve_dns=VPN_NODES_RESOLVE_DNS,
+    )
+    if not nic_by_node and is_calendar_month_to_date_msk(start, end):
+        nic_by_node = fallback_usage_from_db(nodes)
+
+    for node_id, (rx, tx) in nic_by_node.items():
+        entry = usages.get(node_id)
+        if entry is None:
+            continue
+        entry.uplink = rx
+        entry.downlink = tx
 
     return list(usages.values())
 

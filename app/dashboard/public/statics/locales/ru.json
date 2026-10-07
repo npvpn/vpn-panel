@@ -36,6 +36,7 @@
   "header.logout": "Выйти",
   "header.nodeSettings": "Настройки узлов",
   "header.nodesUsage": "Использование узлов",
+  "header.nodesUsageHint": "NIC in+out (node_exporter), как в Grafana «Лимит трафика на нодах»",
   "hostsDialog.addHost": "Добавить хост",
   "hostsDialog.advancedOptions": "Настройки",
   "hostsDialog.allowinsecure": "Allow Insecure",

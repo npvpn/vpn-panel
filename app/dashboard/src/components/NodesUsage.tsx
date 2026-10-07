@@ -59,7 +59,7 @@ export const NodesUsage: FC<NodesUsageProps> = () => {
   useEffect(() => {
     if (isShowingNodesUsage) {
       fetchUsageWithFilter({
-        start: dayjs().utc().subtract(30, "day").format("YYYY-MM-DDTHH:00:00"),
+        start: dayjs().utc().subtract(1, "month").format("YYYY-MM-DDTHH:00:00"),
       });
     }
   }, [isShowingNodesUsage]);
@@ -84,6 +84,9 @@ export const NodesUsage: FC<NodesUsageProps> = () => {
               {t("header.nodesUsage")}
             </Text>
           </HStack>
+          <Text fontSize="sm" color="gray.500" fontWeight="normal" mt={1}>
+            {t("header.nodesUsageHint")}
+          </Text>
         </ModalHeader>
         <ModalCloseButton mt={3} disabled={disabled} />
         <ModalBody>
