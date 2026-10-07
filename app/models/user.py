@@ -223,6 +223,11 @@ class UserModify(User):
     status: UserStatusModify = None
     data_limit_reset_strategy: UserDataLimitResetStrategy = None
     bs_extra: int | None = None
+    bs_limit_total: int | None = Field(
+        default=None,
+        ge=0,
+        description="Суммарный месячный БС-лимит пользователя (байты); null — не менять",
+    )
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -245,6 +250,16 @@ class UserModify(User):
             }
         }
     )
+
+    @field_validator("bs_limit_total", mode="before")
+    def cast_bs_limit_total_to_int(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, float):
+            return int(v)
+        if isinstance(v, int):
+            return v
+        raise ValueError("bs_limit_total must be an integer or a float, not a string")
 
     @property
     def excluded_inbounds(self):
