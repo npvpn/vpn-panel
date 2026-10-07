@@ -528,6 +528,20 @@ UsersSortingOptions = Enum(
 )
 
 
+# Невидимые символы, которые прилипают к строке при копировании из Telegram и
+# мессенджеров: внутри ILIKE '%...%' любой из них ломает совпадение (NPVPN-2161).
+_SEARCH_INVISIBLE_CHARS = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"))
+_SEARCH_SPACE_CHARS = dict.fromkeys(map(ord, "\u00a0\u2007\u202f"), " ")
+
+
+def normalize_users_search(search: str | None) -> str | None:
+    """Строка поиска пользователей без невидимых символов и пробелов по краям; None — если пусто."""
+    if search is None:
+        return None
+    search = search.translate(_SEARCH_INVISIBLE_CHARS).translate(_SEARCH_SPACE_CHARS).strip()
+    return search or None
+
+
 def get_users(
     db: Session,
     offset: int | None = None,
@@ -564,6 +578,7 @@ def get_users(
     """
     query = get_user_queryset(db)
 
+    search = normalize_users_search(search)
     if search:
         query = query.filter(or_(User.username.ilike(f"%{search}%"), User.note.ilike(f"%{search}%")))
 
