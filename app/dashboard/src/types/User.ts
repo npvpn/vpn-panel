@@ -69,7 +69,10 @@ export type UserCreate = Pick<
   | "status"
   | "note"
   | "bot_username"
->;
+> & {
+  /** Суммарный месячный БС-лимит (байты), только при редактировании пользователя */
+  bs_limit_total?: number | null;
+};
 
 export type UserApi = {
   discord_webook: string;

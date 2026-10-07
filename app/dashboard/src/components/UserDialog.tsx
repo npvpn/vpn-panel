@@ -92,8 +92,10 @@ const UserUsageIcon = chakra(ChartPieIcon, {
 
 export type UserDialogProps = {};
 
-export type FormType = Pick<UserCreate, keyof UserCreate> & {
+export type FormType = Omit<UserCreate, "bs_limit_total"> & {
   selected_proxies: ProxyKeys;
+  /** Суммарный БС-лимит в ГБ (в API уходит как bs_limit_total в байтах) */
+  bs_limit_total?: number | null;
 };
 
 interface BotOption {
@@ -108,6 +110,10 @@ const formatUser = (user: User): FormType => {
     data_limit: user.data_limit
       ? Number((user.data_limit / 1073741824).toFixed(5))
       : user.data_limit,
+    bs_limit_total:
+      user.bs_monthly_limit_total != null && user.bs_monthly_limit_total > 0
+        ? Number((user.bs_monthly_limit_total / 1073741824).toFixed(5))
+        : null,
     device_limit: user.device_limit ?? null,
     on_hold_expire_duration: user.on_hold_expire_duration
       ? Number(user.on_hold_expire_duration / (24 * 60 * 60))
@@ -124,6 +130,7 @@ const getDefaultValues = (): FormType => {
   return {
     selected_proxies: Object.keys(defaultInbounds) as ProxyKeys,
     data_limit: null,
+    bs_limit_total: null,
     device_limit: null,
     expire: null,
     username: "",
@@ -187,6 +194,17 @@ const baseSchema = {
     .or(z.number())
     .nullable()
     .transform((str) => {
+      if (str) return Number((parseFloat(String(str)) * 1073741824).toFixed(5));
+      return 0;
+    }),
+  bs_limit_total: z
+    .string()
+    .min(0)
+    .or(z.number())
+    .nullable()
+    .optional()
+    .transform((str) => {
+      if (str === "" || str === null || str === undefined) return undefined;
       if (str) return Number((parseFloat(String(str)) * 1073741824).toFixed(5));
       return 0;
     }),
@@ -339,7 +357,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
     const method = isEditing ? "edited" : "created";
     setError(null);
 
-    const { selected_proxies, ...rest } = values;
+    const { selected_proxies, bs_limit_total, ...rest } = values;
 
     let body: UserCreate = {
       ...rest,
@@ -356,6 +374,9 @@ export const UserDialog: FC<UserDialogProps> = () => {
           ? values.status
           : "active",
     };
+    if (isEditing && bs_limit_total !== undefined) {
+      body.bs_limit_total = bs_limit_total;
+    }
 
     methods[method](body)
       .then(() => {
@@ -660,6 +681,36 @@ export const UserDialog: FC<UserDialogProps> = () => {
                             }}
                           />
                         </FormControl>
+                        {isEditing &&
+                          editingUser?.bs_monthly_limit_total != null &&
+                          editingUser.bs_monthly_limit_total > 0 && (
+                            <FormControl mb={"10px"}>
+                              <FormLabel>{t("userDialog.bsDataLimit")}</FormLabel>
+                              <Controller
+                                control={form.control}
+                                name="bs_limit_total"
+                                render={({ field }) => {
+                                  return (
+                                    <Input
+                                      endAdornment="GB"
+                                      type="number"
+                                      size="sm"
+                                      borderRadius="6px"
+                                      onChange={field.onChange}
+                                      disabled={disabled}
+                                      error={
+                                        form.formState.errors.bs_limit_total
+                                          ?.message
+                                      }
+                                      value={
+                                        field.value ? String(field.value) : ""
+                                      }
+                                    />
+                                  );
+                                }}
+                              />
+                            </FormControl>
+                          )}
                         <FormControl mb={"10px"}>
                           <FormLabel>{t("userDialog.deviceLimit")}</FormLabel>
                           <Controller

@@ -573,3 +573,23 @@ def test_reset_pool_sets_current_period(db):
     user = db.query(User).filter(User.id == USER_ID).one()
     assert user.bs_extra == 0
     assert user.bs_extra_period == period_keys(datetime.utcnow())
+
+
+def test_update_user_sets_bs_limit_total(db):
+    from app.db import crud
+    from app.models.user import UserModify
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 2 * GB
+    db.commit()
+
+    modify = UserModify(
+        proxies={},
+        bs_limit_total=8 * GB,
+    )
+    crud.update_user(db, db.query(User).filter(User.id == USER_ID).one(), modify)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 5 * GB
+    assert user.bs_monthly_limit_total == 8 * GB
