@@ -1,59 +1,83 @@
-"""NIC-трафик нод для /nodes/usage (Prometheus + fallback hosting_used_bytes)."""
+"""Суточные NIC-снимки и агрегация для /nodes/usage."""
 
-from datetime import UTC, datetime, timedelta, timezone
-from unittest.mock import patch
+from __future__ import annotations
 
-from app.utils import hosting_nic_traffic as nic
+import sys
+import types
+from datetime import date, datetime, timedelta, timezone
+
+_saved_stubs: dict[str, types.ModuleType] = {}
+for _name, _module in list(sys.modules.items()):
+    if _name.startswith("app.") and not hasattr(_module, "__file__") and not hasattr(_module, "__path__"):
+        _saved_stubs[_name] = sys.modules.pop(_name)
+
+_share_stub = types.ModuleType("app.subscription.share")
+_share_stub.generate_v2ray_links = lambda *args, **kwargs: []
+sys.modules.setdefault("app.subscription.share", _share_stub)
+
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+
+from app.db.base import Base  # noqa: E402
+from app.db.crud import get_nodes_usage  # noqa: E402
+from app.db.models import Node, NodeHostingNicDaily, NodeUsage  # noqa: E402
+from app.models.node import NodeStatus  # noqa: E402
+from app.utils import hosting_nic_traffic as nic  # noqa: E402
+
+if sys.modules.get("app.subscription.share") is _share_stub:
+    del sys.modules["app.subscription.share"]
+
+sys.modules.update(_saved_stubs)
 
 MSK = timezone(timedelta(hours=3))
 
 
-def test_promql_duration_min_one_minute():
-    start = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
-    end = start + timedelta(seconds=30)
-    assert nic.promql_duration(start, end) in ("60s", "1m")
+def _sqlite_session():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)()
 
 
-def test_nic_queries_match_grafana_shape():
-    rx, tx = nic.nic_receive_transmit_queries("vpn_nodes", "7d")
-    assert 'job="vpn_nodes"' in rx
-    assert 'instance=~".*:9100"' in rx
-    assert "node_network_receive_bytes_total" in rx
-    assert "node_network_transmit_bytes_total" in tx
-    assert 'device!~"lo|veth.*|docker.*|br-.*"' in rx
+def test_nic_usage_from_daily_sums_days_in_range():
+    db = _sqlite_session()
+    node = Node(name="n1", address="1.1.1.1", port=62050, api_port=62051, status=NodeStatus.connected)
+    db.add(node)
+    db.commit()
+    db.add(NodeHostingNicDaily(node_id=node.id, day=date(2026, 3, 10), used_bytes=100))
+    db.add(NodeHostingNicDaily(node_id=node.id, day=date(2026, 3, 11), used_bytes=200))
+    db.add(NodeHostingNicDaily(node_id=node.id, day=date(2026, 3, 20), used_bytes=999))
+    db.commit()
+
+    start = datetime(2026, 3, 10, 12, 0, tzinfo=MSK)
+    end = datetime(2026, 3, 11, 18, 0, tzinfo=MSK)
+    got = nic.nic_usage_from_daily(db, start, end)
+    assert got[node.id] == (0, 300)
+    db.close()
 
 
-def test_fetch_nic_usage_maps_instance_to_node():
-    node = type("N", (), {"id": 5, "name": "nl-1", "address": "203.0.113.10"})()
-    rx_payload = {
-        "status": "success",
-        "data": {"result": [{"metric": {"instance": "203.0.113.10:9100"}, "value": [1, "1000"]}]},
-    }
-    tx_payload = {
-        "status": "success",
-        "data": {"result": [{"metric": {"instance": "203.0.113.10:9100"}, "value": [1, "500"]}]},
-    }
+def test_get_nodes_usage_overwrites_with_daily_nic():
+    db = _sqlite_session()
+    node = Node(
+        name="host-node",
+        address="203.0.113.1",
+        port=62050,
+        api_port=62051,
+        status=NodeStatus.connected,
+        hosting_used_bytes=99_000_000,
+    )
+    db.add(node)
+    db.commit()
+    db.add(NodeHostingNicDaily(node_id=node.id, day=date(2026, 3, 1), used_bytes=4000))
+    db.add(NodeHostingNicDaily(node_id=node.id, day=date(2026, 3, 2), used_bytes=8000))
+    hour = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    db.add(NodeUsage(created_at=hour, node_id=node.id, uplink=100, downlink=200))
+    db.commit()
 
-    def fake_query(_url, query, eval_time=None, timeout=15.0):
-        if "receive" in query:
-            return nic.parse_prom_instant_vector(rx_payload)
-        return nic.parse_prom_instant_vector(tx_payload)
-
-    start = datetime(2026, 3, 1, tzinfo=UTC)
-    end = datetime(2026, 3, 8, tzinfo=UTC)
-    with patch.object(nic, "query_prometheus_instant", side_effect=fake_query):
-        got = nic.fetch_nic_usage_by_node_id(
-            [node],
-            start,
-            end,
-            prometheus_url="http://prom:9090",
-            job="vpn_nodes",
-            exporter_port=9100,
-            resolve_dns=False,
-        )
-    assert got == {5: (1000, 500)}
-
-
-def test_fallback_usage_from_db_uses_hosting_used_bytes():
-    node = type("N", (), {"id": 3, "hosting_used_bytes": 9_000_000})()
-    assert nic.fallback_usage_from_db([node]) == {3: (0, 9_000_000)}
+    start = datetime(2026, 3, 1, tzinfo=MSK)
+    end = datetime(2026, 3, 2, 23, 59, tzinfo=MSK)
+    rows = get_nodes_usage(db, start, end)
+    by_name = {r.node_name: r for r in rows}
+    assert by_name["host-node"].downlink == 12000
+    assert by_name["host-node"].uplink == 0
+    db.close()

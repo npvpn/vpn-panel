@@ -59,7 +59,7 @@ export const NodesUsage: FC<NodesUsageProps> = () => {
   useEffect(() => {
     if (isShowingNodesUsage) {
       fetchUsageWithFilter({
-        start: dayjs().utc().subtract(1, "month").format("YYYY-MM-DDTHH:00:00"),
+        start: dayjs().utc().subtract(30, "day").format("YYYY-MM-DDTHH:00:00"),
       });
     }
   }, [isShowingNodesUsage]);

@@ -1863,8 +1863,8 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
     """
     Retrieves usage data for all nodes within a specified time range.
 
-    Для VPN-нод с node_exporter предпочитает NIC rx+tx из Prometheus (как Grafana).
-    Master и ноды без замера остаются на агрегате Xray outbound (`node_usages`).
+    Для VPN-нод с суточными снимками NIC (`node_hosting_nic_daily`, sidecar) подменяет
+    Xray-сумму на NIC in+out за календарные дни MSK в диапазоне. Master — только Xray.
 
     Args:
         db (Session): The database session.
@@ -1876,14 +1876,8 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
     """
     from app.utils.hosting_nic_traffic import (
         fallback_usage_from_db,
-        fetch_nic_usage_by_node_id,
         is_calendar_month_to_date_msk,
-    )
-    from config import (
-        PROMETHEUS_URL,
-        VPN_NODE_EXPORTER_PORT,
-        VPN_NODES_PROMETHEUS_JOB,
-        VPN_NODES_RESOLVE_DNS,
+        nic_usage_from_daily,
     )
 
     usages = {
@@ -1905,15 +1899,7 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
         except KeyError:
             pass
 
-    nic_by_node = fetch_nic_usage_by_node_id(
-        nodes,
-        start,
-        end,
-        prometheus_url=PROMETHEUS_URL,
-        job=VPN_NODES_PROMETHEUS_JOB,
-        exporter_port=VPN_NODE_EXPORTER_PORT,
-        resolve_dns=VPN_NODES_RESOLVE_DNS,
-    )
+    nic_by_node = nic_usage_from_daily(db, start, end)
     if not nic_by_node and is_calendar_month_to_date_msk(start, end):
         nic_by_node = fallback_usage_from_db(nodes)
 
