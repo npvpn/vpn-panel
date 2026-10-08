@@ -40,6 +40,7 @@
   "header.nodeSettings": "تنظیمات گره‌ها",
   "header.nodesUsage": "نمودار گره‌ها",
   "header.nodesUsageHint": "NIC: مجموع snapshot روزانه برای بازه (روز MSK)، مانند Grafana",
+  "header.nodesUsageHintPanel": "ترافیک پنل: uplink+downlink از node_usages (آمار Xray روی نودها)",
   "hostsDialog.addHost": "افزودن هاست",
   "hostsDialog.advancedOptions": "تنظیمات پیشرفته",
   "hostsDialog.allowinsecure": "Allow Insecure",

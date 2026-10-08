@@ -35,6 +35,7 @@
   "header.nodeSettings": "节点设置",
   "header.nodesUsage": "节点统计",
   "header.nodesUsageHint": "NIC 入+出：所选期间内日快照之和（MSK），与 Grafana 一致",
+  "header.nodesUsageHintPanel": "面板流量：node_usages 的上行+下行（节点 Xray 统计）",
   "hostsDialog.addHost": "添加主机",
   "hostsDialog.advancedOptions": "高级选项",
   "hostsDialog.allowinsecure": "允许不安全连接",

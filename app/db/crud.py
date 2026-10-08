@@ -4,7 +4,7 @@ Functions for managing proxy hosts, users, user templates, nodes, and administra
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
@@ -1859,7 +1859,9 @@ def get_nodes(db: Session, status: NodeStatus | list | None = None, enabled: boo
     return query.all()
 
 
-def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsageResponse]:
+def get_nodes_usage(
+    db: Session, start: datetime, end: datetime
+) -> tuple[list[NodeUsageResponse], Literal["nic", "panel"]]:
     """
     Retrieves usage data for all nodes within a specified time range.
 
@@ -1912,7 +1914,8 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
         entry.uplink = rx
         entry.downlink = tx
 
-    return list(usages.values())
+    traffic_source: Literal["nic", "panel"] = "nic" if nic_by_node else "panel"
+    return list(usages.values()), traffic_source
 
 
 def _sync_cascade_routes(db: Session, dbnode: Node, routes) -> None:

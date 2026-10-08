@@ -76,7 +76,8 @@ def test_get_nodes_usage_overwrites_with_daily_nic():
 
     start = datetime(2026, 3, 1, tzinfo=MSK)
     end = datetime(2026, 3, 2, 23, 59, tzinfo=MSK)
-    rows = get_nodes_usage(db, start, end)
+    rows, source = get_nodes_usage(db, start, end)
+    assert source == "nic"
     by_name = {r.node_name: r for r in rows}
     assert by_name["host-node"].downlink == 12000
     assert by_name["host-node"].uplink == 0
@@ -103,7 +104,8 @@ def test_get_nodes_usage_keeps_xray_without_nic_pipeline():
 
     now_msk = datetime.now(MSK)
     start = now_msk.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    rows = get_nodes_usage(db, start, now_msk)
+    rows, source = get_nodes_usage(db, start, now_msk)
+    assert source == "panel"
     by_name = {r.node_name: r for r in rows}
     assert by_name["solo"].uplink == 11
     assert by_name["solo"].downlink == 22

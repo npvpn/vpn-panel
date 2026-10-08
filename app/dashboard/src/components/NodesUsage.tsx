@@ -43,6 +43,7 @@ export const NodesUsage: FC<NodesUsageProps> = () => {
   const usageTitle = t("userDialog.total");
   const [usage, setUsage] = useState(createUsageConfig(colorMode, usageTitle));
   const [usageFilter, setUsageFilter] = useState("1m");
+  const [trafficSource, setTrafficSource] = useState<"nic" | "panel">("panel");
   const fetchUsageWithFilter = (query: FilterUsageType) => {
     fetchNodesUsage(query).then((data: any) => {
       const labels = [];
@@ -53,6 +54,7 @@ export const NodesUsage: FC<NodesUsageProps> = () => {
         labels.push(entry.node_name);
       }
       setUsage(createUsageConfig(colorMode, usageTitle, series, labels));
+      setTrafficSource(data.traffic_source === "nic" ? "nic" : "panel");
     });
   };
 
@@ -85,7 +87,11 @@ export const NodesUsage: FC<NodesUsageProps> = () => {
             </Text>
           </HStack>
           <Text fontSize="sm" color="gray.500" fontWeight="normal" mt={1}>
-            {t("header.nodesUsageHint")}
+            {t(
+              trafficSource === "nic"
+                ? "header.nodesUsageHint"
+                : "header.nodesUsageHintPanel"
+            )}
           </Text>
         </ModalHeader>
         <ModalCloseButton mt={3} disabled={disabled} />

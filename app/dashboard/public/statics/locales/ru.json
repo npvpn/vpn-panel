@@ -37,6 +37,7 @@
   "header.nodeSettings": "Настройки узлов",
   "header.nodesUsage": "Использование узлов",
   "header.nodesUsageHint": "NIC in+out: сумма суточных снимков за период (дни MSK), как в Grafana",
+  "header.nodesUsageHintPanel": "Трафик панели: uplink+downlink из node_usages (учёт Xray на нодах за период)",
   "hostsDialog.addHost": "Добавить хост",
   "hostsDialog.advancedOptions": "Настройки",
   "hostsDialog.allowinsecure": "Allow Insecure",
