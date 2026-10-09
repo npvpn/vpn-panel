@@ -37,6 +37,11 @@ const UsageIcon = chakra(ChartPieIcon, {
 
 const GRAFANA_HOSTING_NODES_DASHBOARD_PATH = "/grafana/d/hosting-nodes-limits";
 
+/** formatBytes без asArray; явный string для Apex formatters (tsc). */
+function formatTrafficBytes(bytes: number, decimals = 2): string {
+  return formatBytes(bytes, decimals) as string;
+}
+
 function createNodesUsageBarConfig(
   colorMode: ColorMode,
   data: number[],
@@ -71,13 +76,13 @@ function createNodesUsageBarConfig(
       },
       yaxis: {
         labels: {
-          formatter: (val: number) => formatBytes(val, 1),
+          formatter: (val: number) => formatTrafficBytes(val, 1),
           style: { colors: labelColor },
         },
       },
       tooltip: {
         y: {
-          formatter: (val: number) => formatBytes(val, 2),
+          formatter: (val: number) => formatTrafficBytes(val, 2),
         },
       },
       dataLabels: { enabled: false },
@@ -216,7 +221,7 @@ export const NodesUsage: FC<NodesUsageProps> = () => {
                 color={colorMode === "dark" ? "gray.300" : "gray.700"}
               >
                 {t("header.nodesUsageTotal", {
-                  value: formatBytes(totalBytes),
+                  value: formatTrafficBytes(totalBytes),
                 })}
               </Text>
             </Box>
