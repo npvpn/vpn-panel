@@ -261,8 +261,9 @@ class User(Base):
         чтения глобального лимита. В БД за расходом идём только когда период пула
         отстал: тогда нужен агрегат ещё не списанного расхода прошлого месяца.
 
-        Результат кешируется на инстансе по (пул, период, лимит), чтобы список
-        пользователей не ходил в БД дважды: потолок и купленный пул считаются вместе.
+        Результат кешируется на инстансе по (пул, период, лимит, текущий месяц),
+        чтобы список пользователей не ходил в БД дважды, а смена месяца на живом
+        объекте не отдавала вчерашний пересчёт.
         """
         from sqlalchemy.orm import object_session
 
@@ -276,13 +277,13 @@ class User(Base):
 
         raw_pool = int(self.bs_extra or 0)
         period = cast("str | None", self.bs_extra_period)
-        cache_key = (raw_pool, period, monthly_limit)
+        yyyymm = period_keys(datetime.utcnow())
+        cache_key = (raw_pool, period, monthly_limit, yyyymm)
         cached = self.__dict__.get("_bs_pool_state_cache")
         if cached is not None and cached[0] == cache_key:
             return cached[1]
 
         pool = raw_pool
-        yyyymm = period_keys(datetime.utcnow())
         # Без сессии (detached-объект) агрегат не достать — отдаём заведомо
         # ненормализованный пул: если период отстал, потолок будет завышен до
         # ближайшего тика джобы учёта.

@@ -92,11 +92,29 @@ const UserUsageIcon = chakra(ChartPieIcon, {
 
 export type UserDialogProps = {};
 
+const GIB = 1073741824;
+
 export type FormType = Omit<UserCreate, "bs_extra"> & {
   selected_proxies: ProxyKeys;
   /** Купленный БС-трафик в ГБ (в API уходит как bs_extra в байтах) */
   bs_extra?: number | null;
+  /** Исходный пул в байтах — чтобы не перезаписывать его округлённым ГБ, если поле не меняли */
+  bs_extra_original_bytes?: number | null;
 };
+
+/** Не слать bs_extra, если в форме тот же ГБ, что получился из исходных байт (округление round-trip). */
+export function shouldSubmitBsExtra(
+  submittedBytes: number | undefined,
+  originalBytes: number | null | undefined
+): submittedBytes is number {
+  if (submittedBytes === undefined) {
+    return false;
+  }
+  const original = originalBytes ?? 0;
+  const initialGb = Number((original / GIB).toFixed(5));
+  const roundTripped = Number((initialGb * GIB).toFixed(5));
+  return submittedBytes !== roundTripped;
+}
 
 interface BotOption {
   value: string;
@@ -108,11 +126,15 @@ const formatUser = (user: User): FormType => {
     ...user,
     bot_username: user.bot_username ?? "",
     data_limit: user.data_limit
-      ? Number((user.data_limit / 1073741824).toFixed(5))
+      ? Number((user.data_limit / GIB).toFixed(5))
       : user.data_limit,
     bs_extra:
       user.bs_monthly_limit_total != null && user.bs_monthly_limit_total > 0
-        ? Number(((user.bs_extra_effective ?? 0) / 1073741824).toFixed(5))
+        ? Number(((user.bs_extra_effective ?? 0) / GIB).toFixed(5))
+        : null,
+    bs_extra_original_bytes:
+      user.bs_monthly_limit_total != null && user.bs_monthly_limit_total > 0
+        ? user.bs_extra_effective ?? 0
         : null,
     device_limit: user.device_limit ?? null,
     on_hold_expire_duration: user.on_hold_expire_duration
@@ -131,6 +153,7 @@ const getDefaultValues = (): FormType => {
     selected_proxies: Object.keys(defaultInbounds) as ProxyKeys,
     data_limit: null,
     bs_extra: null,
+    bs_extra_original_bytes: null,
     device_limit: null,
     expire: null,
     username: "",
@@ -194,7 +217,7 @@ const baseSchema = {
     .or(z.number())
     .nullable()
     .transform((str) => {
-      if (str) return Number((parseFloat(String(str)) * 1073741824).toFixed(5));
+      if (str) return Number((parseFloat(String(str)) * GIB).toFixed(5));
       return 0;
     }),
   bs_extra: z
@@ -205,9 +228,10 @@ const baseSchema = {
     .optional()
     .transform((str) => {
       if (str === "" || str === null || str === undefined) return undefined;
-      if (str) return Number((parseFloat(String(str)) * 1073741824).toFixed(5));
+      if (str) return Number((parseFloat(String(str)) * GIB).toFixed(5));
       return 0;
     }),
+  bs_extra_original_bytes: z.number().nullable().optional(),
   device_limit: z
     .string()
     .min(0)
@@ -357,7 +381,8 @@ export const UserDialog: FC<UserDialogProps> = () => {
     const method = isEditing ? "edited" : "created";
     setError(null);
 
-    const { selected_proxies, bs_extra, ...rest } = values;
+    const { selected_proxies, bs_extra, bs_extra_original_bytes, ...rest } =
+      values;
 
     let body: UserCreate = {
       ...rest,
@@ -374,7 +399,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
           ? values.status
           : "active",
     };
-    if (isEditing && bs_extra !== undefined) {
+    if (isEditing && shouldSubmitBsExtra(bs_extra, bs_extra_original_bytes)) {
       body.bs_extra = bs_extra;
     }
 

@@ -868,6 +868,8 @@ def update_user(db: Session, dbuser: User, modify: UserModify) -> User:
     elif dbuser.next_plan is not None:
         db.delete(dbuser.next_plan)
 
+    if modify.bs_extra is not None and modify.bs_limit_total is not None:
+        raise ValueError("Нельзя задать bs_extra и bs_limit_total одновременно")
     if modify.bs_extra is not None:
         set_user_bs_extra_amount(db, dbuser, modify.bs_extra)
     elif modify.bs_limit_total is not None:
@@ -2209,7 +2211,9 @@ def set_user_bs_limit_total(db: Session, dbuser: User, limit_total: int) -> None
         new_extra = 0
     else:
         normalize_bs_extra_period(db, user_id, monthly_limit, yyyymm, persist=True)
-        new_extra = max(0, int(limit_total) - monthly_limit)
+        if int(limit_total) < monthly_limit:
+            raise ValueError("Суммарный БС-лимит не может быть меньше месячного лимита панели")
+        new_extra = int(limit_total) - monthly_limit
 
     db.execute(update(User).where(User.id == user_id).values(bs_extra=new_extra, bs_extra_period=yyyymm))
 

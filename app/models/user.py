@@ -222,7 +222,11 @@ class UserCreate(User):
 class UserModify(User):
     status: UserStatusModify = None
     data_limit_reset_strategy: UserDataLimitResetStrategy = None
-    bs_extra: int | None = None
+    bs_extra: int | None = Field(
+        default=None,
+        ge=0,
+        description="Купленный БС-трафик сверх базы (байты); null — не менять",
+    )
     bs_limit_total: int | None = Field(
         default=None,
         ge=0,

@@ -646,3 +646,94 @@ def test_update_user_sets_bs_extra_amount(db):
     assert user.bs_extra == 10 * GB
     assert user.bs_extra_effective == 10 * GB
     assert user.bs_monthly_limit_total == 13 * GB
+
+
+def test_update_user_without_bs_fields_keeps_extra_pool(db):
+    from app.db import crud
+    from app.models.user import UserModify
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB + 1
+    user.bs_extra_period = period_keys(datetime.utcnow())
+    db.commit()
+
+    modify = UserModify(proxies={}, note="без смены пула")
+    crud.update_user(db, db.query(User).filter(User.id == USER_ID).one(), modify)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 10 * GB + 1
+    assert user.note == "без смены пула"
+
+
+def test_update_user_rejects_bs_extra_and_limit_total_together(db):
+    from app.db import crud
+    from app.models.user import UserModify
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 2 * GB
+    db.commit()
+
+    modify = UserModify(proxies={}, bs_extra=0, bs_limit_total=8 * GB)
+    with pytest.raises(ValueError, match="одновременно"):
+        crud.update_user(db, db.query(User).filter(User.id == USER_ID).one(), modify)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 2 * GB
+
+
+def test_update_user_rejects_limit_total_below_monthly(db):
+    from app.db import crud
+    from app.models.user import UserModify
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 2 * GB
+    db.commit()
+
+    modify = UserModify(proxies={}, bs_limit_total=1 * GB)
+    with pytest.raises(ValueError, match="меньше месячного лимита"):
+        crud.update_user(db, db.query(User).filter(User.id == USER_ID).one(), modify)
+    db.expire_all()
+
+    user = db.query(User).filter(User.id == USER_ID).one()
+    assert user.bs_extra == 2 * GB
+
+
+def test_user_modify_rejects_negative_bs_extra_without_proxies():
+    from pydantic import ValidationError
+
+    from app.models.user import UserModify
+
+    with pytest.raises(ValidationError) as exc:
+        UserModify(bs_extra=-1)
+    assert "bs_extra" in str(exc.value)
+
+
+def test_user_modify_rejects_negative_bs_extra_with_proxies():
+    from pydantic import ValidationError
+
+    from app.models.user import UserModify
+
+    with pytest.raises(ValidationError) as extra_exc:
+        UserModify(proxies={}, bs_extra=-1)
+    assert "bs_extra" in str(extra_exc.value)
+
+
+def test_bs_pool_state_cache_misses_after_month_change(db, monkeypatch):
+    from app.xray import bs_limit
+
+    user = _bot_with_limit(db, 3 * GB)
+    user.bs_extra = 10 * GB
+    user.bs_extra_period = period_keys(datetime.utcnow())
+    db.commit()
+
+    dbuser = db.query(User).filter(User.id == USER_ID).one()
+    assert dbuser.bs_extra_effective == 10 * GB
+
+    key, _state = dbuser.__dict__["_bs_pool_state_cache"]
+    dbuser.__dict__["_bs_pool_state_cache"] = (key, (3 * GB, 999))
+    assert dbuser.bs_extra_effective == 999
+
+    monkeypatch.setattr(bs_limit, "period_keys", lambda now: "2099-01")
+    assert dbuser.bs_extra_effective == 10 * GB
