@@ -310,6 +310,7 @@ class UserResponse(User):
     lifetime_used_traffic: int = 0
     bs_monthly_used: int = 0
     bs_monthly_limit_total: int | None = None
+    bs_extra_effective: int = 0
     created_at: datetime
     links: list[str] = []
     subscription_url: str = ""

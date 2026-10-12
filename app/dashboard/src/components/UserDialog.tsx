@@ -92,10 +92,10 @@ const UserUsageIcon = chakra(ChartPieIcon, {
 
 export type UserDialogProps = {};
 
-export type FormType = Omit<UserCreate, "bs_limit_total"> & {
+export type FormType = Omit<UserCreate, "bs_extra"> & {
   selected_proxies: ProxyKeys;
-  /** Суммарный БС-лимит в ГБ (в API уходит как bs_limit_total в байтах) */
-  bs_limit_total?: number | null;
+  /** Купленный БС-трафик в ГБ (в API уходит как bs_extra в байтах) */
+  bs_extra?: number | null;
 };
 
 interface BotOption {
@@ -110,9 +110,9 @@ const formatUser = (user: User): FormType => {
     data_limit: user.data_limit
       ? Number((user.data_limit / 1073741824).toFixed(5))
       : user.data_limit,
-    bs_limit_total:
+    bs_extra:
       user.bs_monthly_limit_total != null && user.bs_monthly_limit_total > 0
-        ? Number((user.bs_monthly_limit_total / 1073741824).toFixed(5))
+        ? Number(((user.bs_extra_effective ?? 0) / 1073741824).toFixed(5))
         : null,
     device_limit: user.device_limit ?? null,
     on_hold_expire_duration: user.on_hold_expire_duration
@@ -130,7 +130,7 @@ const getDefaultValues = (): FormType => {
   return {
     selected_proxies: Object.keys(defaultInbounds) as ProxyKeys,
     data_limit: null,
-    bs_limit_total: null,
+    bs_extra: null,
     device_limit: null,
     expire: null,
     username: "",
@@ -197,7 +197,7 @@ const baseSchema = {
       if (str) return Number((parseFloat(String(str)) * 1073741824).toFixed(5));
       return 0;
     }),
-  bs_limit_total: z
+  bs_extra: z
     .string()
     .min(0)
     .or(z.number())
@@ -357,7 +357,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
     const method = isEditing ? "edited" : "created";
     setError(null);
 
-    const { selected_proxies, bs_limit_total, ...rest } = values;
+    const { selected_proxies, bs_extra, ...rest } = values;
 
     let body: UserCreate = {
       ...rest,
@@ -374,8 +374,8 @@ export const UserDialog: FC<UserDialogProps> = () => {
           ? values.status
           : "active",
     };
-    if (isEditing && bs_limit_total !== undefined) {
-      body.bs_limit_total = bs_limit_total;
+    if (isEditing && bs_extra !== undefined) {
+      body.bs_extra = bs_extra;
     }
 
     methods[method](body)
@@ -688,7 +688,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
                               <FormLabel>{t("userDialog.bsDataLimit")}</FormLabel>
                               <Controller
                                 control={form.control}
-                                name="bs_limit_total"
+                                name="bs_extra"
                                 render={({ field }) => {
                                   return (
                                     <Input
@@ -699,11 +699,13 @@ export const UserDialog: FC<UserDialogProps> = () => {
                                       onChange={field.onChange}
                                       disabled={disabled}
                                       error={
-                                        form.formState.errors.bs_limit_total
-                                          ?.message
+                                        form.formState.errors.bs_extra?.message
                                       }
                                       value={
-                                        field.value ? String(field.value) : ""
+                                        field.value === null ||
+                                        field.value === undefined
+                                          ? ""
+                                          : String(field.value)
                                       }
                                     />
                                   );
