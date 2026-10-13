@@ -4,7 +4,7 @@ Functions for managing proxy hosts, users, user templates, nodes, and administra
 
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
@@ -776,6 +776,9 @@ def update_user(db: Session, dbuser: User, modify: UserModify) -> User:
     Returns:
         User: The updated user object.
     """
+    if modify.bs_extra is not None and modify.bs_limit_total is not None:
+        raise ValueError("Нельзя задать bs_extra и bs_limit_total одновременно")
+
     added_proxies: dict[ProxyTypes, Proxy] = {}
     if modify.proxies:
         for proxy_type, settings in modify.proxies.items():
@@ -867,6 +870,11 @@ def update_user(db: Session, dbuser: User, modify: UserModify) -> User:
         )
     elif dbuser.next_plan is not None:
         db.delete(dbuser.next_plan)
+
+    if modify.bs_extra is not None:
+        set_user_bs_extra_amount(db, dbuser, modify.bs_extra)
+    elif modify.bs_limit_total is not None:
+        set_user_bs_limit_total(db, dbuser, modify.bs_limit_total)
 
     dbuser.edit_at = datetime.utcnow()
 
@@ -1859,9 +1867,16 @@ def get_nodes(db: Session, status: NodeStatus | list | None = None, enabled: boo
     return query.all()
 
 
-def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsageResponse]:
+def get_nodes_usage(
+    db: Session, start: datetime, end: datetime
+) -> tuple[list[NodeUsageResponse], Literal["nic", "panel"]]:
     """
     Retrieves usage data for all nodes within a specified time range.
+
+    Сначала суммирует Xray `node_usages` за период. Если sidecar заполнил
+    `node_hosting_nic_daily`, подменяет на NIC за календарные дни MSK в диапазоне.
+    Без суточных строк и без свежего hosting_used_at (отдельная панель без Prometheus)
+    остаётся только Xray. Master — только Xray.
 
     Args:
         db (Session): The database session.
@@ -1871,13 +1886,20 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
     Returns:
         List[NodeUsageResponse]: A list of NodeUsageResponse objects containing usage data.
     """
+    from app.utils.hosting_nic_traffic import (
+        fallback_usage_from_db,
+        is_calendar_month_to_date_msk,
+        nic_usage_from_daily,
+    )
+
     usages = {
         0: NodeUsageResponse(  # Main Core
             node_id=None, node_name="Master", uplink=0, downlink=0
         )
     }
 
-    for node in db.query(Node).all():
+    nodes = db.query(Node).all()
+    for node in nodes:
         usages[node.id] = NodeUsageResponse(node_id=node.id, node_name=node.name, uplink=0, downlink=0)
 
     cond = and_(NodeUsage.created_at >= start, NodeUsage.created_at <= end)
@@ -1889,7 +1911,19 @@ def get_nodes_usage(db: Session, start: datetime, end: datetime) -> list[NodeUsa
         except KeyError:
             pass
 
-    return list(usages.values())
+    nic_by_node = nic_usage_from_daily(db, start, end)
+    if not nic_by_node and is_calendar_month_to_date_msk(start, end):
+        nic_by_node = fallback_usage_from_db(nodes)
+
+    for node_id, (rx, tx) in nic_by_node.items():
+        entry = usages.get(node_id)
+        if entry is None:
+            continue
+        entry.uplink = rx
+        entry.downlink = tx
+
+    traffic_source: Literal["nic", "panel"] = "nic" if nic_by_node else "panel"
+    return list(usages.values()), traffic_source
 
 
 def _sync_cascade_routes(db: Session, dbnode: Node, routes) -> None:
@@ -2169,6 +2203,46 @@ def _bot_settings_for_user(db: Session, dbuser: User) -> dict[str, Any]:
         return apply_bot_settings_fallback(None)
     data = db.query(BotSettings.data).filter(BotSettings.bot_id == dbuser.bot_id).scalar()
     return apply_bot_settings_fallback(data)
+
+
+def set_user_bs_extra_amount(db: Session, dbuser: User, extra_bytes: int) -> None:
+    """Задать купленный БС-пул (bs_extra), без базового месячного лимита панели."""
+    from app.services.panel_settings import get_bs_monthly_limit
+    from app.xray.bs_limit import period_keys
+
+    user_id = cast(int, dbuser.id)
+    monthly_limit = get_bs_monthly_limit(db)
+    yyyymm = period_keys(datetime.utcnow())
+    if not monthly_limit:
+        if extra_bytes:
+            raise ValueError("Месячный лимит БС в настройках панели не задан (0)")
+        new_extra = 0
+    else:
+        normalize_bs_extra_period(db, user_id, monthly_limit, yyyymm, persist=True)
+        new_extra = max(0, int(extra_bytes))
+
+    db.execute(update(User).where(User.id == user_id).values(bs_extra=new_extra, bs_extra_period=yyyymm))
+
+
+def set_user_bs_limit_total(db: Session, dbuser: User, limit_total: int) -> None:
+    """Задать суммарный месячный БС-потолок (база панели + купленный пул bs_extra)."""
+    from app.services.panel_settings import get_bs_monthly_limit
+    from app.xray.bs_limit import period_keys
+
+    user_id = cast(int, dbuser.id)
+    monthly_limit = get_bs_monthly_limit(db)
+    yyyymm = period_keys(datetime.utcnow())
+    if not monthly_limit:
+        if limit_total:
+            raise ValueError("Месячный лимит БС в настройках панели не задан (0)")
+        new_extra = 0
+    else:
+        normalize_bs_extra_period(db, user_id, monthly_limit, yyyymm, persist=True)
+        if int(limit_total) < monthly_limit:
+            raise ValueError("Суммарный БС-лимит не может быть меньше месячного лимита панели")
+        new_extra = int(limit_total) - monthly_limit
+
+    db.execute(update(User).where(User.id == user_id).values(bs_extra=new_extra, bs_extra_period=yyyymm))
 
 
 def reset_user_bs_extra_pool(db: Session, dbuser: User, *, commit: bool = True) -> User:
