@@ -104,10 +104,10 @@ export type FormType = Omit<UserCreate, "bs_extra"> & {
 
 /** Не слать bs_extra, если в форме тот же ГБ, что получился из исходных байт (округление round-trip). */
 export function shouldSubmitBsExtra(
-  submittedBytes: number | undefined,
+  submittedBytes: number | null | undefined,
   originalBytes: number | null | undefined
 ): submittedBytes is number {
-  if (submittedBytes === undefined) {
+  if (submittedBytes == null) {
     return false;
   }
   const original = originalBytes ?? 0;
