@@ -672,15 +672,25 @@ def test_update_user_rejects_bs_extra_and_limit_total_together(db):
 
     user = _bot_with_limit(db, 3 * GB)
     user.bs_extra = 2 * GB
+    user.data_limit = 5 * GB
+    user.note = "old"
     db.commit()
 
-    modify = UserModify(proxies={}, bs_extra=0, bs_limit_total=8 * GB)
+    modify = UserModify(
+        proxies={},
+        bs_extra=0,
+        bs_limit_total=8 * GB,
+        data_limit=1 * GB,
+        note="new",
+    )
     with pytest.raises(ValueError, match="одновременно"):
         crud.update_user(db, db.query(User).filter(User.id == USER_ID).one(), modify)
     db.expire_all()
 
     user = db.query(User).filter(User.id == USER_ID).one()
     assert user.bs_extra == 2 * GB
+    assert user.data_limit == 5 * GB
+    assert user.note == "old"
 
 
 def test_update_user_rejects_limit_total_below_monthly(db):
@@ -718,6 +728,16 @@ def test_user_modify_rejects_negative_bs_extra_with_proxies():
     with pytest.raises(ValidationError) as extra_exc:
         UserModify(proxies={}, bs_extra=-1)
     assert "bs_extra" in str(extra_exc.value)
+
+
+def test_user_modify_rejects_negative_fractional_bs_extra():
+    from pydantic import ValidationError
+
+    from app.models.user import UserModify
+
+    with pytest.raises(ValidationError) as exc:
+        UserModify(bs_extra=-0.5)
+    assert "bs_extra" in str(exc.value)
 
 
 def test_bs_pool_state_cache_misses_after_month_change(db, monkeypatch):

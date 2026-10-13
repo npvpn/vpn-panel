@@ -99,11 +99,11 @@ class User(BaseModel):
     def cast_bs_extra_to_int(cls, v):
         if v is None:
             return v
-        if isinstance(v, float):
-            return int(v)
-        if isinstance(v, int):
-            return v
-        raise ValueError("bs_extra must be an integer or a float, not a string")
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError("bs_extra must be an integer or a float, not a string")
+        if v < 0:
+            raise ValueError("bs_extra must be 0 or greater")
+        return int(v)
 
     @field_validator("proxies", mode="before")
     def validate_proxies(cls, v, values, **kwargs):

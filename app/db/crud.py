@@ -776,6 +776,9 @@ def update_user(db: Session, dbuser: User, modify: UserModify) -> User:
     Returns:
         User: The updated user object.
     """
+    if modify.bs_extra is not None and modify.bs_limit_total is not None:
+        raise ValueError("Нельзя задать bs_extra и bs_limit_total одновременно")
+
     added_proxies: dict[ProxyTypes, Proxy] = {}
     if modify.proxies:
         for proxy_type, settings in modify.proxies.items():
@@ -868,8 +871,6 @@ def update_user(db: Session, dbuser: User, modify: UserModify) -> User:
     elif dbuser.next_plan is not None:
         db.delete(dbuser.next_plan)
 
-    if modify.bs_extra is not None and modify.bs_limit_total is not None:
-        raise ValueError("Нельзя задать bs_extra и bs_limit_total одновременно")
     if modify.bs_extra is not None:
         set_user_bs_extra_amount(db, dbuser, modify.bs_extra)
     elif modify.bs_limit_total is not None:
