@@ -22,7 +22,6 @@ import {
   TabPanel,
   TabPanels,
   Tabs,
-  Textarea,
   useToast,
   VStack,
   HStack,
@@ -47,56 +46,18 @@ import {
   MagnifyingGlassIcon,
 } from "@heroicons/react/24/outline";
 
-const toText = (values: string[] = []) => values.join("\n");
-
-const toList = (value: string) =>
-  value
-    .split(/\r?\n|,/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
 const emptySettings: BotSettings = {
   sub_update_interval: "",
   sub_support_url: "",
   sub_profile_title: "",
-  sub_client_note: "",
   sub_profile_url: "",
   sub_subscription_domain: "",
   bot_url: "",
   web_url: "",
-  sub_revoked_announce_text: "",
-  sub_expired_announce_text: "",
-  sub_device_limit_announce_text: "",
   sub_device_limit_hard_mode: false,
-  sub_unsupported_client_announce_text: "",
-  sub_revoked_server_text: [],
-  sub_expired_server_text: [],
-  sub_device_limit_server_text: [],
-  sub_unsupported_client_server_text: [],
-  sub_bs_limit_server_text: [],
-  sub_bs_limit_announce_text: "",
   bs_extra_reset_pool_on_prolong: false,
   show_ads: true,
 };
-
-type ServerTextField =
-  | "sub_revoked_server_text"
-  | "sub_expired_server_text"
-  | "sub_device_limit_server_text"
-  | "sub_unsupported_client_server_text"
-  | "sub_bs_limit_server_text";
-
-type ListFieldTexts = Record<ServerTextField, string>;
-
-const toListFieldTexts = (settings: BotSettings): ListFieldTexts => ({
-  sub_revoked_server_text: toText(settings.sub_revoked_server_text),
-  sub_expired_server_text: toText(settings.sub_expired_server_text),
-  sub_device_limit_server_text: toText(settings.sub_device_limit_server_text),
-  sub_unsupported_client_server_text: toText(
-    settings.sub_unsupported_client_server_text
-  ),
-  sub_bs_limit_server_text: toText(settings.sub_bs_limit_server_text),
-});
 
 export const BotSettingsDialog: FC = () => {
   const { isEditingBotSettings, onEditingBotSettings } = useDashboard();
@@ -119,9 +80,6 @@ export const BotSettingsDialog: FC = () => {
   const [hasDraft, setHasDraft] = useState(false);
   const [botSearch, setBotSearch] = useState("");
   const [isBotListOpen, setIsBotListOpen] = useState(false);
-  const [listFieldTexts, setListFieldTexts] = useState<ListFieldTexts>(
-    toListFieldTexts(emptySettings)
-  );
   // const [didAutoSelect, setDidAutoSelect] = useState(false);
   const NEW_BOT_DRAFT_KEY = "botSettings_draft_new";
 
@@ -158,12 +116,6 @@ export const BotSettingsDialog: FC = () => {
 
   const replaceSettings = (nextSettings: BotSettings) => {
     setSettings(nextSettings);
-    setListFieldTexts(toListFieldTexts(nextSettings));
-  };
-
-  const updateListField = (field: ServerTextField, value: string) => {
-    setListFieldTexts((current) => ({ ...current, [field]: value }));
-    updateSettings({ [field]: toList(value) });
   };
 
   const fetchBots = () => {
@@ -344,11 +296,6 @@ export const BotSettingsDialog: FC = () => {
       .finally(() => setSyncingAdmin(false));
   };
 
-  const defaultListFieldTexts = useMemo(
-    () => toListFieldTexts(defaultSettings),
-    [defaultSettings]
-  );
-
   const mergeWithDefaults = (current: BotSettings): BotSettings => {
     return {
       sub_update_interval:
@@ -358,8 +305,6 @@ export const BotSettingsDialog: FC = () => {
         current.sub_support_url.trim() || defaultSettings.sub_support_url,
       sub_profile_title:
         current.sub_profile_title.trim() || defaultSettings.sub_profile_title,
-      sub_client_note:
-        current.sub_client_note.trim() || defaultSettings.sub_client_note,
       sub_profile_url:
         current.sub_profile_url.trim() || defaultSettings.sub_profile_url,
       sub_subscription_domain:
@@ -367,42 +312,7 @@ export const BotSettingsDialog: FC = () => {
         defaultSettings.sub_subscription_domain,
       bot_url: current.bot_url.trim() || defaultSettings.bot_url,
       web_url: current.web_url.trim() || defaultSettings.web_url,
-      sub_revoked_announce_text:
-        current.sub_revoked_announce_text.trim() ||
-        defaultSettings.sub_revoked_announce_text,
-      sub_expired_announce_text:
-        current.sub_expired_announce_text.trim() ||
-        defaultSettings.sub_expired_announce_text,
-      sub_device_limit_announce_text:
-        current.sub_device_limit_announce_text.trim() ||
-        defaultSettings.sub_device_limit_announce_text,
       sub_device_limit_hard_mode: current.sub_device_limit_hard_mode,
-      sub_unsupported_client_announce_text:
-        current.sub_unsupported_client_announce_text.trim() ||
-        defaultSettings.sub_unsupported_client_announce_text,
-      sub_revoked_server_text:
-        current.sub_revoked_server_text.length > 0
-          ? current.sub_revoked_server_text
-          : defaultSettings.sub_revoked_server_text,
-      sub_expired_server_text:
-        current.sub_expired_server_text.length > 0
-          ? current.sub_expired_server_text
-          : defaultSettings.sub_expired_server_text,
-      sub_device_limit_server_text:
-        current.sub_device_limit_server_text.length > 0
-          ? current.sub_device_limit_server_text
-          : defaultSettings.sub_device_limit_server_text,
-      sub_unsupported_client_server_text:
-        current.sub_unsupported_client_server_text.length > 0
-          ? current.sub_unsupported_client_server_text
-          : defaultSettings.sub_unsupported_client_server_text,
-      sub_bs_limit_server_text:
-        current.sub_bs_limit_server_text.length > 0
-          ? current.sub_bs_limit_server_text
-          : defaultSettings.sub_bs_limit_server_text,
-      sub_bs_limit_announce_text:
-        current.sub_bs_limit_announce_text.trim() ||
-        defaultSettings.sub_bs_limit_announce_text,
       bs_extra_reset_pool_on_prolong: current.bs_extra_reset_pool_on_prolong,
       show_ads: current.show_ads,
     };
@@ -429,15 +339,6 @@ export const BotSettingsDialog: FC = () => {
             sub_subscription_domain: serverSettings.sub_subscription_domain,
           }
         : {}),
-      sub_revoked_server_text: toList(listFieldTexts.sub_revoked_server_text),
-      sub_expired_server_text: toList(listFieldTexts.sub_expired_server_text),
-      sub_device_limit_server_text: toList(
-        listFieldTexts.sub_device_limit_server_text
-      ),
-      sub_unsupported_client_server_text: toList(
-        listFieldTexts.sub_unsupported_client_server_text
-      ),
-      sub_bs_limit_server_text: toList(listFieldTexts.sub_bs_limit_server_text),
     };
 
     setSaving(true);
@@ -723,7 +624,6 @@ export const BotSettingsDialog: FC = () => {
             <TabList overflowX="auto" overflowY="hidden" whiteSpace="nowrap">
               <Tab>{t("botSettings.tabBotInfo")}</Tab>
               <Tab>{t("botSettings.tabSubscription")}</Tab>
-              <Tab>{t("botSettings.tabMessages")}</Tab>
             </TabList>
             {hasDraft && (
               <HStack
@@ -974,21 +874,6 @@ export const BotSettingsDialog: FC = () => {
                     </FormControl>
                   </SimpleGrid>
 
-                  <FormControl isDisabled={isManaged}>
-                    <FormLabel>{t("botSettings.subClientNote")}</FormLabel>
-                    <Textarea
-                      value={settings.sub_client_note}
-                      placeholder={defaultSettings.sub_client_note}
-                      onChange={(e) =>
-                        updateSettings({ sub_client_note: e.target.value })
-                      }
-                    />
-                    {isManaged && (
-                      <FormHelperText>
-                        {t("botSettings.managedFieldHint")}
-                      </FormHelperText>
-                    )}
-                  </FormControl>
                   <Box
                     border="1px solid"
                     borderColor="inherit"
@@ -1013,155 +898,6 @@ export const BotSettingsDialog: FC = () => {
                       </FormHelperText>
                     </FormControl>
                   </Box>
-                </VStack>
-              </TabPanel>
-
-              {/* Вкладка 3: Messages */}
-              <TabPanel px={0}>
-                <VStack spacing={4} align="stretch">
-                  <Box
-                    border="1px solid"
-                    borderColor="inherit"
-                    borderRadius="md"
-                    p={4}
-                  >
-                    <VStack spacing={4} align="stretch">
-                      <ChakraText
-                        fontSize="xs"
-                        fontWeight="semibold"
-                        color="gray.500"
-                        textTransform="uppercase"
-                        letterSpacing="wide"
-                      >
-                        {t("botSettings.announceMessages")}
-                      </ChakraText>
-
-                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subRevokedAnnounceText")}
-                          </FormLabel>
-                          <Textarea
-                            value={settings.sub_revoked_announce_text}
-                            placeholder={
-                              defaultSettings.sub_revoked_announce_text
-                            }
-                            onChange={(e) =>
-                              updateSettings({
-                                sub_revoked_announce_text: e.target.value,
-                              })
-                            }
-                            _placeholder={{ fontSize: "12px" }}
-                            minH="90px"
-                          />
-                          {isManaged && (
-                            <FormHelperText>
-                              {t("botSettings.managedFieldHint")}
-                            </FormHelperText>
-                          )}
-                        </FormControl>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subExpiredAnnounceText")}
-                          </FormLabel>
-                          <Textarea
-                            value={settings.sub_expired_announce_text}
-                            placeholder={
-                              defaultSettings.sub_expired_announce_text
-                            }
-                            onChange={(e) =>
-                              updateSettings({
-                                sub_expired_announce_text: e.target.value,
-                              })
-                            }
-                            _placeholder={{ fontSize: "12px" }}
-                            minH="90px"
-                          />
-                          {isManaged && (
-                            <FormHelperText>
-                              {t("botSettings.managedFieldHint")}
-                            </FormHelperText>
-                          )}
-                        </FormControl>
-                      </SimpleGrid>
-
-                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subUnsupportedClientAnnounceText")}
-                          </FormLabel>
-                          <Textarea
-                            value={
-                              settings.sub_unsupported_client_announce_text
-                            }
-                            placeholder={
-                              defaultSettings.sub_unsupported_client_announce_text
-                            }
-                            onChange={(e) =>
-                              updateSettings({
-                                sub_unsupported_client_announce_text:
-                                  e.target.value,
-                              })
-                            }
-                            _placeholder={{ fontSize: "12px" }}
-                            minH="90px"
-                          />
-                          {isManaged && (
-                            <FormHelperText>
-                              {t("botSettings.managedFieldHint")}
-                            </FormHelperText>
-                          )}
-                        </FormControl>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subDeviceLimitAnnounceText")}
-                          </FormLabel>
-                          <Textarea
-                            value={settings.sub_device_limit_announce_text}
-                            placeholder={
-                              defaultSettings.sub_device_limit_announce_text
-                            }
-                            onChange={(e) =>
-                              updateSettings({
-                                sub_device_limit_announce_text: e.target.value,
-                              })
-                            }
-                            _placeholder={{ fontSize: "12px" }}
-                            minH="90px"
-                          />
-                          {isManaged && (
-                            <FormHelperText>
-                              {t("botSettings.managedFieldHint")}
-                            </FormHelperText>
-                          )}
-                        </FormControl>
-                      </SimpleGrid>
-
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>
-                          {t("botSettings.subBsLimitAnnounceText")}
-                        </FormLabel>
-                        <Textarea
-                          value={settings.sub_bs_limit_announce_text}
-                          placeholder={
-                            defaultSettings.sub_bs_limit_announce_text
-                          }
-                          onChange={(e) =>
-                            updateSettings({
-                              sub_bs_limit_announce_text: e.target.value,
-                            })
-                          }
-                          _placeholder={{ fontSize: "12px" }}
-                        />
-                        {isManaged && (
-                          <FormHelperText>
-                            {t("botSettings.managedFieldHint")}
-                          </FormHelperText>
-                        )}
-                      </FormControl>
-                    </VStack>
-                  </Box>
-
                   <Box
                     border="1px solid"
                     borderColor="inherit"
@@ -1180,139 +916,11 @@ export const BotSettingsDialog: FC = () => {
                             sub_device_limit_hard_mode: e.target.checked,
                           })
                         }
-                        _placeholder={{ fontSize: "12px" }}
                       />
                       <FormHelperText>
                         {fieldHint("botSettings.subDeviceLimitHardModeHint")}
                       </FormHelperText>
                     </FormControl>
-                  </Box>
-
-                  {/* Server Responses */}
-                  <Box
-                    border="1px solid"
-                    borderColor="inherit"
-                    borderRadius="md"
-                    p={4}
-                  >
-                    <VStack spacing={4} align="stretch">
-                      <ChakraText
-                        fontSize="xs"
-                        fontWeight="semibold"
-                        color="gray.500"
-                        textTransform="uppercase"
-                        letterSpacing="wide"
-                      >
-                        {t("botSettings.serverResponses")}
-                      </ChakraText>
-
-                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subRevokedServerText")}
-                          </FormLabel>
-                          <Textarea
-                            value={listFieldTexts.sub_revoked_server_text}
-                            placeholder={
-                              defaultListFieldTexts.sub_revoked_server_text
-                            }
-                            onChange={(e) =>
-                              updateListField(
-                                "sub_revoked_server_text",
-                                e.target.value
-                              )
-                            }
-                          />
-                          <FormHelperText>
-                            {fieldHint("botSettings.serverTextHint")}
-                          </FormHelperText>
-                        </FormControl>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subExpiredServerText")}
-                          </FormLabel>
-                          <Textarea
-                            value={listFieldTexts.sub_expired_server_text}
-                            placeholder={
-                              defaultListFieldTexts.sub_expired_server_text
-                            }
-                            onChange={(e) =>
-                              updateListField(
-                                "sub_expired_server_text",
-                                e.target.value
-                              )
-                            }
-                          />
-                          <FormHelperText>
-                            {fieldHint("botSettings.serverTextHint")}
-                          </FormHelperText>
-                        </FormControl>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subBsLimitServerText")}
-                          </FormLabel>
-                          <Textarea
-                            value={listFieldTexts.sub_bs_limit_server_text}
-                            placeholder={
-                              defaultListFieldTexts.sub_bs_limit_server_text
-                            }
-                            onChange={(e) =>
-                              updateListField(
-                                "sub_bs_limit_server_text",
-                                e.target.value
-                              )
-                            }
-                          />
-                          <FormHelperText>
-                            {fieldHint("botSettings.serverTextHint")}
-                          </FormHelperText>
-                        </FormControl>
-                      </SimpleGrid>
-                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subDeviceLimitServerText")}
-                          </FormLabel>
-                          <Textarea
-                            value={listFieldTexts.sub_device_limit_server_text}
-                            placeholder={
-                              defaultListFieldTexts.sub_device_limit_server_text
-                            }
-                            onChange={(e) =>
-                              updateListField(
-                                "sub_device_limit_server_text",
-                                e.target.value
-                              )
-                            }
-                          />
-                          <FormHelperText>
-                            {fieldHint("botSettings.serverTextHint")}
-                          </FormHelperText>
-                        </FormControl>
-                        <FormControl isDisabled={isManaged}>
-                          <FormLabel>
-                            {t("botSettings.subUnsupportedClientServerText")}
-                          </FormLabel>
-                          <Textarea
-                            value={
-                              listFieldTexts.sub_unsupported_client_server_text
-                            }
-                            placeholder={
-                              defaultListFieldTexts.sub_unsupported_client_server_text
-                            }
-                            onChange={(e) =>
-                              updateListField(
-                                "sub_unsupported_client_server_text",
-                                e.target.value
-                              )
-                            }
-                          />
-                          <FormHelperText>
-                            {fieldHint("botSettings.serverTextHint")}
-                          </FormHelperText>
-                        </FormControl>
-                      </SimpleGrid>
-                    </VStack>
                   </Box>
                 </VStack>
               </TabPanel>

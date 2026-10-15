@@ -6,12 +6,46 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-from config import SUB_ROUTING_HAPP, SUB_ROUTING_V2RAYTUN, SUBSCRIPTION_LEGACY_SECRET_KEYS
+from config import (
+    SUB_BS_LIMIT_ANNOUNCE_TEXT,
+    SUB_CLIENT_NOTE,
+    SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
+    SUB_DEVICE_LIMIT_SERVER_TEXT,
+    SUB_EXPIRED_ANNOUNCE_TEXT,
+    SUB_EXPIRED_SERVER_TEXT,
+    SUB_REVOKED_ANNOUNCE_TEXT,
+    SUB_REVOKED_SERVER_TEXT,
+    SUB_ROUTING_HAPP,
+    SUB_ROUTING_V2RAYTUN,
+    SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
+    SUB_UNSUPPORTED_CLIENT_SERVER_TEXT,
+    SUBSCRIPTION_LEGACY_SECRET_KEYS,
+)
 
 logger = logging.getLogger(__name__)
 
 CLIENT_APPS_KEY = "client_apps"
 PANEL_SETTINGS_KEY = "panel"
+
+SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS: tuple[str, ...] = (
+    "sub_client_note",
+    "sub_revoked_announce_text",
+    "sub_expired_announce_text",
+    "sub_device_limit_announce_text",
+    "sub_unsupported_client_announce_text",
+    "sub_bs_limit_announce_text",
+)
+SUBSCRIPTION_MESSAGE_SERVER_KEYS: tuple[str, ...] = (
+    "sub_revoked_server_text",
+    "sub_expired_server_text",
+    "sub_device_limit_server_text",
+    "sub_unsupported_client_server_text",
+    "sub_bs_limit_server_text",
+)
+SUBSCRIPTION_MESSAGE_KEYS: tuple[str, ...] = (
+    *SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS,
+    *SUBSCRIPTION_MESSAGE_SERVER_KEYS,
+)
 
 PANEL_SETTING_KEYS: tuple[str, ...] = (
     "sub_custom_headers",
@@ -19,9 +53,21 @@ PANEL_SETTING_KEYS: tuple[str, ...] = (
     "sub_routing_happ",
     "sub_routing_v2raytun",
     "subscription_legacy_secret_keys",
+    *SUBSCRIPTION_MESSAGE_KEYS,
 )
 
 LEGACY_SECRET_KEYS_SETTING = "subscription_legacy_secret_keys"
+
+
+def normalize_server_text(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.replace("\n", ",").split(",") if item.strip()]
+    return []
+
 
 DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "sub_custom_headers": "",
@@ -29,6 +75,17 @@ DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "sub_routing_happ": SUB_ROUTING_HAPP,
     "sub_routing_v2raytun": SUB_ROUTING_V2RAYTUN,
     "subscription_legacy_secret_keys": list(SUBSCRIPTION_LEGACY_SECRET_KEYS),
+    "sub_client_note": SUB_CLIENT_NOTE,
+    "sub_revoked_announce_text": SUB_REVOKED_ANNOUNCE_TEXT,
+    "sub_expired_announce_text": SUB_EXPIRED_ANNOUNCE_TEXT,
+    "sub_device_limit_announce_text": SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
+    "sub_unsupported_client_announce_text": SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
+    "sub_bs_limit_announce_text": SUB_BS_LIMIT_ANNOUNCE_TEXT,
+    "sub_revoked_server_text": normalize_server_text(SUB_REVOKED_SERVER_TEXT),
+    "sub_expired_server_text": normalize_server_text(SUB_EXPIRED_SERVER_TEXT),
+    "sub_device_limit_server_text": normalize_server_text(SUB_DEVICE_LIMIT_SERVER_TEXT),
+    "sub_unsupported_client_server_text": normalize_server_text(SUB_UNSUPPORTED_CLIENT_SERVER_TEXT),
+    "sub_bs_limit_server_text": [],
 }
 
 PLATFORMS: tuple[str, ...] = ("ios", "macos", "android", "androidtv", "windows", "linux")
@@ -195,11 +252,34 @@ class PanelSettingsPayload(BaseModel):
     sub_routing_happ: str = ""
     sub_routing_v2raytun: str = ""
     subscription_legacy_secret_keys: list[str] = Field(default_factory=list)
+    sub_client_note: str = ""
+    sub_revoked_announce_text: str = ""
+    sub_expired_announce_text: str = ""
+    sub_device_limit_announce_text: str = ""
+    sub_unsupported_client_announce_text: str = ""
+    sub_bs_limit_announce_text: str = ""
+    sub_revoked_server_text: list[str] = Field(default_factory=list)
+    sub_expired_server_text: list[str] = Field(default_factory=list)
+    sub_device_limit_server_text: list[str] = Field(default_factory=list)
+    sub_unsupported_client_server_text: list[str] = Field(default_factory=list)
+    sub_bs_limit_server_text: list[str] = Field(default_factory=list)
 
     @field_validator("subscription_legacy_secret_keys", mode="before")
     @classmethod
     def validate_legacy_secret_keys(cls, value: Any) -> list[str]:
         return normalize_legacy_secret_keys(value)
+
+    @field_validator(
+        "sub_revoked_server_text",
+        "sub_expired_server_text",
+        "sub_device_limit_server_text",
+        "sub_unsupported_client_server_text",
+        "sub_bs_limit_server_text",
+        mode="before",
+    )
+    @classmethod
+    def validate_server_text(cls, value: Any) -> list[str]:
+        return normalize_server_text(value)
 
 
 class PanelSettingsResponse(PanelSettingsPayload):
@@ -229,9 +309,43 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
         if key == LEGACY_SECRET_KEYS_SETTING:
             base[key] = normalize_legacy_secret_keys(raw[key])
             continue
+        if key in SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS:
+            text = str(raw[key] or "")
+            if text.strip():
+                base[key] = text
+            continue
+        if key in SUBSCRIPTION_MESSAGE_SERVER_KEYS:
+            lines = normalize_server_text(raw[key])
+            # Пустой список у БС-заглушки — валидное сохранённое значение.
+            # Для остальных server-text пустое значит «взять заводское».
+            if lines or key == "sub_bs_limit_server_text":
+                base[key] = lines
+            continue
         base[key] = raw[key]
     base["bs_monthly_limit"] = int(base.get("bs_monthly_limit") or 0)
+    for key in SUBSCRIPTION_MESSAGE_SERVER_KEYS:
+        base[key] = normalize_server_text(base.get(key))
     return base
+
+
+def overlay_subscription_messages(
+    bot_settings: dict[str, Any], panel_settings: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Тексты объявлений/серверов — из панели; остальные ключи bot_settings без изменений."""
+    merged = dict(bot_settings)
+    source = panel_settings if isinstance(panel_settings, dict) else {}
+    for key in SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS:
+        raw = source[key] if key in source else merged.get(key, DEFAULT_PANEL_SETTINGS[key])
+        text = str(raw or "")
+        merged[key] = text if text.strip() else DEFAULT_PANEL_SETTINGS[key]
+    for key in SUBSCRIPTION_MESSAGE_SERVER_KEYS:
+        raw = source[key] if key in source else merged.get(key, DEFAULT_PANEL_SETTINGS[key])
+        lines = normalize_server_text(raw)
+        if lines or (key == "sub_bs_limit_server_text" and key in source):
+            merged[key] = lines
+        else:
+            merged[key] = list(DEFAULT_PANEL_SETTINGS[key])
+    return merged
 
 
 def merge_client_apps_defaults(raw: dict[str, Any] | None) -> dict[str, Any]:
