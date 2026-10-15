@@ -1,0 +1,11 @@
+/* NPVPN-2224: функциональный минимум, финальный вид — фронтенд. */
+.support-menu { position: fixed; right: 24px; bottom: 24px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.support-menu__button { padding: 14px 20px; border-radius: 100px; border: 0; background: #2b7fff; color: #fff; font-weight: 700; cursor: pointer; text-decoration: none; }
+.support-menu__list { order: -1; display: flex; flex-direction: column; min-width: 220px; padding: 8px; border-radius: 16px; background: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .15); }
+.support-menu__list[hidden] { display: none; }
+.support-menu__item { padding: 12px 16px; border: 0; border-radius: 12px; background: none; color: #141413; text-align: left; text-decoration: none; cursor: pointer; font: inherit; }
+.support-menu__item:hover { background: #f2f2f2; }
+.support-menu__item:disabled { opacity: .5; cursor: default; }
+.support-menu__status { margin: 0; padding: 4px 16px 8px; font-size: 13px; color: #6b6b6b; }
+/* Мобильные: реальный отступ считает support-menu.js над .floating-nav и .button-wrapper_revoke (вместе с .hint); 240px — запас до/без JS. */
+@media (max-width: 1023px) { .support-menu { bottom: 240px; } }

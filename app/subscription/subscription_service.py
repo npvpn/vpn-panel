@@ -9,6 +9,7 @@ from fastapi import Request
 from app.subscription.address_context import AddressContext
 from app.subscription.bs_context import BsContext
 from app.subscription.custom_headers import parse_custom_headers
+from app.subscription.support import resolve_support_url_header
 
 # Не тянем тяжелые импорты моделей в runtime (упрощает unit-тесты сервиса).
 if TYPE_CHECKING:
@@ -106,6 +107,8 @@ def build_subscription_response_headers(
     announce_text: str,
     subscription_userinfo: str,
     user_agent: str,
+    token: str,
+    is_revoked: bool,
     build_content_disposition: Callable[[str], str],
     get_routing_header: Callable[[str, dict], dict],
 ) -> dict[str, str]:
@@ -116,7 +119,7 @@ def build_subscription_response_headers(
     headers = {
         "content-disposition": build_content_disposition(user.username),
         "profile-web-page-url": bot_settings["sub_profile_url"] or str(request.url),
-        "support-url": bot_settings["sub_support_url"],
+        "support-url": resolve_support_url_header(bot_settings, str(request.url), token, revoked=is_revoked),
         "profile-title": encode_title(bot_settings["sub_profile_title"]),
         "announce": encode_title(announce_text),
         "announce-url": bot_settings["bot_url"],

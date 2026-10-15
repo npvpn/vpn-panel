@@ -1,0 +1,23 @@
+{# NPVPN-2224: вход в поддержку. Логика — scripts/support-menu.js, вид правит фронтенд.
+   autoescape выключен: конфиг — только через tojson, ссылки — только через |e. #}
+{% if support and support.mode != "none" %}
+<link rel="stylesheet" href="{{ sub_statics }}styles/support-menu.css">
+<div class="support-menu" data-support-menu>
+  <script type="application/json" data-support-config>{{ support | tojson }}</script>
+  {% if support.mode == "telegram" %}
+    <a class="support-menu__button" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">Связаться в Telegram</a>
+  {% else %}
+    <button type="button" class="support-menu__button" data-support-toggle aria-expanded="false">
+      {{ "Помощь" if support.mode == "menu" else "Чат поддержки" }}
+    </button>
+    <div class="support-menu__list" data-support-list hidden>
+      <button type="button" class="support-menu__item" data-support-chat>Чат на сайте</button>
+      <p class="support-menu__status" data-support-status hidden></p>
+      {% if support.tg_url %}
+        <a class="support-menu__item" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">Написать в Telegram</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+<script defer src="{{ sub_statics }}scripts/support-menu.js"></script>
+{% endif %}
