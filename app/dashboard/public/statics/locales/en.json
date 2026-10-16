@@ -112,6 +112,7 @@
   "hostsDialog.botTab.columnAvailable": "Available",
   "hostsDialog.botTab.summary": "Available to this bot: {{available}} of {{total}}",
   "hostsDialog.botTab.summaryDisabled": "disabled: {{disabled}}",
+  "hostsDialog.botTab.summaryHidden": "hidden disabled: {{hidden}}",
   "hostsDialog.botTab.enableAll": "Enable all",
   "hostsDialog.botTab.disableAll": "Disable all",
   "hostsDialog.botTab.hostDisabled": "Disabled",

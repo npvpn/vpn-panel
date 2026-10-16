@@ -34,6 +34,7 @@ import {
   proxyHostSecurity,
 } from "constants/Proxies";
 import { AdvancedOptionsButton } from "./AdvancedOptionsButton";
+import { ActiveOnlySelect } from "./ActiveOnlySelect";
 import { HostAdvancedOptionsModal } from "./HostAdvancedOptionsModal";
 import { hasAdvancedFieldErrors } from "./constants";
 import { BotTabOrder, orderBotTabRows } from "./hostsFilter";
@@ -50,14 +51,18 @@ type BotOption = { value: string; label: string };
 // так наверху, а остальные приглушены. Вкладка про то, что боту включено, а
 // что нет, и видна должна быть вся картина; под фильтром выключенная строка
 // к тому же сразу пропадала, и включить её обратно было нельзя.
+// Зато есть «Только активные», как на вкладке «Хосты»: прячет хосты,
+// выключенные глобально (из задачи NPVPN-2182) — они только шумят.
 export type BotTabFilters = {
   selectedBot: string;
   search: string;
+  activeOnly: boolean;
 };
 
 export const EMPTY_BOT_TAB_FILTERS: BotTabFilters = {
   selectedBot: "",
   search: "",
+  activeOnly: true,
 };
 
 type Props = {
@@ -126,10 +131,12 @@ export const BotHostsTab: FC<Props> = ({
   const { t } = useTranslation();
   const form = useFormContext<z.infer<typeof hostsFormSchema>>();
 
-  const { selectedBot, search } = filters;
+  const { selectedBot, search, activeOnly } = filters;
   const setSelectedBot = (selectedBot: string) =>
     onFiltersChange({ selectedBot });
   const setSearch = (search: string) => onFiltersChange({ search });
+  const setActiveOnly = (activeOnly: boolean) =>
+    onFiltersChange({ activeOnly });
 
   useEffect(() => {
     if (!bots.some((bot) => bot.username === selectedBot)) {
@@ -178,7 +185,9 @@ export const BotHostsTab: FC<Props> = ({
   // Окно одно на вкладку, открыто для хоста с этим индексом.
   const [advancedIndex, setAdvancedIndex] = useState<number | null>(null);
 
-  const rows = useMemo(() => {
+  // Строки с учётом поиска; фильтр «Только активные» — ниже, чтобы знать,
+  // сколько выключенных он спрятал.
+  const searchedRows = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return (
@@ -229,6 +238,18 @@ export const BotHostsTab: FC<Props> = ({
     t,
   ]);
 
+  const rows = useMemo(
+    () =>
+      activeOnly
+        ? searchedRows.filter((row) => !row.isHostDisabled)
+        : searchedRows,
+    [searchedRows, activeOnly]
+  );
+  // Выключенные не прячем молча: сводка говорит, сколько их скрыто, — среди
+  // них могут быть привязанные к боту, которые он начнёт выдавать, как только
+  // хост включат.
+  const hiddenDisabledCount = searchedRows.length - rows.length;
+
   // NPVPN-2215: доступные боту — наверху, см. orderBotTabRows (порядок не
   // прыгает от щелчков переключателя, только от смены бота и поиска).
   const orderRef = useRef<BotTabOrder | null>(null);
@@ -236,12 +257,12 @@ export const BotHostsTab: FC<Props> = ({
     const { order, state } = orderBotTabRows(
       rows.map((row) => row.id),
       rows.map((row) => row.isAvailable),
-      JSON.stringify([selectedBot, search.trim().toLowerCase()]),
+      JSON.stringify([selectedBot, search.trim().toLowerCase(), activeOnly]),
       orderRef.current
     );
     orderRef.current = state;
     return order.map((index) => rows[index]);
-  }, [rows, selectedBot, search]);
+  }, [rows, selectedBot, search, activeOnly]);
 
   const availableCount = rows.filter((row) => row.isAvailable).length;
   // Доступные боту, но выключенные глобально — бот их сейчас не выдаёт.
@@ -335,7 +356,9 @@ export const BotHostsTab: FC<Props> = ({
       <Flex mt={1} gap={2} flexWrap="wrap" flexShrink={0}>
         {/* С поиском: ботов бывает много, а в обычном select название не
             начать вводить. */}
-        <Box w={{ base: "full", md: "280px" }}>
+        {/* Ширины подобраны так, чтобы строка помещалась целиком: поиск
+            гибкий и сжимается первым, сводка с кнопками не переносится. */}
+        <Box w={{ base: "full", md: "240px" }}>
           <ReactSelect<BotOption>
             aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
             options={botOptions}
@@ -351,7 +374,12 @@ export const BotHostsTab: FC<Props> = ({
           />
         </Box>
 
-        <InputGroup w={{ base: "full", md: "280px" }} size="sm">
+        <InputGroup
+          w={{ base: "full", md: "auto" }}
+          flex={{ md: "1 1 200px" }}
+          maxW={{ md: "280px" }}
+          size="sm"
+        >
           <InputLeftElement pointerEvents="none">
             <MagnifyingGlassIcon width="16px" color="gray" />
           </InputLeftElement>
@@ -363,6 +391,10 @@ export const BotHostsTab: FC<Props> = ({
             onChange={(e) => setSearch(e.target.value)}
           />
         </InputGroup>
+
+        <Box w={{ base: "full", md: "160px" }}>
+          <ActiveOnlySelect isActive={activeOnly} onChange={setActiveOnly} />
+        </Box>
 
         {/* На телефоне — сводка слева, под ней кнопки поровну во всю
             ширину; на десктопе — всё в ряд у правого края. */}
@@ -383,6 +415,10 @@ export const BotHostsTab: FC<Props> = ({
             {availableDisabledCount > 0 &&
               ` · ${t("hostsDialog.botTab.summaryDisabled", {
                 disabled: availableDisabledCount,
+              })}`}
+            {hiddenDisabledCount > 0 &&
+              ` · ${t("hostsDialog.botTab.summaryHidden", {
+                hidden: hiddenDisabledCount,
               })}`}
           </Text>
 

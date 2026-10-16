@@ -108,6 +108,7 @@
   "hostsDialog.botTab.columnAvailable": "در دسترس",
   "hostsDialog.botTab.summary": "در دسترس این ربات: {{available}} از {{total}}",
   "hostsDialog.botTab.summaryDisabled": "غیرفعال: {{disabled}}",
+  "hostsDialog.botTab.summaryHidden": "غیرفعال‌های پنهان: {{hidden}}",
   "hostsDialog.botTab.enableAll": "فعال‌سازی همه",
   "hostsDialog.botTab.disableAll": "غیرفعال‌سازی همه",
   "hostsDialog.botTab.hostDisabled": "غیرفعال",

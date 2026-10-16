@@ -112,6 +112,7 @@
   "hostsDialog.botTab.columnAvailable": "Доступен",
   "hostsDialog.botTab.summary": "Доступно боту: {{available}} из {{total}}",
   "hostsDialog.botTab.summaryDisabled": "выключено: {{disabled}}",
+  "hostsDialog.botTab.summaryHidden": "скрыто выключенных: {{hidden}}",
   "hostsDialog.botTab.enableAll": "Включить все",
   "hostsDialog.botTab.disableAll": "Отключить все",
   "hostsDialog.botTab.hostDisabled": "Выключен",

@@ -103,6 +103,7 @@
   "hostsDialog.botTab.columnAvailable": "可用",
   "hostsDialog.botTab.summary": "此机器人可用：{{available}} / {{total}}",
   "hostsDialog.botTab.summaryDisabled": "已禁用：{{disabled}}",
+  "hostsDialog.botTab.summaryHidden": "已隐藏的禁用项：{{hidden}}",
   "hostsDialog.botTab.enableAll": "全部启用",
   "hostsDialog.botTab.disableAll": "全部禁用",
   "hostsDialog.botTab.hostDisabled": "已禁用",
