@@ -8,16 +8,16 @@
 //                                            → { steps: [[index, ...], ...] }
 //   { op: "botOrder", steps: [{ rowIds, isAvailable, key }] }
 //                                            → { steps: [[index, ...], ...] }
-//   { op: "selectAllBots" | "withoutUnboundRentals", args: [...] }
+//   { op: "selectAllBots" | "withoutUnboundRentals"
+//         | "filtersRevealingHosts", args: [...] }
 //                                            → { result }
 // В "visible" шаги идут подряд с общим состоянием «уже показанных» — как
 // перерисовки списка, пока пользователь правит хосты и меняет фильтры.
 import { isSameHostValues } from "../../app/dashboard/src/components/hostsDialog/hostValues.ts";
 import * as botBindings from "../../app/dashboard/src/components/hostsDialog/botBindings.ts";
-import {
-  orderBotTabRows,
-  selectVisibleHosts,
-} from "../../app/dashboard/src/components/hostsDialog/hostsFilter.ts";
+import * as hostsFilter from "../../app/dashboard/src/components/hostsDialog/hostsFilter.ts";
+
+const { orderBotTabRows, selectVisibleHosts } = hostsFilter;
 
 const scenario = JSON.parse(process.argv[2]);
 let result;
@@ -42,6 +42,8 @@ if (scenario.op === "same") {
   result = { steps };
 } else if (scenario.op in botBindings) {
   result = { result: botBindings[scenario.op](...scenario.args) };
+} else if (scenario.op === "filtersRevealingHosts") {
+  result = { result: hostsFilter.filtersRevealingHosts(...scenario.args) };
 } else {
   throw new Error(`unknown op: ${scenario.op}`);
 }

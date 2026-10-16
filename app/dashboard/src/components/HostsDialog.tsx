@@ -45,6 +45,7 @@ import { hostItemSchema, hostsFormSchema } from "./hostsDialog/schema";
 import { filterFieldProps, ModalIcon, Select } from "./hostsDialog/constants";
 import { ActiveOnlySelect } from "./hostsDialog/ActiveOnlySelect";
 import { isSameHostValues } from "./hostsDialog/hostValues";
+import { filtersRevealingHosts } from "./hostsDialog/hostsFilter";
 import {
   UnsavedChangesDialog,
   UnsavedChangesNote,
@@ -297,24 +298,29 @@ export const HostsDialog: FC = () => {
 
   // Ошибки валидации подсвечиваются только в строках вкладки «Хосты» —
   // если сохраняют с вкладки «Боты», переводим туда, чтобы их было видно.
-  // Выключенные хосты там по умолчанию скрыты — если ошибка в таком,
-  // показываем все хосты.
+  // Хост с ошибкой может прятать фильтр (поиск, инбаунд, «Только активные») —
+  // снимаем те фильтры, что его прячут, иначе форма молча не сохранялась бы.
   const handleInvalidSubmit = useCallback(
     (errors: FieldErrors<z.infer<typeof hostsFormSchema>>) => {
       setTabIndex(0);
 
       const hosts = form.getValues("hosts");
-      const hasHiddenError =
-        Array.isArray(errors.hosts) &&
-        errors.hosts.some(
-          (hostErrors, index) => !!hostErrors && !!hosts[index]?.is_disabled
-        );
+      const invalidHosts = Array.isArray(errors.hosts)
+        ? hosts.filter((_, index) => !!errors.hosts?.[index])
+        : [];
 
-      if (hasHiddenError) {
-        setActiveOnly(false);
+      const next = filtersRevealingHosts(invalidHosts, {
+        search,
+        inboundFilter,
+        activeOnly,
+      });
+      if (next.search !== search) setSearch(next.search);
+      if (next.inboundFilter !== inboundFilter) {
+        setInboundFilter(next.inboundFilter);
       }
+      if (next.activeOnly !== activeOnly) setActiveOnly(next.activeOnly);
     },
-    [form]
+    [form, search, inboundFilter, activeOnly]
   );
 
   // Сохранить, не закрывая диалог. Возвращает, удалось ли: окно настроек

@@ -192,6 +192,35 @@ def test_first_load_after_empty_list_is_filtered():
     assert out == [[], [0]]
 
 
+# --- фильтры при ошибке валидации --------------------------------------------
+
+
+def _reveal(hosts: list[dict], filters: dict) -> dict:
+    return _run({"op": "filtersRevealingHosts", "args": [hosts, {**ALL, **filters}]})["result"]
+
+
+def test_reveal_keeps_filters_when_invalid_hosts_are_visible():
+    """Хост с ошибкой и так виден — фильтры пользователя не трогаем."""
+    filters = {"search": "VPN", "inboundFilter": "in", "activeOnly": True}
+    assert _reveal([_host("VPN a")], filters) == {**ALL, **filters}
+
+
+def test_reveal_clears_search_hiding_invalid_host():
+    """Баг из ревью: ошибка в хосте, скрытом поиском, — не видно ни строки, ни ошибки."""
+    assert _reveal([_host("Other")], {"search": "VPN", "activeOnly": True}) == {**ALL, "activeOnly": True}
+
+
+def test_reveal_clears_inbound_filter_hiding_invalid_host():
+    """Хост с ошибкой в другом инбаунде — сбрасываем только фильтр инбаунда."""
+    out = _reveal([_host("VPN a", inbound="other")], {"search": "VPN", "inboundFilter": "in"})
+    assert out == {**ALL, "search": "VPN"}
+
+
+def test_reveal_shows_disabled_invalid_host():
+    """Хост с ошибкой выключен — снимаем «Только активные»."""
+    assert _reveal([_host("a", disabled=True)], {"activeOnly": True}) == ALL
+
+
 # --- порядок на вкладке «По ботам» ---------------------------------------------
 
 

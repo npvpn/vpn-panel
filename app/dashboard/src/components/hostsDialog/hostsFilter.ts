@@ -145,3 +145,34 @@ export function orderBotTabRows(
 
   return { order, state: { key, availableAtStart } };
 }
+
+// Фильтры, при которых видны все переданные хосты (NPVPN-2215): при ошибке
+// валидации хост с ошибкой мог быть скрыт поиском, инбаундом или «Только
+// активные» — и форма молча не сохранялась. Снимаем только те фильтры,
+// которые его прячут; остальные фильтры пользователя не трогаем.
+export function filtersRevealingHosts(
+  hosts: HostFilterValues[],
+  filters: HostFilters
+): HostFilters {
+  const next = { ...filters };
+
+  for (const host of hosts) {
+    if (next.inboundFilter && host.inbound_tag !== next.inboundFilter) {
+      next.inboundFilter = "";
+    }
+    if (next.activeOnly && host.is_disabled) {
+      next.activeOnly = false;
+    }
+    if (
+      !hostMatchesFilters(host, {
+        ...next,
+        inboundFilter: "",
+        activeOnly: false,
+      })
+    ) {
+      next.search = "";
+    }
+  }
+
+  return next;
+}
