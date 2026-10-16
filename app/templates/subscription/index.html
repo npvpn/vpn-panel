@@ -420,9 +420,11 @@ get alternativeApps() {
                 <span>Личный кабинет</span>
               </a>
             {% endif %}
+
+            {% with support_variant = "sidebar" %}{% include "_support_menu.html" %}{% endwith %}
           </nav>
         </aside>
-        <div class="page-content">
+        <div class="page-content" :class="{ 'page-content--centered': currentPage === 'devices' && deviceCount === 0 }">
           {% set account_btn %}
             {% if web_url or bot_url %}
               <a
@@ -959,6 +961,8 @@ get alternativeApps() {
               </svg>
               <span class="floating-nav__name">Устройства</span>
           </button>
+
+          {% with support_variant = "nav" %}{% include "_support_menu.html" %}{% endwith %}
         </nav>
       </footer>
     </div>

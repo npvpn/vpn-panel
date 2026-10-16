@@ -98,15 +98,50 @@
     else { root.style.bottom = mobile ? '24px' : ''; }
   }
 
+  // Кнопка в шапке стоит в одной строке с заголовком. Не влезает — сначала уменьшаем
+  // «Помощь» (до HELP_MIN_PX), потом заголовок (до TITLE_MIN_PX, на 1–3px от исходного);
+  // не влезает и так (экраны уже 360px) — разрешаем заголовку перенос. Заголовок nowrap,
+  // поэтому нехватка места видна как переполнение строки.
+  var HELP_MIN_PX = 12;
+  var TITLE_MIN_PX = 21;
+
+  function fitHeaderTitle(root) {
+    var row = root.closest('.page-header__top');
+    var title = row && row.querySelector('.page-title');
+    var chip = root.querySelector('.support-menu__chip');
+    if (!title || !chip) { return; }
+    title.style.fontSize = '';
+    chip.style.fontSize = '';
+    title.classList.remove('page-title--wrap');
+    if (!root.getClientRects().length) { return; }  // кнопка скрыта — подгонять не к чему
+    var overflows = function () { return row.scrollWidth > row.clientWidth; };
+    var help = parseFloat(window.getComputedStyle(chip).fontSize);
+    while (overflows() && help > HELP_MIN_PX) { help -= 1; chip.style.fontSize = help + 'px'; }
+    var size = parseFloat(window.getComputedStyle(title).fontSize);
+    while (overflows() && size > TITLE_MIN_PX) { size -= 1; title.style.fontSize = size + 'px'; }
+    if (overflows()) { title.classList.add('page-title--wrap'); }
+  }
+
   function init(root) {
     var cfgNode = root.querySelector('script[data-support-config]');
     if (!cfgNode) { return; }
     var cfg = JSON.parse(cfgNode.textContent);
-    placeAboveFixedBottom(root);
-    var replace = function () { placeAboveFixedBottom(root); };
-    window.addEventListener('resize', replace);
-    window.addEventListener('load', replace);
-    if (document.fonts && document.fonts.ready) { document.fonts.ready.then(replace); }
+    // Пункт нижнего меню стоит внутри .floating-nav — поднимать нужно только плавающую кнопку.
+    if (!root.hasAttribute('data-support-inline')) {
+      placeAboveFixedBottom(root);
+      var replace = function () { placeAboveFixedBottom(root); };
+      window.addEventListener('resize', replace);
+      window.addEventListener('load', replace);
+      if (document.fonts && document.fonts.ready) { document.fonts.ready.then(replace); }
+    }
+    if (root.classList.contains('support-menu--header')) {
+      var refit = function () { fitHeaderTitle(root); };
+      refit();
+      window.addEventListener('resize', refit);
+      window.addEventListener('load', refit);
+      // ширина заголовка зависит от шрифта — пересчитываем, когда он догрузится
+      if (document.fonts && document.fonts.ready) { document.fonts.ready.then(refit); }
+    }
     var toggle = root.querySelector('[data-support-toggle]');
     var list = root.querySelector('[data-support-list]');
     var chatBtn = root.querySelector('[data-support-chat]');
@@ -117,24 +152,41 @@
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
-    toggle.addEventListener('click', function () { setOpen(list.hidden); });
     document.addEventListener('click', function (event) { if (!root.contains(event.target)) { setOpen(false); } });
     document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { setOpen(false); } });
 
-    if (chatBtn && cfg.chat) {
-      chatBtn.addEventListener('click', function () {
-        chatBtn.disabled = true;
-        setStatus(root, TEXT_LOADING);
-        startChat(cfg).then(function () {
-          setStatus(root, '');
-          setOpen(false);
-        }).catch(function () {
-          setStatus(root, cfg.tg_url ? TEXT_FAILED_TG : TEXT_FAILED_LATER);
-        }).then(function () { chatBtn.disabled = false; });
-      });
+    // Только чат (без Telegram) — вилка не нужна: «Помощь» сразу открывает чат,
+    // а список остаётся только под статус загрузки/ошибки.
+    var direct = cfg.mode === 'chat';
+
+    function runChat(button) {
+      if (button.disabled) { return; }
+      button.disabled = true;
+      setStatus(root, TEXT_LOADING);
+      if (direct) { setOpen(true); }
+      startChat(cfg).then(function () {
+        setStatus(root, '');
+        setOpen(false);
+      }).catch(function () {
+        setStatus(root, cfg.tg_url ? TEXT_FAILED_TG : TEXT_FAILED_LATER);
+        if (direct) { setOpen(true); }
+      }).then(function () { button.disabled = false; });
     }
 
-    if (new URLSearchParams(window.location.search).get('support') === 'open') { setOpen(true); }
+    if (direct) {
+      toggle.addEventListener('click', function () { runChat(toggle); });
+    } else {
+      toggle.addEventListener('click', function () { setOpen(list.hidden); });
+      if (chatBtn && cfg.chat) {
+        chatBtn.addEventListener('click', function () { runChat(chatBtn); });
+      }
+    }
+
+    // ?support=open — пришли из VPN-приложения. Реагирует только видимая кнопка: на странице
+    // их две (плавающая и пункт нижнего меню), иначе identity запросили бы дважды.
+    if (new URLSearchParams(window.location.search).get('support') === 'open' && toggle.getClientRects().length) {
+      if (direct) { runChat(toggle); } else { setOpen(true); }
+    }
   }
 
   document.addEventListener('DOMContentLoaded', function () {

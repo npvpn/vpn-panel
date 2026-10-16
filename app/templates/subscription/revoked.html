@@ -90,7 +90,10 @@
       <div class="page-content_limited">
         <!-- HEADER -->
         <div class="page-header">
-          <h2 class="page-title">Подписка была отозвана</h2>
+          <div class="page-header__top">
+            <h2 class="page-title">Подписка была отозвана</h2>
+            {% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}
+          </div>
 
           {% if web_url or bot_url %}
             <p class="device-count">Войдите в личный кабинет для управления подпиской</p>
