@@ -49,6 +49,7 @@ from app.models.admin import AdminCreate, AdminModify, AdminPartialModify
 from app.models.bot import apply_bot_settings_fallback
 from app.models.node import NodeCreate, NodeModify, NodeRole, NodeStatus, NodeUsageResponse
 from app.models.proxy import ProxyHost as ProxyHostModify
+from app.models.settings import PANEL_SETTING_KEYS
 from app.models.user import (
     ReminderType,
     UserCreate,
@@ -497,7 +498,7 @@ def get_bot_settings(db: Session, bot: Bot) -> dict[str, Any]:
 
 def update_bot_settings(db: Session, bot: Bot, settings_data: dict[str, Any]) -> dict[str, Any]:
     settings = get_or_create_bot_settings(db, bot)
-    settings.data = settings_data
+    settings.data = {key: value for key, value in settings_data.items() if key not in PANEL_SETTING_KEYS}
     settings.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(settings)

@@ -10,6 +10,7 @@ from app import logger, xray
 from app.db import GetDB, Session, crud, get_db
 from app.db.models import User
 from app.dependencies import get_validated_sub, validate_dates
+from app.models.settings import overlay_subscription_messages
 from app.models.user import SubscriptionUserResponse, UserResponse
 from app.services.panel_settings import get_panel_settings
 from app.subscription.address_context import collect_rotation_periods
@@ -135,6 +136,7 @@ def build_render_context(
     x_device_model: str | None,
 ) -> SubscriptionRenderContext:
     """Общий контекст обоих /sub-эндпоинтов: лимиты устройств, БС-контекст, заголовки."""
+    bot_settings = overlay_subscription_messages(bot_settings, panel_settings)
     user, device_limited, device_limited_hard, unsupported_blocks = resolve_device_limit_subscription_state(
         user,
         db,
