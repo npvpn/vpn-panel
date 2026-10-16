@@ -1,5 +1,6 @@
 import {
   Badge,
+  Flex,
   Box,
   Button,
   HStack,
@@ -17,38 +18,57 @@ import {
   Tr,
 } from "@chakra-ui/react";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
-import { FC, useCallback, useEffect, useMemo } from "react";
+import { useBotSelectStyles } from "hooks/useBotSelectStyles";
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactSelect from "react-select";
 import { FieldArrayWithId, useFormContext, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Bot } from "types/Bot";
 import { z } from "zod";
-import { ActiveOnlySelect } from "./ActiveOnlySelect";
-import { filterFieldProps, hostsTableSx, Select } from "./constants";
+import { filterFieldProps, hostsTableSx } from "./constants";
 import { hostsFormSchema } from "./schema";
+import { NodeType } from "contexts/NodesContext";
+import {
+  proxyALPN,
+  proxyFingerprint,
+  proxyHostSecurity,
+} from "constants/Proxies";
+import { AdvancedOptionsButton } from "./AdvancedOptionsButton";
+import { HostAdvancedOptionsModal } from "./HostAdvancedOptionsModal";
+import { hasAdvancedFieldErrors } from "./constants";
+import { BotTabOrder, orderBotTabRows } from "./hostsFilter";
 
 type HostField = FieldArrayWithId<z.infer<typeof hostsFormSchema>, "hosts">;
 
-// Выбранный бот, поиск и фильтр живут в HostsDialog: сама вкладка
+type BotOption = { value: string; label: string };
+
+// Выбранный бот и поиск живут в HostsDialog: сама вкладка
 // монтируется, только пока открыта (иначе она, подписанная на все хосты,
 // пересчитывалась бы в фоне на каждое изменение на вкладке «Хосты»), а эти
 // значения должны переживать переключение вкладок.
+// NPVPN-2215: фильтра «Только доступные» здесь нет — доступные боту хосты и
+// так наверху, а остальные приглушены. Вкладка про то, что боту включено, а
+// что нет, и видна должна быть вся картина; под фильтром выключенная строка
+// к тому же сразу пропадала, и включить её обратно было нельзя.
 export type BotTabFilters = {
   selectedBot: string;
   search: string;
-  activeOnly: boolean;
 };
 
 export const EMPTY_BOT_TAB_FILTERS: BotTabFilters = {
   selectedBot: "",
   search: "",
-  activeOnly: false,
 };
 
 type Props = {
   fields: HostField[];
   bots: Bot[];
+  nodes: NodeType[];
+  inboundMap: Map<string, any>;
   filters: BotTabFilters;
   onFiltersChange: (update: Partial<BotTabFilters>) => void;
+  // editedIndex — см. saveAndContinue в HostsDialog.
+  onSaveAndContinue: (editedIndex?: number) => Promise<boolean>;
 };
 
 // NPVPN-2044: пустой bot_usernames — законное состояние «хост не виден никому»
@@ -66,6 +86,12 @@ function nextBotUsernames(
 
   return current.filter((username) => username !== bot);
 }
+
+// NPVPN-2215: хосты, которых у выбранного бота нет, приглушены — хосты бота
+// видны сразу, а остальные под рукой, чтобы их включить. Приглушается только
+// содержимое: переключатели и шестерёнка остаются чёткими.
+const dimmed = (row: { isAvailable: boolean }) =>
+  row.isAvailable ? {} : { opacity: 0.45 };
 
 // Колонки, которые на узком экране прячутся — остаются remark и переключатель.
 const wideOnly = { base: "none", md: "table-cell" };
@@ -91,24 +117,41 @@ const botTableSx = {
 export const BotHostsTab: FC<Props> = ({
   fields,
   bots,
+  nodes,
+  inboundMap,
   filters,
   onFiltersChange,
+  onSaveAndContinue,
 }) => {
   const { t } = useTranslation();
   const form = useFormContext<z.infer<typeof hostsFormSchema>>();
 
-  const { selectedBot, search, activeOnly } = filters;
+  const { selectedBot, search } = filters;
   const setSelectedBot = (selectedBot: string) =>
     onFiltersChange({ selectedBot });
   const setSearch = (search: string) => onFiltersChange({ search });
-  const setActiveOnly = (activeOnly: boolean) =>
-    onFiltersChange({ activeOnly });
 
   useEffect(() => {
     if (!bots.some((bot) => bot.username === selectedBot)) {
       setSelectedBot(bots[0]?.username ?? "");
     }
   }, [bots, selectedBot]);
+
+  const botSelectStyles = useBotSelectStyles({ size: "sm" });
+
+  // Подпись — как была в обычном select: @username (title). Поиск
+  // react-select идёт по ней, так что находит и по username, и по названию.
+  const botOptions = useMemo<BotOption[]>(
+    () =>
+      bots.map((bot) => ({
+        value: bot.username,
+        label: `@${bot.username}${bot.title ? ` (${bot.title})` : ""}`,
+      })),
+    [bots]
+  );
+
+  const selectedBotOption =
+    botOptions.find((option) => option.value === selectedBot) ?? null;
 
   const allBotUsernames = useMemo(
     () => bots.map((bot) => bot.username),
@@ -128,6 +171,12 @@ export const BotHostsTab: FC<Props> = ({
   );
 
   const watchedHosts = useWatch({ control: form.control, name: "hosts" });
+  const hostErrors = form.formState.errors.hosts;
+
+  // NPVPN-2215: настройки хоста правятся и отсюда — фильтра по боту на
+  // вкладке «Хосты» больше нет, и всё про хосты одного бота собрано здесь.
+  // Окно одно на вкладку, открыто для хоста с этим индексом.
+  const [advancedIndex, setAdvancedIndex] = useState<number | null>(null);
 
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -163,14 +212,11 @@ export const BotHostsTab: FC<Props> = ({
             isRented,
           };
         })
-        // «Активный» здесь — строка с включённым тумблером: доступная выбранному
-        // боту.
         .filter(
           (row) =>
-            (!activeOnly || row.isAvailable) &&
-            (!query ||
-              row.remark.toLowerCase().includes(query) ||
-              row.address.toLowerCase().includes(query))
+            !query ||
+            row.remark.toLowerCase().includes(query) ||
+            row.address.toLowerCase().includes(query)
         )
     );
   }, [
@@ -180,9 +226,22 @@ export const BotHostsTab: FC<Props> = ({
     allBotUsernames,
     botDisplayNames,
     search,
-    activeOnly,
     t,
   ]);
+
+  // NPVPN-2215: доступные боту — наверху, см. orderBotTabRows (порядок не
+  // прыгает от щелчков переключателя, только от смены бота и поиска).
+  const orderRef = useRef<BotTabOrder | null>(null);
+  const orderedRows = useMemo(() => {
+    const { order, state } = orderBotTabRows(
+      rows.map((row) => row.id),
+      rows.map((row) => row.isAvailable),
+      JSON.stringify([selectedBot, search.trim().toLowerCase()]),
+      orderRef.current
+    );
+    orderRef.current = state;
+    return order.map((index) => rows[index]);
+  }, [rows, selectedBot, search]);
 
   const availableCount = rows.filter((row) => row.isAvailable).length;
   // Доступные боту, но выключенные глобально — бот их сейчас не выдаёт.
@@ -247,8 +306,10 @@ export const BotHostsTab: FC<Props> = ({
       .forEach((row) => toggleHost(row.index, enable));
   };
 
+  // На телефоне поля ячеек уже: иначе колонки переключателей съедали всю
+  // ширину, и от remark оставалось «🚀 …» (NPVPN-2215).
   const thCell = {
-    px: 3,
+    px: { base: 1, md: 3 },
     py: 2,
     textAlign: "center" as const,
     color: "gray.600",
@@ -259,15 +320,38 @@ export const BotHostsTab: FC<Props> = ({
   };
 
   const tdCell = {
-    px: 3,
+    px: { base: 1, md: 3 },
     py: 2,
     textAlign: "center" as const,
   };
 
   return (
     <Box display="flex" flexDirection="column" minH={0} h="full">
-      <HStack mt={1} spacing={2} rowGap={2} flexWrap="wrap" flexShrink={0}>
-        <InputGroup flex="2" minW="180px" size="sm">
+      {/* NPVPN-2215: одна строка — бот и поиск слева (бот первым: от него
+          зависит всё ниже), сводка и массовые действия справа. Без фильтра
+          доступности поиск на всю ширину растягивался. Flex с gap, а не
+          HStack: отступы HStack — margin слева, он перебивал ml="auto" и
+          сдвигал первый элемент перенесённой строки. */}
+      <Flex mt={1} gap={2} flexWrap="wrap" flexShrink={0}>
+        {/* С поиском: ботов бывает много, а в обычном select название не
+            начать вводить. */}
+        <Box w={{ base: "full", md: "280px" }}>
+          <ReactSelect<BotOption>
+            aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
+            options={botOptions}
+            value={selectedBotOption}
+            onChange={(option: BotOption | null) =>
+              option && setSelectedBot(option.value)
+            }
+            noOptionsMessage={() => t("botSettings.noBotsFound")}
+            isSearchable
+            styles={botSelectStyles}
+            menuPortalTarget={document.body}
+            menuPosition="fixed"
+          />
+        </Box>
+
+        <InputGroup w={{ base: "full", md: "280px" }} size="sm">
           <InputLeftElement pointerEvents="none">
             <MagnifyingGlassIcon width="16px" color="gray" />
           </InputLeftElement>
@@ -280,68 +364,50 @@ export const BotHostsTab: FC<Props> = ({
           />
         </InputGroup>
 
-        <Select
-          size="sm"
-          flex="1"
-          minW="140px"
-          {...filterFieldProps}
-          aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
-          value={selectedBot}
-          onChange={(e) => setSelectedBot(e.target.value)}
+        {/* На телефоне — сводка слева, под ней кнопки поровну во всю
+            ширину; на десктопе — всё в ряд у правого края. */}
+        <Flex
+          ml="auto"
+          w={{ base: "full", md: "auto" }}
+          gap={3}
+          rowGap={2}
+          flexWrap="wrap"
+          alignItems="center"
+          justifyContent={{ base: "flex-start", md: "flex-end" }}
         >
-          {bots.map((bot) => (
-            <option key={bot.username} value={bot.username}>
-              @{bot.username}
-              {bot.title ? ` (${bot.title})` : ""}
-            </option>
-          ))}
-        </Select>
+          <Text fontSize="sm" opacity={0.7} whiteSpace="nowrap">
+            {t("hostsDialog.botTab.summary", {
+              available: availableCount,
+              total: rows.length,
+            })}
+            {availableDisabledCount > 0 &&
+              ` · ${t("hostsDialog.botTab.summaryDisabled", {
+                disabled: availableDisabledCount,
+              })}`}
+          </Text>
 
-        <ActiveOnlySelect
-          isActive={activeOnly}
-          onChange={setActiveOnly}
-          activeLabel={t("hostsDialog.botTab.availableOnly")}
-        />
-      </HStack>
-
-      <HStack
-        mt={3}
-        spacing={2}
-        rowGap={2}
-        flexWrap="wrap"
-        justifyContent="space-between"
-        flexShrink={0}
-      >
-        <Text fontSize="sm" opacity={0.7}>
-          {t("hostsDialog.botTab.summary", {
-            available: availableCount,
-            total: rows.length,
-          })}
-          {availableDisabledCount > 0 &&
-            ` · ${t("hostsDialog.botTab.summaryDisabled", {
-              disabled: availableDisabledCount,
-            })}`}
-        </Text>
-
-        <HStack spacing={2}>
-          <Button
-            size="xs"
-            variant="outline"
-            isDisabled={!canEnableAll}
-            onClick={() => toggleAllVisible(true)}
-          >
-            {t("hostsDialog.botTab.enableAll")}
-          </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            isDisabled={!canDisableAll}
-            onClick={() => toggleAllVisible(false)}
-          >
-            {t("hostsDialog.botTab.disableAll")}
-          </Button>
-        </HStack>
-      </HStack>
+          <HStack spacing={2} w={{ base: "full", md: "auto" }}>
+            <Button
+              size="sm"
+              flex={{ base: 1, md: "none" }}
+              variant="outline"
+              isDisabled={!canEnableAll}
+              onClick={() => toggleAllVisible(true)}
+            >
+              {t("hostsDialog.botTab.enableAll")}
+            </Button>
+            <Button
+              size="sm"
+              flex={{ base: 1, md: "none" }}
+              variant="outline"
+              isDisabled={!canDisableAll}
+              onClick={() => toggleAllVisible(false)}
+            >
+              {t("hostsDialog.botTab.disableAll")}
+            </Button>
+          </HStack>
+        </Flex>
+      </Flex>
 
       <Box
         mt={2}
@@ -371,7 +437,13 @@ export const BotHostsTab: FC<Props> = ({
                 <Th {...thCell} w="18%" display={wideOnly}>
                   {t("hostsDialog.columnInbound")}
                 </Th>
-                <Th {...thCell} w={{ base: "auto", md: "30%" }}>
+                <Th
+                  {...thCell}
+                  w={{ base: "auto", md: "30%" }}
+                  textAlign={{ base: "left", md: "center" }}
+                  pl={3}
+                  whiteSpace="nowrap"
+                >
                   Remark
                 </Th>
                 <Th {...thCell} w="22%" display={wideOnly}>
@@ -380,18 +452,32 @@ export const BotHostsTab: FC<Props> = ({
                 <Th {...thCell} w="18%" display={wideOnly}>
                   {t("hostsDialog.columnBot")}
                 </Th>
-                <Th {...thCell} w="112px" whiteSpace="nowrap">
+                <Th
+                  {...thCell}
+                  w={{ base: "84px", md: "112px" }}
+                  whiteSpace="nowrap"
+                >
                   {t("hostsDialog.botTab.columnAvailable")}
                 </Th>
-                <Th {...thCell} w="112px" whiteSpace="nowrap">
+                <Th
+                  {...thCell}
+                  w={{ base: "72px", md: "112px" }}
+                  whiteSpace="nowrap"
+                >
                   {t("hostsDialog.botTab.columnRented")}
                 </Th>
+                <Th {...thCell} w={{ base: "36px", md: "48px" }} px={1} />
               </Tr>
             </Thead>
             <Tbody>
-              {rows.map((row) => (
+              {orderedRows.map((row) => (
                 <Tr key={row.id}>
-                  <Td {...tdCell} textAlign="left" display={wideOnly}>
+                  <Td
+                    {...tdCell}
+                    {...dimmed(row)}
+                    textAlign="left"
+                    display={wideOnly}
+                  >
                     <Tooltip label={row.inboundTag} placement="top">
                       <Badge
                         colorScheme="gray"
@@ -404,8 +490,17 @@ export const BotHostsTab: FC<Props> = ({
                     </Tooltip>
                   </Td>
 
-                  <Td {...tdCell}>
-                    <HStack spacing={2} justifyContent="center" minW={0}>
+                  <Td
+                    {...tdCell}
+                    {...dimmed(row)}
+                    textAlign={{ base: "left", md: "center" }}
+                    pl={3}
+                  >
+                    <HStack
+                      spacing={2}
+                      justifyContent={{ base: "flex-start", md: "center" }}
+                      minW={0}
+                    >
                       <Tooltip
                         label={row.remark}
                         placement="top"
@@ -440,7 +535,7 @@ export const BotHostsTab: FC<Props> = ({
                     </Text>
                   </Td>
 
-                  <Td {...tdCell} display={wideOnly}>
+                  <Td {...tdCell} {...dimmed(row)} display={wideOnly}>
                     <Tooltip
                       label={row.address}
                       placement="top"
@@ -452,7 +547,7 @@ export const BotHostsTab: FC<Props> = ({
                     </Tooltip>
                   </Td>
 
-                  <Td {...tdCell} display={wideOnly}>
+                  <Td {...tdCell} {...dimmed(row)} display={wideOnly}>
                     <Tooltip
                       label={row.botsTooltip}
                       placement="top"
@@ -502,12 +597,44 @@ export const BotHostsTab: FC<Props> = ({
                       </Box>
                     </Tooltip>
                   </Td>
+
+                  <Td {...tdCell} px={1}>
+                    <AdvancedOptionsButton
+                      hasErrors={hasAdvancedFieldErrors(
+                        hostErrors?.[row.index]
+                      )}
+                      onClick={() => setAdvancedIndex(row.index)}
+                    />
+                  </Td>
                 </Tr>
               ))}
             </Tbody>
           </Table>
         )}
       </Box>
+
+      {advancedIndex !== null && (
+        <HostAdvancedOptionsModal
+          isOpen
+          onClose={() => setAdvancedIndex(null)}
+          onSaveAndContinue={() => onSaveAndContinue(advancedIndex)}
+          hostKey="hosts"
+          index={advancedIndex}
+          inbound={inboundMap.get(
+            watchedHosts?.[advancedIndex]?.inbound_tag ?? ""
+          )}
+          register={form.register}
+          control={form.control}
+          accordionErrors={hostErrors?.[advancedIndex]}
+          t={t}
+          bots={bots}
+          nodes={nodes}
+          proxyHostSecurity={proxyHostSecurity}
+          proxyALPN={proxyALPN}
+          proxyFingerprint={proxyFingerprint}
+          remark={watchedHosts?.[advancedIndex]?.remark}
+        />
+      )}
     </Box>
   );
 };

@@ -28,7 +28,12 @@ import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useHosts } from "contexts/HostsContext";
 import { FC, useCallback, useEffect, useMemo, useState } from "react";
-import { FormProvider, useFieldArray, useForm } from "react-hook-form";
+import {
+  FieldErrors,
+  FormProvider,
+  useFieldArray,
+  useForm,
+} from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
 import { Bot } from "types/Bot";
@@ -39,6 +44,11 @@ import { Icon } from "./Icon";
 import { hostItemSchema, hostsFormSchema } from "./hostsDialog/schema";
 import { filterFieldProps, ModalIcon, Select } from "./hostsDialog/constants";
 import { ActiveOnlySelect } from "./hostsDialog/ActiveOnlySelect";
+import { isSameHostValues } from "./hostsDialog/hostValues";
+import {
+  UnsavedChangesDialog,
+  UnsavedChangesNote,
+} from "./hostsDialog/UnsavedChanges";
 import { HostsList } from "./hostsDialog/HostsList";
 import { AddHostForm, EMPTY_HOST } from "./hostsDialog/AddHostForm";
 import {
@@ -114,10 +124,18 @@ export const HostsDialog: FC = () => {
 
   const [search, setSearch] = useState("");
   const [inboundFilter, setInboundFilter] = useState("");
-  const [botFilter, setBotFilter] = useState("");
-  const [activeOnly, setActiveOnly] = useState(false);
+  // NPVPN-2215: выключенные хосты по умолчанию скрыты — в работе нужны
+  // включённые, остальные доступны через «Все хосты».
+  const [activeOnly, setActiveOnly] = useState(true);
 
   const [isAddingHost, setIsAddingHost] = useState(false);
+  // NPVPN-2215: хосты на момент открытия или последнего сохранения — от них
+  // считаются несохранённые изменения (пометка у кнопок, переспрос при
+  // закрытии). null — диалог закрыт или ещё грузится.
+  const [baseline, setBaseline] = useState<
+    z.infer<typeof hostsFormSchema>["hosts"] | null
+  >(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [tabIndex, setTabIndex] = useState(0);
   const [botTabFilters, setBotTabFilters] = useState<BotTabFilters>(
     EMPTY_BOT_TAB_FILTERS
@@ -192,11 +210,11 @@ export const HostsDialog: FC = () => {
       form.reset({
         hosts: flattenHosts(hosts),
       });
+      setBaseline(structuredClone(form.getValues("hosts")));
 
       setSearch("");
       setInboundFilter("");
-      setBotFilter("");
-      setActiveOnly(false);
+      setActiveOnly(true);
       setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
     }
   }, [hosts, isEditingHosts, form]);
@@ -204,12 +222,13 @@ export const HostsDialog: FC = () => {
   const onClose = useCallback(() => {
     setSearch("");
     setInboundFilter("");
-    setBotFilter("");
-    setActiveOnly(false);
+    setActiveOnly(true);
     setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
     setIsAddingHost(false);
     setTabIndex(0);
     setIsAuxLoading(true);
+    setBaseline(null);
+    setIsConfirmOpen(false);
 
     onEditingHosts(false);
   }, [onEditingHosts]);
@@ -218,7 +237,7 @@ export const HostsDialog: FC = () => {
     (
       hostsData: z.infer<typeof hostsFormSchema>,
       { closeAfter }: { closeAfter: boolean }
-    ) => {
+    ): Promise<boolean> => {
       const payload = groupHosts(hostsData.hosts, inboundTags);
 
       return setHosts(payload)
@@ -235,7 +254,11 @@ export const HostsDialog: FC = () => {
 
           if (closeAfter) {
             onClose();
+          } else {
+            setBaseline(structuredClone(form.getValues("hosts")));
           }
+
+          return true;
         })
         .catch((err) => {
           if (err?.response?.status === 409 || err?.response?.status === 400) {
@@ -259,9 +282,11 @@ export const HostsDialog: FC = () => {
               });
             });
           }
+
+          return false;
         });
     },
-    [setHosts, toast, t, refetchUsers, onClose, inboundTags]
+    [setHosts, toast, t, refetchUsers, onClose, inboundTags, form]
   );
 
   const handleFormSubmit = useCallback(
@@ -270,15 +295,71 @@ export const HostsDialog: FC = () => {
     [submitHosts]
   );
 
-  const handleFormSubmitAndContinue = useCallback(
-    (hostsData: z.infer<typeof hostsFormSchema>) =>
-      submitHosts(hostsData, { closeAfter: false }),
-    [submitHosts]
-  );
-
   // Ошибки валидации подсвечиваются только в строках вкладки «Хосты» —
   // если сохраняют с вкладки «Боты», переводим туда, чтобы их было видно.
-  const handleInvalidSubmit = useCallback(() => setTabIndex(0), []);
+  // Выключенные хосты там по умолчанию скрыты — если ошибка в таком,
+  // показываем все хосты.
+  const handleInvalidSubmit = useCallback(
+    (errors: FieldErrors<z.infer<typeof hostsFormSchema>>) => {
+      setTabIndex(0);
+
+      const hosts = form.getValues("hosts");
+      const hasHiddenError =
+        Array.isArray(errors.hosts) &&
+        errors.hosts.some(
+          (hostErrors, index) => !!hostErrors && !!hosts[index]?.is_disabled
+        );
+
+      if (hasHiddenError) {
+        setActiveOnly(false);
+      }
+    },
+    [form]
+  );
+
+  // Сохранить, не закрывая диалог. Возвращает, удалось ли: окно настроек
+  // хоста (NPVPN-2215) закрывается только после успешного сохранения.
+  // editedIndex — хост, открытый в окне настроек на вкладке «По ботам»: если
+  // ошибки только в нём, окно их и покажет — вкладку не переключаем, иначе
+  // окно закрылось бы вместе с вкладкой.
+  const saveAndContinue = useCallback(
+    (editedIndex?: number) =>
+      new Promise<boolean>((resolve) => {
+        form.handleSubmit(
+          (hostsData) =>
+            submitHosts(hostsData, { closeAfter: false }).then(resolve),
+          (errors) => {
+            const onlyEditedHostInvalid =
+              editedIndex !== undefined &&
+              Array.isArray(errors.hosts) &&
+              errors.hosts.every(
+                (hostErrors, index) => !hostErrors || index === editedIndex
+              );
+
+            if (!onlyEditedHostInvalid) {
+              handleInvalidSubmit(errors);
+            }
+            resolve(false);
+          }
+        )();
+      }),
+    [form, submitHosts, handleInvalidSubmit]
+  );
+
+  // Закрытие крестиком, кликом мимо или Esc: с несохранёнными изменениями —
+  // переспрашиваем, без них — закрываем сразу.
+  const requestClose = useCallback(() => {
+    if (baseline && !isSameHostValues(form.getValues("hosts"), baseline)) {
+      setIsConfirmOpen(true);
+    } else {
+      onClose();
+    }
+  }, [baseline, form, onClose]);
+
+  const confirmSave = useCallback(() => {
+    setIsConfirmOpen(false);
+    form.handleSubmit(handleFormSubmit, handleInvalidSubmit)();
+  }, [form, handleFormSubmit, handleInvalidSubmit]);
 
   // Добавление хоста — действие редкое, поэтому компактная кнопка: справа в
   // строке вкладок (только на «Хостах»), а без вкладок — в конце строки
@@ -287,8 +368,13 @@ export const HostsDialog: FC = () => {
   // Активная вкладка — ещё и полужирным, не только цветом подчёркивания.
   // Через sx, а не _selected: проп _selected заменил бы стиль темы для
   // выбранной вкладки целиком (цвет и подчёркивание), а не дополнил его.
+  // На телефоне вкладки не переносятся на две строки, а кнопка добавления
+  // сжимается до «+» (NPVPN-2215: иначе «По ботам» ломалось, а кнопка
+  // вылезала за край).
   const tabProps = {
     fontWeight: "medium",
+    whiteSpace: "nowrap" as const,
+    px: { base: 3, md: 4 },
     sx: { "&[aria-selected=true]": { fontWeight: "semibold" } },
   };
 
@@ -308,6 +394,8 @@ export const HostsDialog: FC = () => {
         _active: { bg: "rgba(116, 154, 236, 0.2)" },
       }}
       aria-expanded={isAddingHost}
+      aria-label={t("hostsDialog.addNewHost")}
+      iconSpacing={{ base: 0, sm: 2 }}
       leftIcon={
         <HeroIconPlusIcon
           width="16px"
@@ -320,7 +408,9 @@ export const HostsDialog: FC = () => {
       }
       onClick={() => setIsAddingHost((prev) => !prev)}
     >
-      {t("hostsDialog.addNewHost")}
+      <Box as="span" display={{ base: "none", sm: "inline" }}>
+        {t("hostsDialog.addNewHost")}
+      </Box>
     </Button>
   );
 
@@ -337,7 +427,7 @@ export const HostsDialog: FC = () => {
   );
 
   return (
-    <Modal isOpen={isEditingHosts} onClose={onClose}>
+    <Modal isOpen={isEditingHosts} onClose={requestClose}>
       <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
 
       <ModalContent
@@ -456,8 +546,10 @@ export const HostsDialog: FC = () => {
                         minH={0}
                       >
                         <Box flexShrink={0}>
-                          {/* SEARCH + FILTERS */}
-                          <HStack mt={1} spacing={2} rowGap={2} flexWrap="wrap">
+                          {/* SEARCH + FILTERS. Flex с gap, а не HStack:
+                              отступы HStack — margin слева, и при переносе
+                              строки первый элемент новой строки съезжал. */}
+                          <Flex mt={1} gap={2} flexWrap="wrap">
                             <InputGroup flex="2" minW="180px" size="sm">
                               <InputLeftElement pointerEvents="none">
                                 <MagnifyingGlassIcon
@@ -504,47 +596,13 @@ export const HostsDialog: FC = () => {
                               ))}
                             </Select>
 
-                            {bots.length >= 2 && (
-                              <Select
-                                size="sm"
-                                flex="1"
-                                minW="140px"
-                                {...filterFieldProps}
-                                aria-label={
-                                  t("hostsDialog.filterBot") ?? undefined
-                                }
-                                value={botFilter}
-                                onChange={(e) => setBotFilter(e.target.value)}
-                                sx={{
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                }}
-                              >
-                                <option value="">
-                                  {t("hostsDialog.allBots")}
-                                </option>
-
-                                {bots.map((bot) => (
-                                  <option
-                                    key={bot.username}
-                                    value={bot.username}
-                                  >
-                                    @{bot.username}
-                                    {bot.title ? ` (${bot.title})` : ""}
-                                  </option>
-                                ))}
-                              </Select>
-                            )}
-
                             <ActiveOnlySelect
                               isActive={activeOnly}
                               onChange={setActiveOnly}
-                              activeLabel={t("hostsDialog.activeOnly")}
                             />
 
                             {!hasBotTab && addHostButton}
-                          </HStack>
+                          </Flex>
 
                           {/* ADD HOST FORM — в закреплённой части, вне
                               прокрутки: список можно листать, не закрывая
@@ -595,7 +653,6 @@ export const HostsDialog: FC = () => {
                             fields={fields}
                             inboundTags={inboundTags}
                             inboundFilter={inboundFilter}
-                            botFilter={botFilter}
                             activeOnly={activeOnly}
                             search={search}
                             bots={bots}
@@ -604,6 +661,7 @@ export const HostsDialog: FC = () => {
                             insert={insert}
                             move={move}
                             remove={remove}
+                            onSaveAndContinue={saveAndContinue}
                           />
                         </Box>
                       </Box>
@@ -616,8 +674,11 @@ export const HostsDialog: FC = () => {
                           <BotHostsTab
                             fields={fields}
                             bots={bots}
+                            nodes={nodes}
+                            inboundMap={inboundMap}
                             filters={botTabFilters}
                             onFiltersChange={updateBotTabFilters}
+                            onSaveAndContinue={saveAndContinue}
                           />
                         )}
                       </TabPanel>
@@ -639,6 +700,15 @@ export const HostsDialog: FC = () => {
                   bg: "gray.700",
                 }}
               >
+                {baseline && (
+                  <UnsavedChangesNote
+                    control={form.control}
+                    name="hosts"
+                    baseline={baseline}
+                    mr={{ md: "auto" }}
+                  />
+                )}
+
                 <Button
                   variant="outline"
                   type="button"
@@ -648,10 +718,7 @@ export const HostsDialog: FC = () => {
                   whiteSpace="nowrap"
                   _hover={{ bg: "primary.500", color: "white" }}
                   disabled={isPostLoading}
-                  onClick={form.handleSubmit(
-                    handleFormSubmitAndContinue,
-                    handleInvalidSubmit
-                  )}
+                  onClick={() => saveAndContinue()}
                 >
                   {t("hostsDialog.applyAndContinue")}
                 </Button>
@@ -672,6 +739,15 @@ export const HostsDialog: FC = () => {
           </FormProvider>
         </ModalBody>
       </ModalContent>
+
+      <UnsavedChangesDialog
+        isOpen={isConfirmOpen}
+        body={t("hostsDialog.unsaved.bodyAll")}
+        saveLabel={t("apply")}
+        onStay={() => setIsConfirmOpen(false)}
+        onDiscard={onClose}
+        onSave={confirmSave}
+      />
     </Modal>
   );
 };

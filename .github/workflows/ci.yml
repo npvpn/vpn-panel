@@ -12,6 +12,11 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
+      # Node для тестов, исполняющих фронтовую логику: .ts-модули дашборда
+      # (tests/test_hosts_dialog_logic_js.py) Node снимает с типов сам с 22.18.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - run: uv sync --all-groups
       - name: ruff check
         run: uv run ruff check .

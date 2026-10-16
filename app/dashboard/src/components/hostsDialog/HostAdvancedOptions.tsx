@@ -603,11 +603,16 @@ export const HostAdvancedOptions = memo(
                         justifyContent="space-between"
                       >
                         <Text as="span" noOfLines={1}>
-                          {selectedBots.length
-                            ? t("hostsDialog.availableBots.selected", {
+                          {/* NPVPN-2044: пустая привязка — «никому», а не
+                              «всем»; «все» — это выбраны все боты. */}
+                          {selectedBots.length === 0
+                            ? t("hostsDialog.availableBots.nobody")
+                            : selectedBots.length === bots.length &&
+                              bots.length > 1
+                            ? t("hostsDialog.availableBots.all")
+                            : t("hostsDialog.availableBots.selected", {
                                 count: selectedBots.length,
-                              })
-                            : t("hostsDialog.availableBots.all")}
+                              })}
                         </Text>
                         <ChevronDownIcon width="16px" />
                       </Button>

@@ -10,11 +10,18 @@ type BotSelectVariant = "default" | "filter";
 
 interface UseBotSelectStylesProps {
   variant?: BotSelectVariant;
+  // "sm" — под компактные (size="sm") поля, как в ряду фильтров диалога
+  // хостов: высота 32, шрифт 14px, скругление 6px.
+  size?: "md" | "sm";
 }
 
 export const useBotSelectStyles = ({
   variant = "default",
+  size = "md",
 }: UseBotSelectStylesProps = {}): StylesConfig<BotOption, false> => {
+  const height = size === "sm" ? 32 : 40;
+  const sizeStyles = size === "sm" ? { fontSize: 14, borderRadius: 6 } : {};
+
   const bgToken = useColorModeValue(
     variant === "filter" ? "chakra-body-bg" : "white",
     variant === "filter" ? "gray.800" : "gray.700"
@@ -43,8 +50,9 @@ export const useBotSelectStyles = ({
   return {
     control: (base, state) => ({
       ...base,
-      minHeight: 40,
-      height: 40,
+      ...sizeStyles,
+      minHeight: height,
+      height,
       backgroundColor: bg,
       borderColor: state.isFocused ? selected : border,
       boxShadow: "none",
@@ -55,7 +63,7 @@ export const useBotSelectStyles = ({
 
     valueContainer: (base) => ({
       ...base,
-      height: 40,
+      height,
       padding: "0 12px",
     }),
 
@@ -76,7 +84,13 @@ export const useBotSelectStyles = ({
 
     menu: (base) => ({
       ...base,
+      ...(size === "sm" ? { fontSize: 14 } : {}),
       backgroundColor: bg,
+    }),
+
+    indicatorsContainer: (base) => ({
+      ...base,
+      ...(size === "sm" ? { height } : {}),
     }),
 
     option: (base, state) => ({

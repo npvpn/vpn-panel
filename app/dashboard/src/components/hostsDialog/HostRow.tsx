@@ -25,13 +25,14 @@ import {
   DownIcon,
   DragHandleIcon,
   UpIcon,
-  GearIcon,
   hasAdvancedFieldErrors,
 } from "./constants";
 import { DeleteIcon } from "components/DeleteUserModal";
+import { UserGroupIcon, UserMinusIcon } from "@heroicons/react/24/outline";
 import { RHFInput } from "./RHFInput";
 import { HostInfoPopover } from "./HostInfoPopover";
 import { HostAdvancedOptionsModal } from "./HostAdvancedOptionsModal";
+import { AdvancedOptionsButton } from "./AdvancedOptionsButton";
 import { hostsFormSchema } from "./schema";
 import { HostColumnWidths } from "./HostsList";
 import { z } from "zod";
@@ -52,6 +53,7 @@ type HostRowProps = {
   grantToAllBots: (index: number, grant: boolean) => void;
   moveHostPosition: (index: number, direction: "up" | "down") => void;
   removeHost: (index: number) => void;
+  onSaveAndContinue: () => Promise<boolean>;
   canMoveUp: boolean;
   canMoveDown: boolean;
   inbound: any;
@@ -164,6 +166,7 @@ export const HostRow = memo(function HostRow({
   grantToAllBots,
   moveHostPosition,
   removeHost,
+  onSaveAndContinue,
   canMoveUp,
   canMoveDown,
   proxyHostSecurity,
@@ -228,34 +231,10 @@ export const HostRow = memo(function HostRow({
   );
 
   const advancedOptionsButton = (
-    <Tooltip label={t("hostsDialog.advancedOptions")} placement="left">
-      <Box position="relative" display="inline-block">
-        <IconButton
-          aria-label={t("hostsDialog.advancedOptions")}
-          size="xs"
-          variant="ghost"
-          onClick={() => setIsAdvancedOpen(true)}
-        >
-          <GearIcon />
-        </IconButton>
-
-        {hasAdvancedErrors && (
-          <Box
-            position="absolute"
-            top="1px"
-            right="1px"
-            w="8px"
-            h="8px"
-            borderRadius="full"
-            bg="red.500"
-            border="2px solid"
-            borderColor="white"
-            _dark={{ borderColor: "gray.700" }}
-            pointerEvents="none"
-          />
-        )}
-      </Box>
-    </Tooltip>
+    <AdvancedOptionsButton
+      hasErrors={hasAdvancedErrors}
+      onClick={() => setIsAdvancedOpen(true)}
+    />
   );
 
   const renderCardLayout = () => (
@@ -394,9 +373,13 @@ export const HostRow = memo(function HostRow({
                 variant="ghost"
                 onClick={() => grantToAllBots(index, !isAvailableToAllBots)}
               >
-                <Text fontSize="xs" fontWeight="bold">
-                  {isAvailableToAllBots ? "0" : "∀"}
-                </Text>
+                {/* NPVPN-2215: иконки вместо «∀» / «0» — знаки без подсказки
+                    не понять, а на телефоне подсказку не увидеть. */}
+                {isAvailableToAllBots ? (
+                  <UserMinusIcon width="18px" />
+                ) : (
+                  <UserGroupIcon width="18px" />
+                )}
               </IconButton>
             </Tooltip>
 
@@ -611,6 +594,7 @@ export const HostRow = memo(function HostRow({
       <HostAdvancedOptionsModal
         isOpen={isAdvancedOpen}
         onClose={() => setIsAdvancedOpen(false)}
+        onSaveAndContinue={onSaveAndContinue}
         hostKey={HOST_KEY}
         index={index}
         inbound={inbound}
