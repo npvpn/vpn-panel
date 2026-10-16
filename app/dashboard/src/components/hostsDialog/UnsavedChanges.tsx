@@ -83,8 +83,23 @@ export const UnsavedChangesDialog: FC<{
       onClose={onStay}
       isCentered
     >
-      <AlertDialogOverlay bg="blackAlpha.300" />
-      <AlertDialogContent mx={3}>
+      {/* Затемнение плотнее, чем у окон под ним, плюс рамка и тень: в тёмной
+          теме фон вопроса совпадал с окном, и вопрос с ним сливался.
+          Фон в _dark задан явно: проп _dark заменяет тёмные стили темы
+          целиком, без bg окно в тёмной теме становилось белым. */}
+      <AlertDialogOverlay bg="blackAlpha.600" backdropFilter="blur(2px)" />
+      <AlertDialogContent
+        mx={3}
+        bg="white"
+        borderWidth="1px"
+        borderColor="gray.200"
+        boxShadow="xl"
+        _dark={{
+          bg: "gray.700",
+          borderColor: "gray.600",
+          boxShadow: "dark-lg",
+        }}
+      >
         <AlertDialogHeader fontSize="md" pb={2}>
           {t("hostsDialog.unsaved.title")}
         </AlertDialogHeader>
