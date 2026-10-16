@@ -27,9 +27,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { REPO_URL } from "constants/Project";
 import { useDashboard } from "contexts/DashboardContext";
-import differenceInDays from "date-fns/differenceInDays";
-import isValid from "date-fns/isValid";
-import { FC, ReactNode, useState } from "react";
+import { FC, ReactNode } from "react";
 import GitHubButton from "react-github-btn";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -60,33 +58,6 @@ const ResetUsageIcon = chakra(DocumentMinusIcon, iconProps);
 const BotSettingsIcon = chakra(WrenchScrewdriverIcon, iconProps);
 const PanelSettingsIcon = chakra(AdjustmentsHorizontalIcon, iconProps);
 const AppSettingsIcon = chakra(DevicePhoneMobileIcon, iconProps);
-const NotificationCircle = chakra(Box, {
-  baseStyle: {
-    bg: "yellow.500",
-    w: "2",
-    h: "2",
-    rounded: "full",
-    position: "absolute",
-  },
-});
-
-const NOTIFICATION_KEY = "marzban-menu-notification";
-
-export const shouldShowDonation = (): boolean => {
-  const date = localStorage.getItem(NOTIFICATION_KEY);
-  if (!date) return true;
-  try {
-    if (date && isValid(parseInt(date))) {
-      if (differenceInDays(new Date(), new Date(parseInt(date))) >= 7)
-        return true;
-      return false;
-    }
-    return true;
-  } catch (err) {
-    return true;
-  }
-};
-
 export const Header: FC<HeaderProps> = ({ actions }) => {
   const { userData, getUserIsSuccess, getUserIsPending } = useGetUser();
 
@@ -108,15 +79,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
   } = useDashboard();
   const { t } = useTranslation();
   const { colorMode, toggleColorMode } = useColorMode();
-  const [showDonationNotif, setShowDonationNotif] = useState(
-    shouldShowDonation()
-  );
   const gBtnColor = colorMode === "dark" ? "dark_dimmed" : colorMode;
-
-  const handleOnClose = () => {
-    localStorage.setItem(NOTIFICATION_KEY, new Date().getTime().toString());
-    setShowDonationNotif(false);
-  };
 
   return (
     <HStack
@@ -132,9 +95,6 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
       <Text as="h1" fontWeight="semibold" fontSize="2xl">
         {t("users")}
       </Text>
-      {showDonationNotif && (
-        <NotificationCircle top="0" right="0" zIndex={9999} />
-      )}
       <Box overflow="auto" css={{ direction: "rtl" }}>
         <HStack alignItems="center">
           <Menu>
