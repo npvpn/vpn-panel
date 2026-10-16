@@ -90,7 +90,10 @@
       <div class="page-content_limited">
         <!-- HEADER -->
         <div class="page-header">
-          <h2 class="page-title">Ключ доступа устарел</h2>
+          <div class="page-header__top">
+            <h2 class="page-title">Ключ доступа устарел</h2>
+            {% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}
+          </div>
 
           {% if web_url or bot_url %}
             <p class="device-count">Получите новый ключ в личном кабинете</p>
@@ -162,5 +165,6 @@
         {% include "_ad_npvpn.html" %}
       </footer>
     {% endif %}
+      {% include "_support_menu.html" %}
     </body>
 </html>

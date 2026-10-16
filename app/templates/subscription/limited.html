@@ -187,7 +187,10 @@
 
         <!-- HEADER -->
         <header class="page-header">
-          <h2 class="page-title">Лимит устройств достигнут</h2>
+          <div class="page-header__top">
+            <h2 class="page-title">Лимит устройств достигнут</h2>
+            {% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}
+          </div>
           <p class="device-count">
           Подключено <span x-text="deviceCount"></span>
           <span x-show="deviceLimit > 0">
@@ -404,5 +407,6 @@
         </p>
       </footer>
       {% endif %}
+    {% include "_support_menu.html" %}
   </body>
 </html>
