@@ -47,6 +47,7 @@
   "hostsDialog.availableBots.clear": "Clear selection",
   "hostsDialog.availableBots.info": "Only the selected bots hand this host out. If no bot is selected, the host is visible to nobody.",
   "hostsDialog.availableBots.nobody": "Nobody",
+  "hostsDialog.availableBots.selectAll": "Select all",
   "hostsDialog.availableBots.notFound": "No bots found",
   "hostsDialog.availableBots.selected": "Selected: {{count}}",
   "hostsDialog.linkedNodes": "Linked nodes",

@@ -47,6 +47,7 @@
   "hostsDialog.availableBots.clear": "Очистить выбор",
   "hostsDialog.availableBots.info": "Хост выдают только выбранные боты. Если не выбран ни один, хост не виден никому.",
   "hostsDialog.availableBots.nobody": "Никому",
+  "hostsDialog.availableBots.selectAll": "Выбрать всех",
   "hostsDialog.availableBots.notFound": "Боты не найдены",
   "hostsDialog.availableBots.selected": "Выбрано: {{count}}",
   "hostsDialog.linkedNodes": "Связанные ноды",

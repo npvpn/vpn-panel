@@ -50,6 +50,7 @@
   "hostsDialog.availableBots.clear": "پاک کردن انتخاب",
   "hostsDialog.availableBots.info": "این هاست فقط توسط ربات‌های انتخاب‌شده ارائه می‌شود. اگر هیچ رباتی انتخاب نشود، هاست برای هیچ‌کس قابل مشاهده نیست.",
   "hostsDialog.availableBots.nobody": "هیچ‌کس",
+  "hostsDialog.availableBots.selectAll": "انتخاب همه",
   "hostsDialog.availableBots.notFound": "رباتی یافت نشد",
   "hostsDialog.availableBots.selected": "انتخاب‌شده: {{count}}",
   "hostsDialog.linkedNodes": "Linked nodes",

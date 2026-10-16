@@ -234,6 +234,33 @@ def test_bot_tab_added_row_is_grouped_by_current_state():
     ) == [[1, 0], [0, 2, 1]]
 
 
+# --- выбор ботов в окне настроек хоста --------------------------------------
+
+
+def _bindings(op: str, *args) -> list[str]:
+    return _run({"op": op, "args": list(args)})["result"]
+
+
+def test_select_all_adds_missing_bots_keeping_selected_order():
+    """«Выбрать всех» добавляет недостающих в конец, уже выбранные не двигает и не дублирует."""
+    assert _bindings("selectAllBots", ["b"], ["a", "b", "c"]) == ["b", "a", "c"]
+
+
+def test_select_all_with_search_adds_only_found_bots():
+    """При поиске «Выбрать всех» берёт только найденных — остальные не трогает."""
+    assert _bindings("selectAllBots", [], ["partner1", "partner2"]) == ["partner1", "partner2"]
+
+
+def test_unbinding_bot_drops_its_rental():
+    """Баг: снятый в окне настроек бот оставался в аренде → сервер отвечал 400 при сохранении."""
+    assert _bindings("withoutUnboundRentals", ["a", "b"], ["a"]) == ["a"]
+
+
+def test_clearing_bots_drops_all_rentals():
+    """«Очистить выбор» снимает и всю аренду."""
+    assert _bindings("withoutUnboundRentals", ["a", "b"], []) == []
+
+
 # --- изменён ли хост ---------------------------------------------------------
 
 

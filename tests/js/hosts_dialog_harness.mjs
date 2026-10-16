@@ -8,9 +8,12 @@
 //                                            → { steps: [[index, ...], ...] }
 //   { op: "botOrder", steps: [{ rowIds, isAvailable, key }] }
 //                                            → { steps: [[index, ...], ...] }
+//   { op: "selectAllBots" | "withoutUnboundRentals", args: [...] }
+//                                            → { result }
 // В "visible" шаги идут подряд с общим состоянием «уже показанных» — как
 // перерисовки списка, пока пользователь правит хосты и меняет фильтры.
 import { isSameHostValues } from "../../app/dashboard/src/components/hostsDialog/hostValues.ts";
+import * as botBindings from "../../app/dashboard/src/components/hostsDialog/botBindings.ts";
 import {
   orderBotTabRows,
   selectVisibleHosts,
@@ -37,6 +40,8 @@ if (scenario.op === "same") {
     return out.order;
   });
   result = { steps };
+} else if (scenario.op in botBindings) {
+  result = { result: botBindings[scenario.op](...scenario.args) };
 } else {
   throw new Error(`unknown op: ${scenario.op}`);
 }

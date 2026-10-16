@@ -45,6 +45,7 @@
   "hostsDialog.availableBots.clear": "清除选择",
   "hostsDialog.availableBots.info": "只有所选机器人会分发此主机。如果未选择任何机器人，则此主机对任何人都不可见。",
   "hostsDialog.availableBots.nobody": "无人",
+  "hostsDialog.availableBots.selectAll": "全选",
   "hostsDialog.availableBots.notFound": "未找到机器人",
   "hostsDialog.availableBots.selected": "已选择：{{count}}",
   "hostsDialog.linkedNodes": "Linked nodes",
