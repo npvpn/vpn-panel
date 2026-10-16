@@ -215,25 +215,6 @@ export const HostsList: FC<Props> = ({
     return indexes;
   }, [fields, watchedHosts, inboundFilter, activeOnly, search]);
 
-  // NPVPN-2044: без флага «общий» новая локация иначе требует переключения у
-  // каждого бота по очереди. Аренда при этом НЕ отмечается: общие локации не
-  // тарифицируются, их отдают всем даром.
-  const grantToAllBots = useCallback(
-    (index: number, grant: boolean) => {
-      form.setValue(
-        `hosts.${index}.bot_usernames`,
-        grant ? bots.map((bot) => bot.username) : [],
-        { shouldDirty: true }
-      );
-      if (!grant) {
-        form.setValue(`hosts.${index}.rented_bot_usernames`, [], {
-          shouldDirty: true,
-        });
-      }
-    },
-    [form, bots]
-  );
-
   const duplicateHost = useCallback(
     (index: number) => {
       const value = form.getValues(`hosts.${index}`);
@@ -342,7 +323,6 @@ export const HostsList: FC<Props> = ({
         canMoveUp={visiblePos > 0}
         canMoveDown={visiblePos < visibleIndexes.length - 1}
         duplicateHost={duplicateHost}
-        grantToAllBots={grantToAllBots}
         moveHostPosition={moveHostPosition}
         removeHost={removeHost}
         onSaveAndContinue={onSaveAndContinue}

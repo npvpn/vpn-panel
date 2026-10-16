@@ -28,7 +28,6 @@ import {
   hasAdvancedFieldErrors,
 } from "./constants";
 import { DeleteIcon } from "components/DeleteUserModal";
-import { UserGroupIcon, UserMinusIcon } from "@heroicons/react/24/outline";
 import { RHFInput } from "./RHFInput";
 import { HostInfoPopover } from "./HostInfoPopover";
 import { HostAdvancedOptionsModal } from "./HostAdvancedOptionsModal";
@@ -50,7 +49,6 @@ type HostRowProps = {
   accordionErrors?: any;
   t: (key: string, opts?: any) => string;
   duplicateHost: (index: number) => void;
-  grantToAllBots: (index: number, grant: boolean) => void;
   moveHostPosition: (index: number, direction: "up" | "down") => void;
   removeHost: (index: number) => void;
   onSaveAndContinue: () => Promise<boolean>;
@@ -163,7 +161,6 @@ export const HostRow = memo(function HostRow({
   accordionErrors,
   t,
   duplicateHost,
-  grantToAllBots,
   moveHostPosition,
   removeHost,
   onSaveAndContinue,
@@ -349,37 +346,6 @@ export const HostRow = memo(function HostRow({
                 onClick={() => duplicateHost(index)}
               >
                 <DuplicateIcon />
-              </IconButton>
-            </Tooltip>
-
-            {/* NPVPN-2044: массовая выдача — без неё общая локация требует
-                переключения у каждого бота по очереди на вкладке «Боты». */}
-            <Tooltip
-              label={
-                isAvailableToAllBots
-                  ? t("hostsDialog.revokeFromAll")
-                  : t("hostsDialog.grantToAll")
-              }
-              placement="left"
-            >
-              <IconButton
-                aria-label={
-                  isAvailableToAllBots
-                    ? t("hostsDialog.revokeFromAll")
-                    : t("hostsDialog.grantToAll")
-                }
-                size="xs"
-                colorScheme="white"
-                variant="ghost"
-                onClick={() => grantToAllBots(index, !isAvailableToAllBots)}
-              >
-                {/* NPVPN-2215: иконки вместо «∀» / «0» — знаки без подсказки
-                    не понять, а на телефоне подсказку не увидеть. */}
-                {isAvailableToAllBots ? (
-                  <UserMinusIcon width="18px" />
-                ) : (
-                  <UserGroupIcon width="18px" />
-                )}
               </IconButton>
             </Tooltip>
 

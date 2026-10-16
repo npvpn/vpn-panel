@@ -533,9 +533,7 @@
   "addressPins.pinnableHostsLoadError": "Не удалось загрузить локации",
   "addressPins.noPinnableHosts": "У этого пользователя нет доступных для закрепления локаций.",
   "hostsDialog.availableBots.none": "никому",
-  "hostsDialog.availableBots.noneHint": "Хост не виден ни одному боту: включите его для нужных ботов на вкладке «Боты» или сделайте общим",
+  "hostsDialog.availableBots.noneHint": "Хост не виден ни одному боту: включите его для нужных ботов на вкладке «По ботам» или в настройках хоста",
   "hostsDialog.botTab.columnRented": "Аренда",
-  "hostsDialog.botTab.rentedHint": "Сначала дайте боту доступ к хосту — аренду отмечают только у выданного хоста",
-  "hostsDialog.grantToAll": "Выдать всем ботам",
-  "hostsDialog.revokeFromAll": "Отозвать у всех"
+  "hostsDialog.botTab.rentedHint": "Сначала дайте боту доступ к хосту — аренду отмечают только у выданного хоста"
 }
