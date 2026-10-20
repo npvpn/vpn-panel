@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
   Portal,
   SimpleGrid,
+  HStack,
   VStack,
   Badge,
   Button,
@@ -27,7 +28,12 @@ import {
 } from "@heroicons/react/24/outline";
 import { NodeType } from "contexts/NodesContext";
 import { ChangeEvent, memo, useEffect, useState } from "react";
-import { Control, Controller, UseFormRegister } from "react-hook-form";
+import {
+  Control,
+  Controller,
+  UseFormRegister,
+  useFormContext,
+} from "react-hook-form";
 import { XrayTemplateDocument, listTemplates } from "service/xrayTemplates";
 import { Bot } from "types/Bot";
 import { InfoIcon, PencilIcon, Error, Select } from "./constants";
@@ -37,6 +43,7 @@ import { RHFCheckbox } from "./RHFCheckbox";
 import { RHFSelect } from "./RHFSelect";
 import { XhttpExtraModal } from "./XhttpExtraModal";
 import { HostInfoPopover } from "./HostInfoPopover";
+import { selectAllBots, withoutUnboundRentals } from "./botBindings";
 
 export type HostAdvancedOptionsProps = {
   hostKey: string;
@@ -75,6 +82,23 @@ export const HostAdvancedOptions = memo(
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
     const [botSearch, setBotSearch] = useState("");
+    const form = useFormContext();
+
+    // Новый список ботов хоста; снятые боты теряют и аренду — см.
+    // withoutUnboundRentals.
+    const setHostBots = (
+      onChange: (value: string[]) => void,
+      next: string[]
+    ) => {
+      onChange(next);
+
+      const rentedPath = `${hostKey}.${index}.rented_bot_usernames`;
+      const rented: string[] = form.getValues(rentedPath) || [];
+      const kept = withoutUnboundRentals(rented, next);
+      if (kept.length !== rented.length) {
+        form.setValue(rentedPath, kept, { shouldDirty: true });
+      }
+    };
     const [nodeSearch, setNodeSearch] = useState("");
     const [clientConfigs, setClientConfigs] = useState<XrayTemplateDocument[]>(
       []
@@ -603,11 +627,16 @@ export const HostAdvancedOptions = memo(
                         justifyContent="space-between"
                       >
                         <Text as="span" noOfLines={1}>
-                          {selectedBots.length
-                            ? t("hostsDialog.availableBots.selected", {
+                          {/* NPVPN-2044: пустая привязка — «никому», а не
+                              «всем»; «все» — это выбраны все боты. */}
+                          {selectedBots.length === 0
+                            ? t("hostsDialog.availableBots.nobody")
+                            : selectedBots.length === bots.length &&
+                              bots.length > 1
+                            ? t("hostsDialog.availableBots.all")
+                            : t("hostsDialog.availableBots.selected", {
                                 count: selectedBots.length,
-                              })
-                            : t("hostsDialog.availableBots.all")}
+                              })}
                         </Text>
                         <ChevronDownIcon width="16px" />
                       </Button>
@@ -643,15 +672,40 @@ export const HostAdvancedOptions = memo(
                                 </InputRightElement>
                               )}
                             </InputGroup>
-                            {selectedBotUsernames.length > 0 && (
-                              <Button
-                                variant="ghost"
-                                size="xs"
-                                onClick={() => field.onChange([])}
-                              >
-                                {t("hostsDialog.availableBots.clear")}
-                              </Button>
-                            )}
+                            <HStack spacing={1}>
+                              {/* NPVPN-2215: при поиске — только найденных. */}
+                              {filteredBots.some(
+                                (bot: Bot) =>
+                                  !selectedBotUsernames.includes(bot.username)
+                              ) && (
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  onClick={() =>
+                                    setHostBots(
+                                      field.onChange,
+                                      selectAllBots(
+                                        selectedBotUsernames,
+                                        filteredBots.map(
+                                          (bot: Bot) => bot.username
+                                        )
+                                      )
+                                    )
+                                  }
+                                >
+                                  {t("hostsDialog.availableBots.selectAll")}
+                                </Button>
+                              )}
+                              {selectedBotUsernames.length > 0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  onClick={() => setHostBots(field.onChange, [])}
+                                >
+                                  {t("hostsDialog.availableBots.clear")}
+                                </Button>
+                              )}
+                            </HStack>
                             <VStack
                               align="start"
                               spacing={2}
@@ -674,7 +728,8 @@ export const HostAdvancedOptions = memo(
                                         bot.username,
                                       ]);
                                     } else {
-                                      field.onChange(
+                                      setHostBots(
+                                        field.onChange,
                                         selectedBotUsernames.filter(
                                           (username: string) =>
                                             username !== bot.username
