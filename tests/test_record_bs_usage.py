@@ -795,3 +795,68 @@ def test_revoke_user_sub_rotates_keys_without_bs_limit_total(db, monkeypatch):
     assert user.note == "keep-me"
     assert proxy.settings["id"] != old_id
     assert device.status == "revoked"
+
+
+def test_revoke_user_sub_keeps_existing_next_plan(db, monkeypatch):
+    """Сброс ссылки не передаёт next_plan, и запланированный тариф остаётся."""
+    from app.db import crud
+    from app.db import models as db_models
+    from app.db.models import NextPlan
+    from app.models.proxy import ProxyTypes
+
+    class _FakeXrayConfig:
+        inbounds_by_protocol: dict = {}
+
+    monkeypatch.setattr(db_models.xray, "config", _FakeXrayConfig(), raising=False)
+
+    db.add(
+        Proxy(
+            user_id=USER_ID, type=ProxyTypes.VLESS, settings={"id": "35e4e39c-7d5c-4f4b-8b71-558e4f37ff53", "flow": ""}
+        )
+    )
+    db.add(
+        NextPlan(
+            user_id=USER_ID,
+            data_limit=5 * GB,
+            expire=1_893_456_000,
+            add_remaining_traffic=True,
+            fire_on_either=False,
+        )
+    )
+    db.commit()
+
+    crud.revoke_user_sub(db, db.query(User).filter(User.id == USER_ID).one())
+    db.expire_all()
+
+    plan = db.query(NextPlan).filter(NextPlan.user_id == USER_ID).one()
+    assert plan.data_limit == 5 * GB
+    assert plan.expire == 1_893_456_000
+    assert plan.add_remaining_traffic is True
+    assert plan.fire_on_either is False
+
+
+def test_update_user_clears_next_plan_only_when_explicitly_null(db):
+    from app.db import crud
+    from app.db.models import NextPlan
+    from app.models.user import UserModify
+
+    db.add(
+        NextPlan(
+            user_id=USER_ID,
+            data_limit=5 * GB,
+            expire=1_893_456_000,
+            add_remaining_traffic=True,
+            fire_on_either=False,
+        )
+    )
+    db.commit()
+
+    crud.update_user(db, db.query(User).filter(User.id == USER_ID).one(), UserModify(proxies={}, note="без тарифа"))
+    db.expire_all()
+    plan = db.query(NextPlan).filter(NextPlan.user_id == USER_ID).one()
+    assert plan.data_limit == 5 * GB
+    assert db.query(User).filter(User.id == USER_ID).one().note == "без тарифа"
+
+    crud.update_user(db, db.query(User).filter(User.id == USER_ID).one(), UserModify(proxies={}, next_plan=None))
+    db.expire_all()
+    assert db.query(NextPlan).filter(NextPlan.user_id == USER_ID).one_or_none() is None

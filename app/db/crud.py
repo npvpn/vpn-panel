@@ -861,15 +861,17 @@ def update_user(db: Session, dbuser: User, modify: UserModify) -> User:
     if modify.on_hold_expire_duration is not None:
         dbuser.on_hold_expire_duration = modify.on_hold_expire_duration
 
-    if modify.next_plan is not None:
-        dbuser.next_plan = NextPlan(
-            data_limit=modify.next_plan.data_limit,
-            expire=modify.next_plan.expire,
-            add_remaining_traffic=modify.next_plan.add_remaining_traffic,
-            fire_on_either=modify.next_plan.fire_on_either,
-        )
-    elif dbuser.next_plan is not None:
-        db.delete(dbuser.next_plan)
+    # Дефолтный None — поле не передали и тариф не трогаем. Явный null удаляет его.
+    if "next_plan" in modify.model_fields_set:
+        if modify.next_plan is not None:
+            dbuser.next_plan = NextPlan(
+                data_limit=modify.next_plan.data_limit,
+                expire=modify.next_plan.expire,
+                add_remaining_traffic=modify.next_plan.add_remaining_traffic,
+                fire_on_either=modify.next_plan.fire_on_either,
+            )
+        elif dbuser.next_plan is not None:
+            db.delete(dbuser.next_plan)
 
     if modify.bs_extra is not None:
         set_user_bs_extra_amount(db, dbuser, modify.bs_extra)
@@ -1213,6 +1215,7 @@ def revoke_user_sub(db: Session, dbuser: User) -> User:
         user.proxies[proxy_type] = settings
     # В update_user нужен UserModify: у UserResponse нет bs_limit_total, и сброс
     # ссылки падает с AttributeError, если bs_extra пустой. Меняются только ключи.
+    # next_plan в словарь не кладём: неявный None удалил бы запланированный тариф.
     # model_validate, а не конструктор: mypy не видит default у Field(None, nullable=True).
     modify = UserModify.model_validate(
         {"proxies": {proxy_type: settings.dict(no_obj=True) for proxy_type, settings in user.proxies.items()}}
