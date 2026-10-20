@@ -102,7 +102,10 @@
       <div class="page-content_limited">
         <!-- HEADER -->
         <div class="page-header">
-          <h2 class="page-title">Подписка истекла</h2>
+          <div class="page-header__top">
+            <h2 class="page-title">Подписка истекла</h2>
+            {% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}
+          </div>
 
           {% if web_url or bot_url %}
             <p p class="device-count">Войдите в личный кабинет для управления подпиской</p>
@@ -160,9 +163,10 @@
     </div>
 
     {% if show_ads %}
-    <footer class="footer">
+    <footer class="footer footer_revoked">
       {% include "_ad_npvpn.html" %}
     </footer>
     {% endif %}
+    {% include "_support_menu.html" %}
   </body>
 </html>
