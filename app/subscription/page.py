@@ -5,6 +5,7 @@ from app.models.settings import CLIENT_APPS_KEY
 from app.models.user import UserResponse
 from app.subscription.bot_settings import resolve_bot_settings
 from app.subscription.client_apps import build_client_apps_view
+from app.subscription.support import build_support_context
 from app.subscription.user_info import devices_json
 from config import XRAY_SUBSCRIPTION_PATH, subscription_statics_url
 
@@ -25,7 +26,7 @@ def resolve_pay_url(bot_settings: dict) -> str:
     return value
 
 
-def build_subscription_page_context(db: Session, dbuser, token: str) -> dict:
+def build_subscription_page_context(db: Session, dbuser, token: str, *, revoked: bool = False) -> dict:
     """Контекст jinja-шаблона страницы подписки (HTML-ветка)."""
     bot_settings = resolve_bot_settings(dbuser)
     devices = crud.get_user_active_devices(db, dbuser)
@@ -40,5 +41,11 @@ def build_subscription_page_context(db: Session, dbuser, token: str) -> dict:
         "show_ads": bool(bot_settings.get("show_ads", True)),
         "pay_url": resolve_pay_url(bot_settings),
         "client_apps": build_client_apps_view(crud.get_global_setting(db, CLIENT_APPS_KEY)),
+        "support": build_support_context(
+            bot_settings,
+            dbuser.bot.source_bot_id if dbuser.bot else None,
+            token,
+            allow_chat=not revoked,
+        ),
         "sub_statics": subscription_statics_url(),
     }

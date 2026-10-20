@@ -127,6 +127,7 @@ def build_render_context(
     bot_settings: dict,
     panel_settings: dict,
     *,
+    token: str,
     is_revoked: bool,
     is_expired: bool,
     user_agent: str,
@@ -185,6 +186,8 @@ def build_render_context(
         announce_text=announce_text,
         subscription_userinfo=subscription_userinfo,
         user_agent=user_agent,
+        token=token,
+        is_revoked=is_revoked,
         build_content_disposition=build_content_disposition,
         get_routing_header=get_routing_header,
     )
@@ -263,7 +266,7 @@ def user_subscription(
     accept_header = request.headers.get("Accept", "")
     if "text/html" in accept_header:
         # HTML-ветка (страница подписки) обрабатывается отдельно от генерации конфигов.
-        html_context = build_subscription_page_context(db, dbuser, token)
+        html_context = build_subscription_page_context(db, dbuser, token, revoked=is_revoked)
         if is_revoked:
             return HTMLResponse(render_template("revoked.html", html_context))
         if is_expired:
@@ -280,6 +283,7 @@ def user_subscription(
         user,
         bot_settings,
         panel_settings,
+        token=token,
         is_revoked=is_revoked,
         is_expired=is_expired,
         user_agent=user_agent,
@@ -384,6 +388,7 @@ def user_subscription_with_client_type(
         user,
         bot_settings,
         panel_settings,
+        token=token,
         is_revoked=is_revoked,
         is_expired=is_expired,
         user_agent=user_agent,
