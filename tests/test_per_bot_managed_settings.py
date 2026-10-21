@@ -44,7 +44,7 @@ def test_first_push_binds_by_username_and_preserves_panel_only_settings(db):
     db.add(
         BotSettings(
             bot_id=bot.id,
-            data={"show_ads": False, "sub_client_note": "legacy note", "panel_only": {"keep": True}},
+            data={"show_ads": False, "sub_client_note": "custom note", "panel_only": {"keep": True}},
         )
     )
     db.commit()
@@ -65,7 +65,7 @@ def test_first_push_binds_by_username_and_preserves_panel_only_settings(db):
     assert settings["web_url"] == "https://panel.example.com"
     assert settings["panel_only"] == {"keep": True}
     assert settings["show_ads"] is False
-    assert "sub_client_note" not in settings
+    assert settings["sub_client_note"] == "custom note"
     assert state["key"] == "bot_settings:42"
     assert state["version"] == "v1"
 
@@ -97,9 +97,9 @@ def test_full_push_overwrites_new_managed_fields(db):
     settings = db.query(BotSettings).filter(BotSettings.bot_id == bot.id).one().data
     assert settings["show_ads"] is False
     assert settings["sub_profile_title"] == "From admin"
-    assert "sub_client_note" not in settings
-    assert "sub_revoked_server_text" not in settings
+    assert settings["sub_client_note"] == "new note"
     assert settings["sub_device_limit_hard_mode"] is True
+    assert settings["sub_revoked_server_text"] == ["one", "two"]
     assert settings["bs_extra_reset_pool_on_prolong"] is True
 
 

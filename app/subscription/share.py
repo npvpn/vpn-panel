@@ -147,11 +147,10 @@ def generate_subscription(
     bs_usage_suffix: Callable[[], str] | None = None,
 ) -> str:
     bs = bs or BsContext.empty()
-    from app.models.settings import overlay_subscription_messages
+    from app.models.bot import DEFAULT_BOT_SETTINGS, apply_bot_settings_fallback
     from config import USE_CUSTOM_JSON_DEFAULT
 
-    # Тексты — из panel overlay (HTTP уже наложил их в build_render_context).
-    resolved_settings = overlay_subscription_messages(settings or {}, None)
+    resolved_settings = apply_bot_settings_fallback(settings or DEFAULT_BOT_SETTINGS)
 
     # Тела документов клиентского конфига живут в app.services.xray_templates
     # (документы с историей, NPVPN-2024) и читаются через процессный кэш

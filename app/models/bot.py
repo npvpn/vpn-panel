@@ -6,17 +6,39 @@ from app.models.managed import ManagedStateResponse
 from app.models.settings import PANEL_SETTING_KEYS
 from config import (
     BOT_URL,
+    SUB_BS_LIMIT_ANNOUNCE_TEXT,
+    SUB_CLIENT_NOTE,
+    SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
     SUB_DEVICE_LIMIT_HARD_MODE,
+    SUB_DEVICE_LIMIT_SERVER_TEXT,
+    SUB_EXPIRED_ANNOUNCE_TEXT,
+    SUB_EXPIRED_SERVER_TEXT,
     SUB_PROFILE_TITLE,
     SUB_PROFILE_URL,
+    SUB_REVOKED_ANNOUNCE_TEXT,
+    SUB_REVOKED_SERVER_TEXT,
     SUB_SUPPORT_URL,
+    SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
+    SUB_UNSUPPORTED_CLIENT_SERVER_TEXT,
     SUB_UPDATE_INTERVAL,
 )
+
+
+def _normalize_server_text(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
+
 
 DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "sub_update_interval": str(SUB_UPDATE_INTERVAL),
     "sub_support_url": SUB_SUPPORT_URL,
     "sub_profile_title": SUB_PROFILE_TITLE,
+    "sub_client_note": SUB_CLIENT_NOTE,
     "sub_profile_url": SUB_PROFILE_URL,
     "sub_subscription_domain": "",
     "bot_url": BOT_URL,
@@ -29,7 +51,14 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "sub_expired_announce_text": SUB_EXPIRED_ANNOUNCE_TEXT,
     "sub_device_limit_announce_text": SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
     "sub_device_limit_hard_mode": SUB_DEVICE_LIMIT_HARD_MODE,
+    "sub_unsupported_client_announce_text": SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
+    "sub_revoked_server_text": _normalize_server_text(SUB_REVOKED_SERVER_TEXT),
+    "sub_expired_server_text": _normalize_server_text(SUB_EXPIRED_SERVER_TEXT),
+    "sub_device_limit_server_text": _normalize_server_text(SUB_DEVICE_LIMIT_SERVER_TEXT),
+    "sub_unsupported_client_server_text": _normalize_server_text(SUB_UNSUPPORTED_CLIENT_SERVER_TEXT),
     "bs_extra_reset_pool_on_prolong": False,
+    "sub_bs_limit_server_text": [],
+    "sub_bs_limit_announce_text": SUB_BS_LIMIT_ANNOUNCE_TEXT,
     "show_ads": True,
     # NPVPN-2072. Источник истины — админка бота; здесь дефолт на случай, когда синк
     # ещё не доехал. Выключено по умолчанию: включение меняет выдачу адресов всем сразу.
@@ -73,6 +102,7 @@ class BotSettingsPayload(BaseModel):
     sub_update_interval: str = ""
     sub_support_url: str = ""
     sub_profile_title: str = ""
+    sub_client_note: str = ""
     sub_profile_url: str = ""
     sub_subscription_domain: str = ""
     bot_url: str = ""
@@ -86,7 +116,26 @@ class BotSettingsPayload(BaseModel):
     sub_device_limit_announce_text: str = ""
     sub_device_limit_hard_mode: bool = False
     bs_extra_reset_pool_on_prolong: bool = False
+    sub_unsupported_client_announce_text: str = ""
+    sub_revoked_server_text: list[str] = []
+    sub_expired_server_text: list[str] = []
+    sub_device_limit_server_text: list[str] = []
+    sub_unsupported_client_server_text: list[str] = []
+    sub_bs_limit_server_text: list[str] = []
+    sub_bs_limit_announce_text: str = ""
     show_ads: bool = True
+
+    @field_validator(
+        "sub_revoked_server_text",
+        "sub_expired_server_text",
+        "sub_device_limit_server_text",
+        "sub_unsupported_client_server_text",
+        "sub_bs_limit_server_text",
+        mode="before",
+    )
+    @classmethod
+    def validate_server_text(cls, value: Any):
+        return _normalize_server_text(value)
 
     @field_validator("sub_subscription_domain", mode="before")
     @classmethod
@@ -107,7 +156,20 @@ class BotAdminSyncUpdate(BaseModel):
 def apply_bot_settings_fallback(raw_settings: dict[str, Any] | None) -> dict[str, Any]:
     base = dict(DEFAULT_BOT_SETTINGS)
     text_fallback_keys = {
+        "sub_client_note",
+        "sub_revoked_announce_text",
+        "sub_expired_announce_text",
+        "sub_device_limit_announce_text",
+        "sub_unsupported_client_announce_text",
+        "sub_bs_limit_announce_text",
         "sub_subscription_domain",
+    }
+    server_text_fallback_keys = {
+        "sub_revoked_server_text",
+        "sub_expired_server_text",
+        "sub_device_limit_server_text",
+        "sub_unsupported_client_server_text",
+        "sub_bs_limit_server_text",
     }
     if raw_settings:
         for key, value in raw_settings.items():
@@ -117,7 +179,18 @@ def apply_bot_settings_fallback(raw_settings: dict[str, Any] | None) -> dict[str
                 continue
             if key in text_fallback_keys and isinstance(value, str) and not value.strip():
                 continue
+            if key in server_text_fallback_keys and not _normalize_server_text(value):
+                continue
             base[key] = value
+
+    for key in (
+        "sub_revoked_server_text",
+        "sub_expired_server_text",
+        "sub_device_limit_server_text",
+        "sub_unsupported_client_server_text",
+        "sub_bs_limit_server_text",
+    ):
+        base[key] = _normalize_server_text(base.get(key))
 
     base["sub_device_limit_hard_mode"] = bool(base.get("sub_device_limit_hard_mode"))
     base["bs_extra_reset_pool_on_prolong"] = bool(base.get("bs_extra_reset_pool_on_prolong", False))

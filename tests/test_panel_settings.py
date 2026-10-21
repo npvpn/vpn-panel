@@ -19,10 +19,8 @@ from app.models.settings import (  # noqa: E402
     LEGACY_SECRET_KEYS_SETTING,
     PANEL_SETTING_KEYS,
     PANEL_SETTINGS_KEY,
-    SUBSCRIPTION_MESSAGE_KEYS,
     PanelSettingsPayload,
     apply_panel_settings_fallback,
-    overlay_subscription_messages,
 )
 from app.services import panel_settings as panel_svc  # noqa: E402
 from app.utils.jwt import get_subscription_payload, get_subscription_secret_keys  # noqa: E402
@@ -66,15 +64,11 @@ def test_panel_settings_service_roundtrip():
             sub_custom_headers="routing-enable: 0",
             bs_monthly_limit=1024,
             sub_routing_happ="happ://r",
-            sub_client_note="panel note",
-            sub_revoked_server_text=["one", "two"],
         )
         saved = panel_svc.save_panel_settings(db, payload)
         assert saved["sub_custom_headers"] == "routing-enable: 0"
         assert saved["bs_monthly_limit"] == 1024
         assert saved["sub_routing_happ"] == "happ://r"
-        assert saved["sub_client_note"] == "panel note"
-        assert saved["sub_revoked_server_text"] == ["one", "two"]
         assert panel_svc.get_bs_monthly_limit(db) == 1024
         assert panel_svc.get_bs_monthly_limit(None) == 0
 
@@ -163,37 +157,3 @@ def test_subscription_payload_rejects_unknown_legacy_key(monkeypatch):
     monkeypatch.setattr(panel_svc, "get_cached_legacy_subscription_secret_keys", lambda: ())
     token = _signed_sub_token("user_1", 1000, "unknown-secret")
     assert get_subscription_payload(token) is None
-
-
-def test_panel_payload_includes_subscription_message_keys():
-    for key in SUBSCRIPTION_MESSAGE_KEYS:
-        assert key in PanelSettingsPayload.model_fields
-        assert key in PANEL_SETTING_KEYS
-        assert key in DEFAULT_PANEL_SETTINGS
-
-
-def test_panel_fallback_empty_announce_uses_factory_default():
-    resolved = apply_panel_settings_fallback({"sub_client_note": "  ", "sub_bs_limit_server_text": []})
-    assert resolved["sub_client_note"] == DEFAULT_PANEL_SETTINGS["sub_client_note"]
-    assert resolved["sub_bs_limit_server_text"] == []
-
-
-def test_overlay_subscription_messages_prefers_panel_texts():
-    bot = {"sub_profile_title": "Keep me", "sub_client_note": "from-bot", "sub_device_limit_hard_mode": True}
-    panel = {
-        "sub_client_note": "from-panel",
-        "sub_revoked_server_text": ["one", " two "],
-        "sub_bs_limit_server_text": [],
-    }
-    merged = overlay_subscription_messages(bot, panel)
-    assert merged["sub_profile_title"] == "Keep me"
-    assert merged["sub_device_limit_hard_mode"] is True
-    assert merged["sub_client_note"] == "from-panel"
-    assert merged["sub_revoked_server_text"] == ["one", "two"]
-    assert merged["sub_bs_limit_server_text"] == []
-    assert merged["sub_expired_announce_text"] == DEFAULT_PANEL_SETTINGS["sub_expired_announce_text"]
-
-
-def test_overlay_empty_announce_falls_back_to_factory():
-    merged = overlay_subscription_messages({}, {"sub_client_note": ""})
-    assert merged["sub_client_note"] == DEFAULT_PANEL_SETTINGS["sub_client_note"]

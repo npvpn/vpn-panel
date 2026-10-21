@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from app.models.managed import ManagedBotSettingsPayload
-from app.models.settings import CLIENT_APPS_KEY, PANEL_SETTING_KEYS, SUBSCRIPTION_MESSAGE_KEYS, ClientAppsPayload
+from app.models.settings import CLIENT_APPS_KEY, ClientAppsPayload
 
 if TYPE_CHECKING:
     # Отложенный импорт: app.db тянет SQLAlchemy-модели и подключение к БД,
@@ -50,17 +50,26 @@ BOT_MANAGED_JSON_FIELDS = frozenset(
         "sub_profile_url",
         "sub_profile_title",
         "sub_update_interval",
+        "sub_client_note",
         "bs_extra_reset_pool_on_prolong",
         "sub_device_limit_hard_mode",
+        "sub_revoked_announce_text",
+        "sub_expired_announce_text",
+        "sub_device_limit_announce_text",
+        "sub_unsupported_client_announce_text",
+        "sub_bs_limit_announce_text",
+        "sub_revoked_server_text",
+        "sub_expired_server_text",
+        "sub_device_limit_server_text",
+        "sub_unsupported_client_server_text",
+        "sub_bs_limit_server_text",
     }
 )
 BOT_MANAGED_SETTINGS_FIELDS = BOT_MANAGED_IDENTITY_FIELDS | BOT_MANAGED_JSON_FIELDS
 
 
 def _validate_bot_settings(data: dict[str, Any]) -> dict[str, Any]:
-    # Старые клиенты ещё шлют panel-wide тексты; extra=forbid иначе роняет весь синк.
-    cleaned = {key: value for key, value in data.items() if key not in SUBSCRIPTION_MESSAGE_KEYS}
-    normalized = ManagedBotSettingsPayload.model_validate(cleaned).model_dump()
+    normalized = ManagedBotSettingsPayload.model_validate(data).model_dump()
     normalized["web_url"] = _normalize_web_url(normalized["web_url"])
     return normalized
 
@@ -205,8 +214,6 @@ def apply_managed_bot_push(
         settings = BotSettings(bot_id=bot.id, data={})
         db.add(settings)
     merged = dict(settings.data or {})
-    for key in PANEL_SETTING_KEYS:
-        merged.pop(key, None)
     for field in BOT_MANAGED_JSON_FIELDS:
         if field not in data:
             continue
