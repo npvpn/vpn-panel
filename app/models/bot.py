@@ -6,9 +6,12 @@ from app.models.managed import ManagedStateResponse
 from app.models.settings import PANEL_SETTING_KEYS
 from config import (
     BOT_URL,
+    SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
     SUB_DEVICE_LIMIT_HARD_MODE,
+    SUB_EXPIRED_ANNOUNCE_TEXT,
     SUB_PROFILE_TITLE,
     SUB_PROFILE_URL,
+    SUB_REVOKED_ANNOUNCE_TEXT,
     SUB_SUPPORT_URL,
     SUB_UPDATE_INTERVAL,
 )
