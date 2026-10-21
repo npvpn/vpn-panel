@@ -6,12 +6,9 @@ from app.models.managed import ManagedStateResponse
 from app.models.settings import PANEL_SETTING_KEYS
 from config import (
     BOT_URL,
-    SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
     SUB_DEVICE_LIMIT_HARD_MODE,
-    SUB_EXPIRED_ANNOUNCE_TEXT,
     SUB_PROFILE_TITLE,
     SUB_PROFILE_URL,
-    SUB_REVOKED_ANNOUNCE_TEXT,
     SUB_SUPPORT_URL,
     SUB_UPDATE_INTERVAL,
 )
@@ -28,9 +25,6 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "chat_base_url": "",
     "chat_website_token": "",
     "chat_identity_url": "",
-    "sub_revoked_announce_text": SUB_REVOKED_ANNOUNCE_TEXT,
-    "sub_expired_announce_text": SUB_EXPIRED_ANNOUNCE_TEXT,
-    "sub_device_limit_announce_text": SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
     "sub_device_limit_hard_mode": SUB_DEVICE_LIMIT_HARD_MODE,
     "bs_extra_reset_pool_on_prolong": False,
     "show_ads": True,
@@ -84,9 +78,6 @@ class BotSettingsPayload(BaseModel):
     chat_base_url: str = ""
     chat_website_token: str = ""
     chat_identity_url: str = ""
-    sub_revoked_announce_text: str = ""
-    sub_expired_announce_text: str = ""
-    sub_device_limit_announce_text: str = ""
     sub_device_limit_hard_mode: bool = False
     bs_extra_reset_pool_on_prolong: bool = False
     show_ads: bool = True
