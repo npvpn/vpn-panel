@@ -19,6 +19,9 @@ class ManagedBotSettingsPayload(BaseModel):
     sub_support_url: str
     sub_subscription_domain: str
     sub_pay_url: str | None = None
+    chat_base_url: str | None = None
+    chat_website_token: str | None = None
+    chat_identity_url: str | None = None
     show_ads: bool | None = None
     sub_profile_url: str | None = None
     sub_profile_title: str | None = None

@@ -27,7 +27,6 @@ import {
 } from "@dnd-kit/sortable";
 import {
   FC,
-  FocusEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -55,6 +54,7 @@ import { NodeType } from "contexts/NodesContext";
 import { hostsTableSx } from "./constants";
 import { hostsFormSchema } from "./schema";
 import { HostRow } from "./HostRow";
+import { selectVisibleHosts, ShownHosts } from "./hostsFilter";
 
 type HostField = FieldArrayWithId<z.infer<typeof hostsFormSchema>, "hosts">;
 
@@ -80,7 +80,6 @@ type Props = {
   fields: HostField[];
   inboundTags: string[];
   inboundFilter: string;
-  botFilter: string;
   activeOnly: boolean;
   search: string;
   bots: Bot[];
@@ -89,13 +88,13 @@ type Props = {
   insert: UseFieldArrayInsert<z.infer<typeof hostsFormSchema>, "hosts">;
   move: UseFieldArrayMove;
   remove: UseFieldArrayRemove;
+  onSaveAndContinue: () => Promise<boolean>;
 };
 
 export const HostsList: FC<Props> = ({
   fields,
   inboundTags,
   inboundFilter,
-  botFilter,
   activeOnly,
   search,
   bots,
@@ -104,6 +103,7 @@ export const HostsList: FC<Props> = ({
   insert,
   move,
   remove,
+  onSaveAndContinue,
 }) => {
   const { t } = useTranslation();
 
@@ -200,85 +200,20 @@ export const HostsList: FC<Props> = ({
     [watchedValues, fields.length]
   );
 
-  const [focusedId, setFocusedId] = useState<string | null>(null);
-
-  const handleFocusCapture = useCallback((e: FocusEvent<HTMLDivElement>) => {
-    const rowEl = (e.target as HTMLElement).closest<HTMLElement>(
-      "[data-row-id]"
-    );
-    setFocusedId(rowEl?.dataset.rowId ?? null);
-  }, []);
-
-  const handleBlurCapture = useCallback(() => {
-    setFocusedId(null);
-  }, []);
+  // NPVPN-2215: уже показанный хост не пропадает после правки — см.
+  // selectVisibleHosts. Состояние «уже показанных» живёт между рендерами.
+  const shownRef = useRef<ShownHosts | null>(null);
 
   const visibleIndexes = useMemo(() => {
-    const query = search.trim().toLowerCase();
-
-    return fields
-      .map((field, index) => ({ field, index }))
-      .filter(({ field, index }) => {
-        if (field.id === focusedId) return true;
-
-        const host = watchedHosts?.[index];
-
-        if (!host) return false;
-
-        if (inboundFilter && host.inbound_tag !== inboundFilter) {
-          return false;
-        }
-
-        if (botFilter) {
-          const botUsernames: string[] = host.bot_usernames || [];
-          if (botUsernames.length > 0 && !botUsernames.includes(botFilter)) {
-            return false;
-          }
-        }
-
-        if (activeOnly && host.is_disabled) {
-          return false;
-        }
-
-        if (query) {
-          const remark = (host.remark || "").toLowerCase();
-          const address = (host.address || "").toLowerCase();
-          if (!remark.includes(query) && !address.includes(query)) {
-            return false;
-          }
-        }
-
-        return true;
-      })
-      .map(({ index }) => index);
-  }, [
-    fields,
-    watchedHosts,
-    inboundFilter,
-    botFilter,
-    activeOnly,
-    search,
-    focusedId,
-  ]);
-
-  // NPVPN-2044: без флага «общий» новая локация иначе требует переключения у
-  // каждого бота по очереди. Аренда при этом НЕ отмечается: общие локации не
-  // тарифицируются, их отдают всем даром.
-  const grantToAllBots = useCallback(
-    (index: number, grant: boolean) => {
-      form.setValue(
-        `hosts.${index}.bot_usernames`,
-        grant ? bots.map((bot) => bot.username) : [],
-        { shouldDirty: true }
-      );
-      if (!grant) {
-        form.setValue(`hosts.${index}.rented_bot_usernames`, [], {
-          shouldDirty: true,
-        });
-      }
-    },
-    [form, bots]
-  );
+    const { indexes, shown } = selectVisibleHosts(
+      fields.map((field) => field.id),
+      watchedHosts,
+      { search, inboundFilter, activeOnly },
+      shownRef.current
+    );
+    shownRef.current = shown;
+    return indexes;
+  }, [fields, watchedHosts, inboundFilter, activeOnly, search]);
 
   const duplicateHost = useCallback(
     (index: number) => {
@@ -388,9 +323,9 @@ export const HostsList: FC<Props> = ({
         canMoveUp={visiblePos > 0}
         canMoveDown={visiblePos < visibleIndexes.length - 1}
         duplicateHost={duplicateHost}
-        grantToAllBots={grantToAllBots}
         moveHostPosition={moveHostPosition}
         removeHost={removeHost}
+        onSaveAndContinue={onSaveAndContinue}
         bots={bots}
         nodes={nodes}
         inbound={inboundMap.get(watchedHosts?.[index]?.inbound_tag ?? "")}
@@ -410,8 +345,6 @@ export const HostsList: FC<Props> = ({
     <Box
       ref={tableContainerRef}
       w="full"
-      onFocusCapture={handleFocusCapture}
-      onBlurCapture={handleBlurCapture}
     >
       {visibleIndexes.length === 0 ? (
         <Text opacity={0.7} fontSize="sm" py={4} textAlign="center">

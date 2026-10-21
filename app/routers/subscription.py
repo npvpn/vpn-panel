@@ -36,6 +36,7 @@ from app.subscription.user_info import (
     resolve_device_limit_subscription_state,
 )
 from app.templates import render_template
+from app.utils.client_ip import device_ip, get_client_ip
 from app.utils.jwt import get_subscription_payload
 from config import (
     SUBSCRIPTION_PAGE_FILENAME,
@@ -127,6 +128,7 @@ def build_render_context(
     bot_settings: dict,
     panel_settings: dict,
     *,
+    token: str,
     is_revoked: bool,
     is_expired: bool,
     user_agent: str,
@@ -137,6 +139,9 @@ def build_render_context(
 ) -> SubscriptionRenderContext:
     """Общий контекст обоих /sub-эндпоинтов: лимиты устройств, БС-контекст, заголовки."""
     bot_settings = overlay_subscription_messages(bot_settings, panel_settings)
+    # NPVPN-2148: IP устройства для панели. Снимок реестра нод — джобы меняют словарь в других потоках.
+    node_addresses = {node.address for node in list(xray.nodes.values())}
+    client_ip = device_ip(get_client_ip(request), node_addresses)
     user, device_limited, device_limited_hard, unsupported_blocks = resolve_device_limit_subscription_state(
         user,
         db,
@@ -149,6 +154,7 @@ def build_render_context(
         x_device_os=x_device_os,
         x_ver_os=x_ver_os,
         x_device_model=x_device_model,
+        client_ip=client_ip,
     )
     # Хосты заблокированной БС-ноды (матч по связям host→nodes) остаются в подписке на
     # своих местах, но рендерятся как мёртвые заглушки (см. generate_subscription).
@@ -182,6 +188,8 @@ def build_render_context(
         announce_text=announce_text,
         subscription_userinfo=subscription_userinfo,
         user_agent=user_agent,
+        token=token,
+        is_revoked=is_revoked,
         build_content_disposition=build_content_disposition,
         get_routing_header=get_routing_header,
     )
@@ -260,7 +268,7 @@ def user_subscription(
     accept_header = request.headers.get("Accept", "")
     if "text/html" in accept_header:
         # HTML-ветка (страница подписки) обрабатывается отдельно от генерации конфигов.
-        html_context = build_subscription_page_context(db, dbuser, token)
+        html_context = build_subscription_page_context(db, dbuser, token, revoked=is_revoked)
         if is_revoked:
             return HTMLResponse(render_template("revoked.html", html_context))
         if is_expired:
@@ -277,6 +285,7 @@ def user_subscription(
         user,
         bot_settings,
         panel_settings,
+        token=token,
         is_revoked=is_revoked,
         is_expired=is_expired,
         user_agent=user_agent,
@@ -381,6 +390,7 @@ def user_subscription_with_client_type(
         user,
         bot_settings,
         panel_settings,
+        token=token,
         is_revoked=is_revoked,
         is_expired=is_expired,
         user_agent=user_agent,

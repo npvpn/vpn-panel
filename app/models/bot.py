@@ -22,6 +22,12 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "bot_url": BOT_URL,
     "web_url": "",
     "sub_pay_url": "",
+    "chat_base_url": "",
+    "chat_website_token": "",
+    "chat_identity_url": "",
+    "sub_revoked_announce_text": SUB_REVOKED_ANNOUNCE_TEXT,
+    "sub_expired_announce_text": SUB_EXPIRED_ANNOUNCE_TEXT,
+    "sub_device_limit_announce_text": SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
     "sub_device_limit_hard_mode": SUB_DEVICE_LIMIT_HARD_MODE,
     "bs_extra_reset_pool_on_prolong": False,
     "show_ads": True,
@@ -72,6 +78,12 @@ class BotSettingsPayload(BaseModel):
     bot_url: str = ""
     web_url: str = ""
     sub_pay_url: str = ""
+    chat_base_url: str = ""
+    chat_website_token: str = ""
+    chat_identity_url: str = ""
+    sub_revoked_announce_text: str = ""
+    sub_expired_announce_text: str = ""
+    sub_device_limit_announce_text: str = ""
     sub_device_limit_hard_mode: bool = False
     bs_extra_reset_pool_on_prolong: bool = False
     show_ads: bool = True

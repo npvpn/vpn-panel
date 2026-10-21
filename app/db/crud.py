@@ -862,15 +862,17 @@ def update_user(db: Session, dbuser: User, modify: UserModify) -> User:
     if modify.on_hold_expire_duration is not None:
         dbuser.on_hold_expire_duration = modify.on_hold_expire_duration
 
-    if modify.next_plan is not None:
-        dbuser.next_plan = NextPlan(
-            data_limit=modify.next_plan.data_limit,
-            expire=modify.next_plan.expire,
-            add_remaining_traffic=modify.next_plan.add_remaining_traffic,
-            fire_on_either=modify.next_plan.fire_on_either,
-        )
-    elif dbuser.next_plan is not None:
-        db.delete(dbuser.next_plan)
+    # Дефолтный None — поле не передали и тариф не трогаем. Явный null удаляет его.
+    if "next_plan" in modify.model_fields_set:
+        if modify.next_plan is not None:
+            dbuser.next_plan = NextPlan(
+                data_limit=modify.next_plan.data_limit,
+                expire=modify.next_plan.expire,
+                add_remaining_traffic=modify.next_plan.add_remaining_traffic,
+                fire_on_either=modify.next_plan.fire_on_either,
+            )
+        elif dbuser.next_plan is not None:
+            db.delete(dbuser.next_plan)
 
     if modify.bs_extra is not None:
         set_user_bs_extra_amount(db, dbuser, modify.bs_extra)
@@ -1022,17 +1024,19 @@ def revoke_user_device(db: Session, dbdevice: UserDevice) -> UserDevice:
     return dbdevice
 
 
-def _update_unknown_device_metadata(
+def _update_device_metadata(
     dbdevice: UserDevice,
     device_os: str | None,
     ver_os: str | None,
     device_model: str | None,
     user_agent: str | None,
+    client_ip: str | None,
 ) -> None:
     dbdevice.device_os = device_os or dbdevice.device_os
     dbdevice.ver_os = ver_os or dbdevice.ver_os
     dbdevice.device_model = device_model or dbdevice.device_model
     dbdevice.user_agent = user_agent or dbdevice.user_agent
+    dbdevice.last_ip = client_ip or dbdevice.last_ip
     if dbdevice.status == "revoked":
         dbdevice.status = "active"
     dbdevice.last_seen = datetime.utcnow()
@@ -1048,12 +1052,13 @@ def register_user_device(
     user_agent: str | None,
     *,
     hard_mode: bool = False,
+    client_ip: str | None = None,
 ) -> tuple[bool, bool]:
     if not hwid:
         dbdevice = get_user_device_by_hwid(db, dbuser, UNKNOWN_DEVICE_HWID)
         if dbdevice:
             if _unknown_user_agents_match(cast(str | None, dbdevice.user_agent), user_agent):
-                _update_unknown_device_metadata(dbdevice, device_os, ver_os, device_model, user_agent)
+                _update_device_metadata(dbdevice, device_os, ver_os, device_model, user_agent, client_ip)
                 db.commit()
                 return True, False
             return False, True
@@ -1066,6 +1071,7 @@ def register_user_device(
             ver_os=ver_os,
             device_model=device_model,
             user_agent=user_agent,
+            last_ip=client_ip,
             status="active",
         )
         db.add(dbdevice)
@@ -1078,13 +1084,7 @@ def register_user_device(
 
     dbdevice = get_user_device_by_hwid(db, dbuser, hwid)
     if dbdevice:
-        dbdevice.device_os = device_os or dbdevice.device_os
-        dbdevice.ver_os = ver_os or dbdevice.ver_os
-        dbdevice.device_model = device_model or dbdevice.device_model
-        dbdevice.user_agent = user_agent or dbdevice.user_agent
-        if dbdevice.status == "revoked":
-            dbdevice.status = "active"
-        dbdevice.last_seen = datetime.utcnow()
+        _update_device_metadata(dbdevice, device_os, ver_os, device_model, user_agent, client_ip)
         db.commit()
         return True, False
 
@@ -1098,6 +1098,7 @@ def register_user_device(
         ver_os=ver_os,
         device_model=device_model,
         user_agent=user_agent,
+        last_ip=client_ip,
         status="active",
     )
     db.add(dbdevice)
@@ -1213,7 +1214,14 @@ def revoke_user_sub(db: Session, dbuser: User) -> User:
     for proxy_type, settings in user.proxies.copy().items():
         settings.revoke()
         user.proxies[proxy_type] = settings
-    dbuser = update_user(db, dbuser, user)
+    # В update_user нужен UserModify: у UserResponse нет bs_limit_total, и сброс
+    # ссылки падает с AttributeError, если bs_extra пустой. Меняются только ключи.
+    # next_plan в словарь не кладём: неявный None удалил бы запланированный тариф.
+    # model_validate, а не конструктор: mypy не видит default у Field(None, nullable=True).
+    modify = UserModify.model_validate(
+        {"proxies": {proxy_type: settings.dict(no_obj=True) for proxy_type, settings in user.proxies.items()}}
+    )
+    dbuser = update_user(db, dbuser, modify)
 
     db.commit()
     db.refresh(dbuser)

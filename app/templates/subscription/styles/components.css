@@ -225,7 +225,7 @@
     transform: translate(-50%);
 }
 
-/* Отозванная подписка: реклама, в отличие от .footer на других страницах,
+/* Отозванная и истекшая подписка: реклама, в отличие от .footer на других страницах,
    не "прибита" полосой ни на одном размере экрана — прячется под скролл. */
 .footer_revoked {
     position: static;
@@ -750,14 +750,31 @@
     font-size: 14px;
 }
 
+/* Кнопки «истекла» и «отозвана»: не закреплены — прокручиваются с контентом, но стоят
+   внизу экрана: страница — колонка на всю высоту, блок кнопок прижат вниз (margin-top: auto).
+   Минимум 40px от контента, если его много. Реклама — под скроллом (.footer_revoked). */
+@media (max-width: 1023px) {
+    .wrapper:has(.button-wrapper_revoke) {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        min-height: 100dvh;
+        box-sizing: border-box;
+    }
+
+    .wrapper:has(.button-wrapper_revoke) > .page-content_limited {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+}
+
 .button-wrapper_revoke{
-    position: fixed;
-    left: 50%;
-    bottom: 57px;
-    transform: translateX(-50%);
+    position: static;
     width: 100%;
     max-width: 342px;
-    margin: 40px auto 0;
+    margin: auto auto 0;
+    padding-top: 40px;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -878,9 +895,11 @@
     gap: 8px;
 }
 
+/* Экран минус отступы .wrapper (24px * 2) и padding-bottom .page-content (110px), иначе пустой экран скроллится. */
 .main--centered {
     display: flex;
-    min-height: 100vh;
+    min-height: calc(100vh - 158px);
+    min-height: calc(100dvh - 158px);
 }
 
 .empty-devices {
@@ -1275,6 +1294,7 @@
         width: 100%;
         max-width: none;
         margin: 24px 0 0;
+        padding-top: 0;
         align-items: flex-start;
     }
 
@@ -1359,7 +1379,7 @@
     }
 
     .qr-wrapper {
-        transform: translateX(-110px); 
+        transform: translateX(-135px); 
         gap: 24px;
     }
 
@@ -1394,6 +1414,18 @@
         padding: 40px 0;
     }
 
+    /* Десктоп: нижнего меню нет — запас под него у пустого экрана устройств не нужен,
+       центрируем по окну за вычетом отступов .wrapper (40px * 2). */
+    .page-content--centered {
+        padding-bottom: 0;
+        margin-bottom: 0;
+    }
+
+    .main--centered {
+        min-height: calc(100vh - 80px);
+        min-height: calc(100dvh - 80px);
+    }
+
     .floating-nav {
         display: none;
     }
@@ -1402,7 +1434,7 @@
         display: block;
         position: sticky;
         top: 0;
-        width: 220px;
+        width: 270px;
         background: #fff;
         padding-left: 16px;
         flex-shrink: 0;
