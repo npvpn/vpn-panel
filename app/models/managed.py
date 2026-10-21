@@ -24,6 +24,8 @@ class ManagedBotSettingsPayload(BaseModel):
     chat_identity_url: str | None = None
     show_ads: bool | None = None
     sub_profile_url: str | None = None
+    # Панель владеет заголовком. Поле остаётся в схеме: бот ещё шлёт public_name,
+    # и extra=forbid иначе роняет весь синк. Значение не применяется.
     sub_profile_title: str | None = None
     sub_update_interval: str | None = None
     bs_extra_reset_pool_on_prolong: bool | None = None

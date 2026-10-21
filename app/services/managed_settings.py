@@ -48,7 +48,8 @@ BOT_MANAGED_JSON_FIELDS = frozenset(
         "chat_identity_url",
         "show_ads",
         "sub_profile_url",
-        "sub_profile_title",
+        # Заголовок профиля задаётся только в панели, отдельно на каждого бота.
+        # Старый пуш ещё может прислать public_name — поле принимается схемой, но не пишется.
         "sub_update_interval",
         "bs_extra_reset_pool_on_prolong",
         "sub_device_limit_hard_mode",

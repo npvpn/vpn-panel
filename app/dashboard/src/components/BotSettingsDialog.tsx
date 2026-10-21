@@ -805,7 +805,7 @@ export const BotSettingsDialog: FC = () => {
                           : t("botSettings.subSupportUrlHint")}
                       </FormHelperText>
                     </FormControl>
-                    <FormControl isDisabled={isManaged}>
+                    <FormControl>
                       <FormLabel>{t("botSettings.subProfileTitle")}</FormLabel>
                       <Input
                         value={settings.sub_profile_title}
@@ -815,7 +815,7 @@ export const BotSettingsDialog: FC = () => {
                         }
                       />
                       <FormHelperText>
-                        {fieldHint("botSettings.subProfileTitleHint")}
+                        {t("botSettings.subProfileTitleHint")}
                       </FormHelperText>
                     </FormControl>
                   </SimpleGrid>

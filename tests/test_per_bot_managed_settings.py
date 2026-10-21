@@ -74,7 +74,12 @@ def test_full_push_overwrites_new_managed_fields(db):
     bot = Bot(username="synced_bot", admin_sync_enabled=True)
     db.add(bot)
     db.flush()
-    db.add(BotSettings(bot_id=bot.id, data={"show_ads": True, "sub_client_note": "old"}))
+    db.add(
+        BotSettings(
+            bot_id=bot.id,
+            data={"show_ads": True, "sub_client_note": "old", "sub_profile_title": "Panel title"},
+        )
+    )
     db.commit()
 
     svc.apply_managed_bot_push(
@@ -96,7 +101,8 @@ def test_full_push_overwrites_new_managed_fields(db):
 
     settings = db.query(BotSettings).filter(BotSettings.bot_id == bot.id).one().data
     assert settings["show_ads"] is False
-    assert settings["sub_profile_title"] == "From admin"
+    assert settings["sub_profile_title"] == "Panel title"
+    assert "sub_profile_title" not in svc.BOT_MANAGED_JSON_FIELDS
     assert "sub_client_note" not in settings
     assert "sub_revoked_server_text" not in settings
     assert settings["sub_device_limit_hard_mode"] is True
@@ -199,6 +205,11 @@ def test_manual_full_settings_payload_allows_unchanged_managed_fields_only(db):
     full_payload = apply_bot_settings_fallback(db.query(BotSettings).filter(BotSettings.bot_id == bot.id).one().data)
 
     svc.ensure_bot_settings_update_allowed(db, bot, full_payload)
+    svc.ensure_bot_settings_update_allowed(
+        db,
+        bot,
+        {**full_payload, "sub_profile_title": "Panel title"},
+    )
     with pytest.raises(svc.ManagedFieldChangeError):
         svc.ensure_bot_settings_update_allowed(
             db,
