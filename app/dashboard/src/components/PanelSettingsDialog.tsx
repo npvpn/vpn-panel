@@ -10,6 +10,7 @@ import {
   AlertDialogOverlay,
   Box,
   Button,
+  Flex,
   FormControl,
   FormHelperText,
   FormLabel,
@@ -23,6 +24,7 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
+  SimpleGrid,
   Tab,
   Table,
   Tbody,
@@ -45,8 +47,16 @@ import { useDashboard } from "contexts/DashboardContext";
 import { FC, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
-import { PanelSettings } from "types/PanelSettings";
+import {
+  PanelSettings,
+  SubscriptionMessageServerField,
+} from "types/PanelSettings";
 import { DeleteIcon } from "./DeleteUserModal";
+import {
+  FIELD_SCENARIO,
+  HappPreviewScenario,
+} from "./happPreview/happPreview";
+import { HappSubscriptionPreview } from "./happPreview/HappSubscriptionPreview";
 import { XrayTemplatesPanel } from "./XrayTemplatesPanel";
 
 const GB_IN_BYTES = 1073741824;
@@ -58,7 +68,47 @@ const emptySettings: PanelSettings = {
   sub_routing_v2raytun: "",
   subscription_legacy_secret_keys: [],
   primary_jwt_secret: "",
+  sub_client_note: "",
+  sub_revoked_announce_text: "",
+  sub_expired_announce_text: "",
+  sub_device_limit_announce_text: "",
+  sub_unsupported_client_announce_text: "",
+  sub_bs_limit_announce_text: "",
+  sub_revoked_server_text: [],
+  sub_expired_server_text: [],
+  sub_device_limit_server_text: [],
+  sub_unsupported_client_server_text: [],
+  sub_bs_limit_server_text: [],
 };
+
+const SERVER_TEXT_FIELDS: SubscriptionMessageServerField[] = [
+  "sub_revoked_server_text",
+  "sub_expired_server_text",
+  "sub_device_limit_server_text",
+  "sub_unsupported_client_server_text",
+  "sub_bs_limit_server_text",
+];
+
+type ListFieldTexts = Record<SubscriptionMessageServerField, string>;
+
+const toText = (values: string[] = []) => values.join("\n");
+const toList = (value: string) =>
+  value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+const toListFieldTexts = (settings: PanelSettings): ListFieldTexts => ({
+  sub_revoked_server_text: toText(settings.sub_revoked_server_text),
+  sub_expired_server_text: toText(settings.sub_expired_server_text),
+  sub_device_limit_server_text: toText(settings.sub_device_limit_server_text),
+  sub_unsupported_client_server_text: toText(
+    settings.sub_unsupported_client_server_text
+  ),
+  sub_bs_limit_server_text: toText(settings.sub_bs_limit_server_text),
+});
+
+const copyList = (value: string[] | undefined) =>
+  Array.isArray(value) ? [...value] : [];
 
 const mergeSettings = (
   data: Partial<PanelSettings>,
@@ -71,13 +121,21 @@ const mergeSettings = (
   )
     ? data.subscription_legacy_secret_keys
     : [],
+  sub_revoked_server_text: copyList(data.sub_revoked_server_text),
+  sub_expired_server_text: copyList(data.sub_expired_server_text),
+  sub_device_limit_server_text: copyList(data.sub_device_limit_server_text),
+  sub_unsupported_client_server_text: copyList(
+    data.sub_unsupported_client_server_text
+  ),
+  sub_bs_limit_server_text: copyList(data.sub_bs_limit_server_text),
   primary_jwt_secret:
     keepPrimary !== undefined ? keepPrimary : data.primary_jwt_secret || "",
 });
 
 // Индекс вкладки v2ray-json: у XrayTemplatesPanel своё сохранение,
 // общий футер модалки к нему отношения не имеет.
-const V2RAY_TAB_INDEX = 1;
+const V2RAY_TAB_INDEX = 2;
+const MESSAGES_TAB_INDEX = 1;
 
 const SUBSCRIPTION_FIELDS = [
   "sub_routing_happ",
@@ -86,12 +144,28 @@ const SUBSCRIPTION_FIELDS = [
   "bs_monthly_limit",
 ] as const;
 
+const MESSAGE_TEXT_FIELDS = [
+  "sub_client_note",
+  "sub_revoked_announce_text",
+  "sub_expired_announce_text",
+  "sub_device_limit_announce_text",
+  "sub_unsupported_client_announce_text",
+  "sub_bs_limit_announce_text",
+] as const;
+
+const sameList = (left: string[], right: string[]) =>
+  left.length === right.length && left.every((item, i) => item === right[i]);
+
 // Ключи в том виде, в каком их отправит save(): пустые строки не считаются изменением.
 const normalizeKeys = (keys: string[]) =>
   keys.map((key) => key.trim()).filter(Boolean);
 
 const isSubscriptionDirty = (a: PanelSettings, b: PanelSettings) =>
   SUBSCRIPTION_FIELDS.some((field) => a[field] !== b[field]);
+
+const isMessagesDirty = (a: PanelSettings, b: PanelSettings) =>
+  MESSAGE_TEXT_FIELDS.some((field) => a[field] !== b[field]) ||
+  SERVER_TEXT_FIELDS.some((field) => !sameList(a[field], b[field]));
 
 const isJwtDirty = (a: PanelSettings, b: PanelSettings) => {
   const left = normalizeKeys(a.subscription_legacy_secret_keys);
@@ -106,7 +180,7 @@ const isJwtDirty = (a: PanelSettings, b: PanelSettings) => {
 type ResetDiffValue = { short: string; full?: string };
 
 type ResetDiffRow = {
-  tab: "subscription" | "jwt";
+  tab: "subscription" | "messages" | "jwt";
   label: string;
   from: ResetDiffValue[];
   to: ResetDiffValue[];
@@ -115,6 +189,7 @@ type ResetDiffRow = {
 // Порядок групп в диалоге сброса; группа видна, только если в ней есть изменения.
 const RESET_DIFF_TABS = [
   { tab: "subscription", labelKey: "panelSettings.tabSubscription" },
+  { tab: "messages", labelKey: "panelSettings.tabMessages" },
   { tab: "jwt", labelKey: "panelSettings.tabJwtKey" },
 ] as const;
 
@@ -170,13 +245,19 @@ export const PanelSettingsDialog: FC = () => {
   const [pendingDefaults, setPendingDefaults] = useState<PanelSettings | null>(
     null
   );
+  const [listFieldTexts, setListFieldTexts] = useState<ListFieldTexts>(
+    toListFieldTexts(emptySettings)
+  );
+  const [previewScenario, setPreviewScenario] =
+    useState<HappPreviewScenario>("normal");
   const discardConfirm = useDisclosure();
   const cancelResetRef = useRef<HTMLButtonElement>(null);
   const cancelDiscardRef = useRef<HTMLButtonElement>(null);
 
   const subscriptionDirty = isSubscriptionDirty(settings, initial);
+  const messagesDirty = isMessagesDirty(settings, initial);
   const jwtDirty = isJwtDirty(settings, initial);
-  const isDirty = subscriptionDirty || jwtDirty;
+  const isDirty = subscriptionDirty || messagesDirty || jwtDirty;
 
   const showValidationErrorToast = (err: any) => {
     const detail = err?.response?._data?.detail;
@@ -211,6 +292,8 @@ export const PanelSettingsDialog: FC = () => {
         const loaded = mergeSettings(data);
         setSettings(loaded);
         setInitial(loaded);
+        setListFieldTexts(toListFieldTexts(loaded));
+        setPreviewScenario("normal");
       })
       .catch(() =>
         toast({
@@ -259,6 +342,7 @@ export const PanelSettingsDialog: FC = () => {
         const defaults = mergeSettings(data, primary);
         if (
           !isSubscriptionDirty(settings, defaults) &&
+          !isMessagesDirty(settings, defaults) &&
           !isJwtDirty(settings, defaults)
         ) {
           toast({
@@ -283,8 +367,24 @@ export const PanelSettingsDialog: FC = () => {
   };
 
   const confirmResetToDefaults = () => {
-    if (pendingDefaults) setSettings(pendingDefaults);
+    if (pendingDefaults) {
+      setSettings(pendingDefaults);
+      setListFieldTexts(toListFieldTexts(pendingDefaults));
+    }
     setPendingDefaults(null);
+  };
+
+  const updateListField = (
+    field: SubscriptionMessageServerField,
+    value: string
+  ) => {
+    setListFieldTexts((current) => ({ ...current, [field]: value }));
+    updateSettings({ [field]: toList(value) });
+  };
+
+  const focusPreviewField = (field: string) => {
+    const scenario = FIELD_SCENARIO[field];
+    if (scenario) setPreviewScenario(scenario);
   };
 
   const buildResetDiff = (target: PanelSettings): ResetDiffRow[] => {
@@ -305,6 +405,53 @@ export const PanelSettingsDialog: FC = () => {
     addText("sub_routing_happ", "panelSettings.subRoutingHapp");
     addText("sub_routing_v2raytun", "panelSettings.subRoutingV2raytun");
     addText("sub_custom_headers", "panelSettings.subCustomHeaders");
+    const addMessageText = (
+      field: (typeof MESSAGE_TEXT_FIELDS)[number],
+      labelKey: string
+    ) => {
+      if (settings[field] === target[field]) return;
+      rows.push({
+        tab: "messages",
+        label: t(labelKey),
+        from: [preview(settings[field], empty)],
+        to: [preview(target[field], empty)],
+      });
+    };
+    addMessageText("sub_client_note", "botSettings.subClientNote");
+    addMessageText("sub_revoked_announce_text", "botSettings.subRevokedAnnounceText");
+    addMessageText("sub_expired_announce_text", "botSettings.subExpiredAnnounceText");
+    addMessageText(
+      "sub_device_limit_announce_text",
+      "botSettings.subDeviceLimitAnnounceText"
+    );
+    addMessageText(
+      "sub_unsupported_client_announce_text",
+      "botSettings.subUnsupportedClientAnnounceText"
+    );
+    addMessageText("sub_bs_limit_announce_text", "botSettings.subBsLimitAnnounceText");
+    const addMessageList = (
+      field: SubscriptionMessageServerField,
+      labelKey: string
+    ) => {
+      if (sameList(settings[field], target[field])) return;
+      rows.push({
+        tab: "messages",
+        label: t(labelKey),
+        from: [preview(toText(settings[field]), empty)],
+        to: [preview(toText(target[field]), empty)],
+      });
+    };
+    addMessageList("sub_revoked_server_text", "botSettings.subRevokedServerText");
+    addMessageList("sub_expired_server_text", "botSettings.subExpiredServerText");
+    addMessageList(
+      "sub_device_limit_server_text",
+      "botSettings.subDeviceLimitServerText"
+    );
+    addMessageList(
+      "sub_unsupported_client_server_text",
+      "botSettings.subUnsupportedClientServerText"
+    );
+    addMessageList("sub_bs_limit_server_text", "botSettings.subBsLimitServerText");
     if (settings.bs_monthly_limit !== target.bs_monthly_limit) {
       rows.push({
         tab: "subscription",
@@ -361,12 +508,22 @@ export const PanelSettingsDialog: FC = () => {
       subscription_legacy_secret_keys: normalizeKeys(
         settings.subscription_legacy_secret_keys
       ),
+      sub_revoked_server_text: toList(listFieldTexts.sub_revoked_server_text),
+      sub_expired_server_text: toList(listFieldTexts.sub_expired_server_text),
+      sub_device_limit_server_text: toList(
+        listFieldTexts.sub_device_limit_server_text
+      ),
+      sub_unsupported_client_server_text: toList(
+        listFieldTexts.sub_unsupported_client_server_text
+      ),
+      sub_bs_limit_server_text: toList(listFieldTexts.sub_bs_limit_server_text),
     };
     fetch("/settings/panel", { method: "PUT", body })
       .then((data: PanelSettings) => {
         const saved = mergeSettings(data, data.primary_jwt_secret || _primary);
         setSettings(saved);
         setInitial(saved);
+        setListFieldTexts(toListFieldTexts(saved));
         toast({
           title: t("panelSettings.saved"),
           status: "success",
@@ -397,7 +554,7 @@ export const PanelSettingsDialog: FC = () => {
       <Modal
         isOpen={isEditingPanelSettings}
         onClose={requestClose}
-        size="4xl"
+        size={tabIndex === MESSAGES_TAB_INDEX ? "6xl" : "4xl"}
         scrollBehavior="inside"
       >
         <ModalOverlay />
@@ -415,6 +572,10 @@ export const PanelSettingsDialog: FC = () => {
                 <Tab>
                   {t("panelSettings.tabSubscription")}
                   {subscriptionDirty && dirtyDot}
+                </Tab>
+                <Tab>
+                  {t("panelSettings.tabMessages")}
+                  {messagesDirty && dirtyDot}
                 </Tab>
                 <Tab>{t("panelSettings.tabV2rayJson")}</Tab>
                 <Tab>
@@ -491,6 +652,288 @@ export const PanelSettingsDialog: FC = () => {
                       </FormHelperText>
                     </FormControl>
                   </VStack>
+                </TabPanel>
+                <TabPanel px={0}>
+                  <Flex
+                    direction={{ base: "column", xl: "row" }}
+                    align="flex-start"
+                    gap={6}
+                  >
+                    <VStack spacing={4} align="stretch" flex="1" minW={0}>
+                      <Box
+                        border="1px solid"
+                        borderColor="inherit"
+                        borderRadius="md"
+                        p={4}
+                      >
+                        <VStack spacing={4} align="stretch">
+                          <Text
+                            fontSize="xs"
+                            fontWeight="semibold"
+                            color="gray.500"
+                            textTransform="uppercase"
+                            letterSpacing="wide"
+                          >
+                            {t("botSettings.announceMessages")}
+                          </Text>
+                          <FormControl>
+                            <FormLabel>
+                              {t("botSettings.subClientNote")}
+                            </FormLabel>
+                            <Textarea
+                              value={settings.sub_client_note}
+                              minH="90px"
+                              onFocus={() =>
+                                focusPreviewField("sub_client_note")
+                              }
+                              onChange={(e) =>
+                                updateSettings({
+                                  sub_client_note: e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
+                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                            <FormControl>
+                              <FormLabel>
+                                {t("botSettings.subRevokedAnnounceText")}
+                              </FormLabel>
+                              <Textarea
+                                value={settings.sub_revoked_announce_text}
+                                minH="90px"
+                                onFocus={() =>
+                                  focusPreviewField("sub_revoked_announce_text")
+                                }
+                                onChange={(e) =>
+                                  updateSettings({
+                                    sub_revoked_announce_text: e.target.value,
+                                  })
+                                }
+                              />
+                            </FormControl>
+                            <FormControl>
+                              <FormLabel>
+                                {t("botSettings.subExpiredAnnounceText")}
+                              </FormLabel>
+                              <Textarea
+                                value={settings.sub_expired_announce_text}
+                                minH="90px"
+                                onFocus={() =>
+                                  focusPreviewField("sub_expired_announce_text")
+                                }
+                                onChange={(e) =>
+                                  updateSettings({
+                                    sub_expired_announce_text: e.target.value,
+                                  })
+                                }
+                              />
+                            </FormControl>
+                          </SimpleGrid>
+                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                            <FormControl>
+                              <FormLabel>
+                                {t(
+                                  "botSettings.subUnsupportedClientAnnounceText"
+                                )}
+                              </FormLabel>
+                              <Textarea
+                                value={
+                                  settings.sub_unsupported_client_announce_text
+                                }
+                                minH="90px"
+                                onFocus={() =>
+                                  focusPreviewField(
+                                    "sub_unsupported_client_announce_text"
+                                  )
+                                }
+                                onChange={(e) =>
+                                  updateSettings({
+                                    sub_unsupported_client_announce_text:
+                                      e.target.value,
+                                  })
+                                }
+                              />
+                            </FormControl>
+                            <FormControl>
+                              <FormLabel>
+                                {t("botSettings.subDeviceLimitAnnounceText")}
+                              </FormLabel>
+                              <Textarea
+                                value={settings.sub_device_limit_announce_text}
+                                minH="90px"
+                                onFocus={() =>
+                                  focusPreviewField(
+                                    "sub_device_limit_announce_text"
+                                  )
+                                }
+                                onChange={(e) =>
+                                  updateSettings({
+                                    sub_device_limit_announce_text:
+                                      e.target.value,
+                                  })
+                                }
+                              />
+                            </FormControl>
+                          </SimpleGrid>
+                          <FormControl>
+                            <FormLabel>
+                              {t("botSettings.subBsLimitAnnounceText")}
+                            </FormLabel>
+                            <Textarea
+                              value={settings.sub_bs_limit_announce_text}
+                              onFocus={() =>
+                                focusPreviewField("sub_bs_limit_announce_text")
+                              }
+                              onChange={(e) =>
+                                updateSettings({
+                                  sub_bs_limit_announce_text: e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
+                        </VStack>
+                      </Box>
+                      <Box
+                        border="1px solid"
+                        borderColor="inherit"
+                        borderRadius="md"
+                        p={4}
+                      >
+                        <VStack spacing={4} align="stretch">
+                          <Text
+                            fontSize="xs"
+                            fontWeight="semibold"
+                            color="gray.500"
+                            textTransform="uppercase"
+                            letterSpacing="wide"
+                          >
+                            {t("botSettings.serverResponses")}
+                          </Text>
+                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                            <FormControl>
+                              <FormLabel>
+                                {t("botSettings.subRevokedServerText")}
+                              </FormLabel>
+                              <Textarea
+                                value={listFieldTexts.sub_revoked_server_text}
+                                onFocus={() =>
+                                  focusPreviewField("sub_revoked_server_text")
+                                }
+                                onChange={(e) =>
+                                  updateListField(
+                                    "sub_revoked_server_text",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                              <FormHelperText>
+                                {t("botSettings.serverTextHint")}
+                              </FormHelperText>
+                            </FormControl>
+                            <FormControl>
+                              <FormLabel>
+                                {t("botSettings.subExpiredServerText")}
+                              </FormLabel>
+                              <Textarea
+                                value={listFieldTexts.sub_expired_server_text}
+                                onFocus={() =>
+                                  focusPreviewField("sub_expired_server_text")
+                                }
+                                onChange={(e) =>
+                                  updateListField(
+                                    "sub_expired_server_text",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                              <FormHelperText>
+                                {t("botSettings.serverTextHint")}
+                              </FormHelperText>
+                            </FormControl>
+                          </SimpleGrid>
+                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                            <FormControl>
+                              <FormLabel>
+                                {t("botSettings.subDeviceLimitServerText")}
+                              </FormLabel>
+                              <Textarea
+                                value={
+                                  listFieldTexts.sub_device_limit_server_text
+                                }
+                                onFocus={() =>
+                                  focusPreviewField(
+                                    "sub_device_limit_server_text"
+                                  )
+                                }
+                                onChange={(e) =>
+                                  updateListField(
+                                    "sub_device_limit_server_text",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                              <FormHelperText>
+                                {t("botSettings.serverTextHint")}
+                              </FormHelperText>
+                            </FormControl>
+                            <FormControl>
+                              <FormLabel>
+                                {t(
+                                  "botSettings.subUnsupportedClientServerText"
+                                )}
+                              </FormLabel>
+                              <Textarea
+                                value={
+                                  listFieldTexts.sub_unsupported_client_server_text
+                                }
+                                onFocus={() =>
+                                  focusPreviewField(
+                                    "sub_unsupported_client_server_text"
+                                  )
+                                }
+                                onChange={(e) =>
+                                  updateListField(
+                                    "sub_unsupported_client_server_text",
+                                    e.target.value
+                                  )
+                                }
+                              />
+                              <FormHelperText>
+                                {t("botSettings.serverTextHint")}
+                              </FormHelperText>
+                            </FormControl>
+                          </SimpleGrid>
+                          <FormControl>
+                            <FormLabel>
+                              {t("botSettings.subBsLimitServerText")}
+                            </FormLabel>
+                            <Textarea
+                              value={listFieldTexts.sub_bs_limit_server_text}
+                              onFocus={() =>
+                                focusPreviewField("sub_bs_limit_server_text")
+                              }
+                              onChange={(e) =>
+                                updateListField(
+                                  "sub_bs_limit_server_text",
+                                  e.target.value
+                                )
+                              }
+                            />
+                            <FormHelperText>
+                              {t("botSettings.serverTextHint")}
+                            </FormHelperText>
+                          </FormControl>
+                        </VStack>
+                      </Box>
+                    </VStack>
+                    <Box flex={{ base: "1", xl: "0 0 430px" }} w="full">
+                      <HappSubscriptionPreview
+                        settings={settings}
+                        scenario={previewScenario}
+                        onScenarioChange={setPreviewScenario}
+                      />
+                    </Box>
+                  </Flex>
                 </TabPanel>
                 <TabPanel px={0}>
                   <XrayTemplatesPanel />
