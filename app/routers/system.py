@@ -82,8 +82,7 @@ def modify_hosts(
         raise HTTPException(status_code=422, detail={"client_config_id": str(exc)}) from exc
 
     try:
-        for inbound_tag, hosts in modified_hosts.items():
-            crud.update_hosts(db, inbound_tag, hosts)
+        crud.update_hosts_batch(db, modified_hosts)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
 

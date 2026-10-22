@@ -140,6 +140,15 @@ sync-вызова к нодам, и они изолированы не один�
 `app/jobs/review_users.py` (`executor.submit(xray.operations.remove_user, u)`
 через `get_xray_executor()`), а не через `bg.add_task`.
 
+## Клиентские входные пулы хостов
+
+`ProxyHost` владеет отдельными `balancing` и `balancer_nodes`; прежняя связь
+`nodes` независима. Резолвер `host_addresses` задаёт единую семантику адресов,
+БС первого hop, пинов и снимков. Генератор подписки читает готовый кэш; запросов
+к БД за новыми полями на подписку нет. Это клиентская настройка, не серверная
+маршрутизация/HAProxy. Совместимость, инварианты и откат:
+[`host-balancing.md`](host-balancing.md).
+
 ## Смотри также
 
 - [`cascade-node-roles.md`](cascade-node-roles.md) — устройство ролей нод

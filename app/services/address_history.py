@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import crud
 from app.db.models import ProxyHost, User, UserNodePin
@@ -42,7 +42,7 @@ from app.xray.address_policy import (
     epoch_start_day,
     pick_keys,
 )
-from app.xray.host_addresses import host_allowed_for_bot, visible_nodes
+from app.xray.host_addresses import addresses_from_nodes, host_allowed_for_bot, visible_nodes
 from config import HOSTING_USAGE_CUTOFF_PERCENT
 
 AssignmentSource = Literal["pin", "auto", "unknown"]
@@ -151,7 +151,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
        — а в подписке этой локации нет вовсе, пин не применится никогда. Тот
        же по сути дефект, что чинили по I2 для disabled-нод, только уровнем
        выше: там отсекалась одна нода, здесь — целая локация.
-    3. У хоста нет статического `address` (`not host.address` — пустая строка
+    3. Адреса заданы нодами: отдельным входным пулом либо пустым `address` (пустая строка
        у "адресного" хоста означает "адреса берутся из нод", см.
        `app/xray/__init__.py: addresses_from_nodes`). У легаси-хостов со
        статическим адресом соответствия "адрес ↔ нода" нет по построению —
@@ -165,7 +165,13 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
     """
     user_bot_username = dbuser.bot_username
     visible_tags = _visible_inbound_tags(dbuser)
-    hosts = db.query(ProxyHost).filter(ProxyHost.address == "").order_by(ProxyHost.id).all()
+    hosts = (
+        db.query(ProxyHost)
+        .options(selectinload(ProxyHost.nodes), selectinload(ProxyHost.balancer_nodes), selectinload(ProxyHost.bots))
+        .filter(ProxyHost.is_disabled.isnot(True))
+        .order_by(ProxyHost.id)
+        .all()
+    )
     return [
         PinnableHost(
             host_id=cast(int, host.id),
@@ -173,7 +179,10 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
             nodes=[PinnableNode(node_id=cast(int, node.id), name=cast(str, node.name)) for node in visible_nodes(host)],
         )
         for host in hosts
-        if host_allowed_for_bot(host.bot_usernames, user_bot_username) and host.inbound_tag in visible_tags
+        if addresses_from_nodes(host)
+        and visible_nodes(host)
+        and host_allowed_for_bot(host.bot_usernames, user_bot_username)
+        and host.inbound_tag in visible_tags
     ]
 
 

@@ -467,7 +467,13 @@ class V2rayJsonConfig(str):
         self.config.append(self._assemble_config(remarks, outbounds, client_config_id))
 
     def add_balanced(
-        self, remark: str, addresses: list, inbound: dict, settings: dict, client_config_id: int | None = None
+        self,
+        remark: str,
+        addresses: list,
+        inbound: dict,
+        settings: dict,
+        client_config_id: int | None = None,
+        balancing: dict | None = None,
     ):
         """Multi-address хост → один конфиг с N proxy-outbound + xray-балансировщик."""
         dialer = self.make_dialer_outbound(inbound["fragment_setting"], inbound["noise_setting"])
@@ -479,7 +485,7 @@ class V2rayJsonConfig(str):
         if dialer:
             outbounds.append(dialer)
         config = self._assemble_config(remark, outbounds, client_config_id)
-        self.config.append(apply_host_balancer(config))
+        self.config.append(apply_host_balancer(config, balancing))
 
     def render(self, reverse=False):
         if reverse:
