@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { balancingSchema } from "./hostBalancing";
 
 export const hostItemSchema = z
   .object({
@@ -63,6 +64,9 @@ export const hostItemSchema = z
     // bot_usernames — бэкенд отвергает аренду без привязки.
     rented_bot_usernames: z.array(z.string()).default([]),
     node_ids: z.array(z.number()).default([]),
+    balancing: balancingSchema.nullable().default(null),
+    balancer_nodes_source: z.enum(["host", "selected"]).default("host"),
+    balancer_node_ids: z.array(z.number().int().positive()).default([]),
     client_config_id: z.number().nullable().default(null),
     // NPVPN-2072: сужение адресов настраивается на хосте. Пустое поле = null
     // («отдавать все адреса»), а не 0 — ноль означал бы выдачу без адресов.
@@ -89,7 +93,10 @@ export const hostItemSchema = z
       }),
   })
   .superRefine((data, ctx) => {
-    if (!data.address && (!data.node_ids || data.node_ids.length === 0)) {
+    if (data.balancer_nodes_source === "selected" && !data.balancer_node_ids.length && !data.host_id) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["balancer_node_ids"], message: "Select at least one entry node" });
+    }
+    if (data.balancer_nodes_source === "host" && !data.address && (!data.node_ids || data.node_ids.length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["address"],

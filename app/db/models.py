@@ -21,7 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import object_session, relationship
+from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 from sqlalchemy.sql.expression import select, text
 
 from app import xray
@@ -51,6 +51,14 @@ host_nodes_association = Table(
     Base.metadata,
     Column("host_id", ForeignKey("hosts.id", ondelete="CASCADE"), primary_key=True),
     Column("node_id", ForeignKey("nodes.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+host_balancer_nodes_association = Table(
+    "host_balancer_nodes",
+    Base.metadata,
+    Column("host_id", ForeignKey("hosts.id", ondelete="CASCADE"), primary_key=True),
+    Column("node_id", ForeignKey("nodes.id", ondelete="CASCADE"), primary_key=True, index=True),
 )
 
 
@@ -579,6 +587,17 @@ class ProxyHost(Base):
         return [bot.username for bot in self.bots if bot.id in rented_ids]
 
     nodes = relationship("Node", secondary=host_nodes_association, passive_deletes=True)
+    balancing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    balancer_nodes_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="host", server_default="host"
+    )
+    balancer_nodes = relationship(
+        "Node", secondary=host_balancer_nodes_association, passive_deletes=True, order_by="Node.id"
+    )
+
+    @property
+    def balancer_node_ids(self):
+        return [node.id for node in self.balancer_nodes]
 
     @property
     def node_ids(self):

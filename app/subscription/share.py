@@ -514,6 +514,8 @@ def process_inbounds_and_tags(
 
                 address = ""
                 address_list = host["address"]
+                if host.get("balancer_nodes_source") == "selected" and not address_list:
+                    continue
                 # Сужение — ДО расчёта balanced, который зависит от длины списка.
                 # Отдельного исключения для БС-хостов не требуется: заблокированный
                 # БС-хост уходит в ветку bs.is_blocked() ниже, где адрес подменяется
@@ -532,7 +534,11 @@ def process_inbounds_and_tags(
                         # выражал.
                         settings=settings_from_host(host),
                     )
-                balanced = isinstance(conf, V2rayJsonConfig) and address_list and len(address_list) > 1
+                balanced = (
+                    isinstance(conf, V2rayJsonConfig)
+                    and address_list
+                    and (len(address_list) > 1 or host.get("balancing") is not None)
+                )
                 if address_list and not balanced:
                     salt = secrets.token_hex(8)
                     address = random.choice(address_list).replace("*", salt)
@@ -594,6 +600,7 @@ def process_inbounds_and_tags(
                     "add_kwargs": add_kwargs,
                     "remark": host_remark(host),
                     "balanced": balanced and isinstance(conf, V2rayJsonConfig),
+                    "balancing": host.get("balancing"),
                 }
                 if candidate["balanced"]:
                     candidate["addresses"] = [
@@ -623,6 +630,7 @@ def process_inbounds_and_tags(
             conf.add_balanced(
                 remark=item["remark"],
                 addresses=item["addresses"],
+                balancing=item["balancing"],
                 inbound=item["host_inbound"],
                 settings=item["settings"],
                 **item["add_kwargs"],

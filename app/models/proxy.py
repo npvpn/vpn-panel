@@ -1,10 +1,12 @@
 import json
 import re
 from enum import Enum
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.host_balancing import HostBalancing
 from app.utils.system import random_password
 from xray_api.types.account import (
     ShadowsocksAccount,
@@ -160,6 +162,9 @@ class ProxyHost(BaseModel):
     node_ids: list[int] = Field(default_factory=list)
     # Профиль клиентского routing (NPVPN-2024). None — фолбэк на профиль `default`.
     client_config_id: int | None = None
+    balancing: HostBalancing | None = None
+    balancer_nodes_source: Literal["host", "selected"] = "host"
+    balancer_node_ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(default_factory=list)
     allowinsecure: bool | None = None
     is_disabled: bool | None = None
     mux_enable: bool | None = None

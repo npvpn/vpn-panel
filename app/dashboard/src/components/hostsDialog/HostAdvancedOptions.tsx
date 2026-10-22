@@ -38,6 +38,7 @@ import { XrayTemplateDocument, listTemplates } from "service/xrayTemplates";
 import { Bot } from "types/Bot";
 import { InfoIcon, PencilIcon, Error, Select } from "./constants";
 import { Trans } from "react-i18next";
+import { HostBalancingOptions } from "./HostBalancingOptions";
 import { RHFInput } from "./RHFInput";
 import { RHFCheckbox } from "./RHFCheckbox";
 import { RHFSelect } from "./RHFSelect";
@@ -957,6 +958,7 @@ export const HostAdvancedOptions = memo(
             )}
           />
         </FormControl>
+        <HostBalancingOptions hostKey={hostKey} index={index} nodes={nodes} errors={accordionErrors} />
       </SimpleGrid>
     );
   }
