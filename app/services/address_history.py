@@ -25,10 +25,11 @@ from datetime import datetime, timedelta
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import crud
 from app.db.models import ProxyHost, User, UserNodePin
+from app.services.xray_templates import composition_classifier
 from app.subscription.address_context import (
     choose_nodes,
     exhausted_from_snapshot,
@@ -42,7 +43,7 @@ from app.xray.address_policy import (
     epoch_start_day,
     pick_keys,
 )
-from app.xray.host_addresses import host_allowed_for_bot, visible_nodes
+from app.xray.host_addresses import addresses_from_nodes, host_allowed_for_bot, visible_nodes
 from config import HOSTING_USAGE_CUTOFF_PERCENT
 
 AssignmentSource = Literal["pin", "auto", "unknown"]
@@ -151,7 +152,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
        — а в подписке этой локации нет вовсе, пин не применится никогда. Тот
        же по сути дефект, что чинили по I2 для disabled-нод, только уровнем
        выше: там отсекалась одна нода, здесь — целая локация.
-    3. У хоста нет статического `address` (`not host.address` — пустая строка
+    3. Адреса заданы нодами: отдельным входным пулом либо пустым `address` (пустая строка
        у "адресного" хоста означает "адреса берутся из нод", см.
        `app/xray/__init__.py: addresses_from_nodes`). У легаси-хостов со
        статическим адресом соответствия "адрес ↔ нода" нет по построению —
@@ -165,7 +166,14 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
     """
     user_bot_username = dbuser.bot_username
     visible_tags = _visible_inbound_tags(dbuser)
-    hosts = db.query(ProxyHost).filter(ProxyHost.address == "").order_by(ProxyHost.id).all()
+    hosts = (
+        db.query(ProxyHost)
+        .options(selectinload(ProxyHost.nodes), selectinload(ProxyHost.balancer_nodes), selectinload(ProxyHost.bots))
+        .filter(ProxyHost.is_disabled.isnot(True))
+        .order_by(ProxyHost.id)
+        .all()
+    )
+    classify = composition_classifier(db)
     return [
         PinnableHost(
             host_id=cast(int, host.id),
@@ -173,7 +181,11 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
             nodes=[PinnableNode(node_id=cast(int, node.id), name=cast(str, node.name)) for node in visible_nodes(host)],
         )
         for host in hosts
-        if host_allowed_for_bot(host.bot_usernames, user_bot_username) and host.inbound_tag in visible_tags
+        if not classify(host)
+        and addresses_from_nodes(host)
+        and visible_nodes(host)
+        and host_allowed_for_bot(host.bot_usernames, user_bot_username)
+        and host.inbound_tag in visible_tags
     ]
 
 
@@ -245,13 +257,19 @@ def _build_scope(db: Session, user_id: int, first_day: int, last_day: int) -> _H
         and host_allowed_for_bot(host.bot_usernames, user_bot_username)
         and (dbuser is None or host.inbound_tag in visible_tags)
     ]
+    classify = composition_classifier(db)
+    uncertain = {cast(int, host.id) for host in hosts if host.is_hidden or classify(host)}
+    composition = crud.get_host_composition_range(db, first_day, last_day)
+    for day in composition.values():
+        for host_id in uncertain:
+            day.pop(host_id, None)
     return _HistoryScope(
         user_id=user_id,
         offset=int(getattr(dbuser, "address_rotation_offset", 0) or 0) if dbuser else 0,
         # Единственная известная нам точка ротации — ПОСЛЕДНЯЯ (см. day_offset_known, C1).
         rotation_at=getattr(dbuser, "address_rotation_offset_at", None) if dbuser else None,
         hosts=hosts,
-        composition=crud.get_host_composition_range(db, first_day, last_day),
+        composition=composition,
         pins=crud.get_pins_covering_range(db, user_id, day_start_at(first_day), day_start_at(last_day + 1)),
         # Снимки эпох могут начинаться раньше запрошенного диапазона: период ротации
         # хоста бывает длиннее суток, и эпоха первого дня стартовала до него.

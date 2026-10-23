@@ -857,6 +857,7 @@ def test_range_does_not_scale_queries_with_days(db, monkeypatch):
         # одинаково в обоих замерах: иначе второй вызов выигрывал бы за счёт identity map
         # сессии, а не за счёт самой правки.
         db.expunge_all()
+        db.info.pop("_xray_templates", None)  # compare both calls with a cold template cache
         counter["n"] = 0
         reconstruct_range(db, USER_ID, first_day, DAY)
         return counter["n"]
@@ -869,4 +870,5 @@ def test_range_does_not_scale_queries_with_days(db, monkeypatch):
         event.remove(db.bind, "before_cursor_execute", count)
 
     assert week == quarter, f"запросы выросли с длиной диапазона: {week} -> {quarter}"
-    assert quarter <= 10, f"слишком много запросов на диапазон: {quarter}"
+    # Includes one additional batch query for active client templates.
+    assert quarter <= 11, f"слишком много запросов на диапазон: {quarter}"

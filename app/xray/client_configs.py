@@ -53,3 +53,22 @@ def select_config(
     if default_id is not None:
         return configs.get(default_id)
     return None
+
+
+def make_template_lookup(configs, default_id, fallback):
+    """Одинаковый lazy file fallback для JSON, прочих форматов и истории."""
+    file_body = None
+
+    def lookup(config_id):
+        nonlocal file_body
+        selected = select_config(configs, default_id, config_id)
+        if selected is not None:
+            return selected
+        if file_body is None:
+            try:
+                file_body = parse_json_object(fallback()) or {}
+            except ValueError:
+                file_body = {"npvpn": None}  # fail closed, not a different working profile
+        return file_body
+
+    return lookup

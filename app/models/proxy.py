@@ -1,10 +1,13 @@
 import json
 import re
 from enum import Enum
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.host_balancing import HostBalancing
+from app.models.host_injection import HostInjection
 from app.utils.system import random_password
 from xray_api.types.account import (
     ShadowsocksAccount,
@@ -160,6 +163,14 @@ class ProxyHost(BaseModel):
     node_ids: list[int] = Field(default_factory=list)
     # Профиль клиентского routing (NPVPN-2024). None — фолбэк на профиль `default`.
     client_config_id: int | None = None
+    # Read-only template metadata for form validation; never persisted from requests.
+    template_injection: HostInjection | None = None
+    host_injection: HostInjection | None = None
+    group_tag: str = Field(default="", max_length=128)
+    is_hidden: bool = False
+    balancing: HostBalancing | None = None
+    balancer_nodes_source: Literal["host", "selected"] = "host"
+    balancer_node_ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(default_factory=list)
     allowinsecure: bool | None = None
     is_disabled: bool | None = None
     mux_enable: bool | None = None

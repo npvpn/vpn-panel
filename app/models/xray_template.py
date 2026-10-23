@@ -6,6 +6,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.models.host_injection import HostInjection
+
 
 class XrayTemplateVersionMeta(BaseModel):
     version: int
@@ -22,6 +24,8 @@ class XrayTemplateDocument(BaseModel):
     body: str = ""
     deletable: bool = False
     current: XrayTemplateVersionMeta | None = None
+    effective_injection: HostInjection | None = None
+    effective_injection_error: bool = False
 
 
 class XrayTemplateVersionBody(XrayTemplateVersionMeta):

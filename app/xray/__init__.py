@@ -2,13 +2,19 @@ from collections.abc import Sequence
 from random import randint
 from typing import TYPE_CHECKING
 
+from app import logger
 from app.models.proxy import ProxyHostSecurity
 from app.utils.store import DictStorage
 from app.utils.system import check_port
 from app.xray import operations
 from app.xray.config import XRayConfig
 from app.xray.core import XRayCore
-from app.xray.host_addresses import host_has_bs_node, resolve_host_addresses, resolve_host_node_ids
+from app.xray.host_addresses import (
+    addresses_from_nodes,
+    host_has_bs_node,
+    resolve_host_addresses,
+    resolve_host_node_ids,
+)
 from app.xray.inbound_filter import apply_inbound_filter
 from app.xray.node import XRayNode
 from config import XRAY_ASSETS_PATH, XRAY_EXECUTABLE_PATH, XRAY_JSON
@@ -54,6 +60,14 @@ def hosts(storage: dict):
         for inbound_tag in config.inbounds_by_tag:
             inbound_hosts: Sequence[ProxyHost] = crud.get_hosts(db, inbound_tag)
 
+            for host in inbound_hosts:
+                if (
+                    not host.is_disabled
+                    and host.balancer_nodes_source == "selected"
+                    and not resolve_host_addresses(host)
+                ):
+                    logger.warning("Host %s has no active entry addresses; omitted from subscriptions", host.id)
+
             storage[inbound_tag] = [
                 {
                     # NPVPN-2072: id хоста — сопоставить с UserNodePin.host_id при
@@ -78,7 +92,12 @@ def hosts(storage: dict):
                     # взвешивание корректно) или статической строкой host.address
                     # (тогда node_ids — просто все привязанные ноды без порядкового
                     # соответствия, и взвешивать по ним нельзя).
-                    "addresses_from_nodes": not bool(host.address),
+                    "addresses_from_nodes": addresses_from_nodes(host),
+                    "host_injection": host.host_injection,
+                    "group_tag": host.group_tag,
+                    "is_hidden": host.is_hidden,
+                    "balancing": host.balancing,
+                    "balancer_nodes_source": host.balancer_nodes_source,
                     # NPVPN-2072: настройки сужения лежат в кэше рядом с node_ids —
                     # рендер подписки не делает за ними ни одного запроса в БД.
                     "address_subset_enabled": bool(host.address_subset_enabled),

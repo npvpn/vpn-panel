@@ -134,14 +134,17 @@ def test_hosts_storage_is_bs_value_comes_from_resolver():
     )
 
 
-def test_hosts_storage_has_addresses_from_nodes_key_derived_from_host_address():
-    """NPVPN-2072: AddressContext.pick больше не угадывает происхождение адресов по
-    совпадению длин node_ids/address (app/subscription/address_context.py) — признак
-    обязан прийти явно из storage-словаря хоста, посчитанный от того же host.address,
-    что определяет ветку в _visible_nodes (host_addresses.py)."""
-    host_dict = _host_dict_literal()
-    assert "addresses_from_nodes" in _dict_keys(host_dict)
+def test_hosts_storage_uses_entry_source_resolver():
+    """Source must account for selected entries even when host.address is set."""
+    value = _value_for_key(_host_dict_literal(), "addresses_from_nodes")
+    assert ast.unparse(value) == "addresses_from_nodes(host)"
 
-    value = _value_for_key(host_dict, "addresses_from_nodes")
-    source = ast.unparse(value)
-    assert "host.address" in source, '"addresses_from_nodes" должен вычисляться из host.address, а не из длины списков'
+
+def test_hosts_storage_carries_managed_balancing_settings():
+    for key in ("balancing", "balancer_nodes_source"):
+        assert ast.unparse(_value_for_key(_host_dict_literal(), key)) == f"host.{key}"
+
+
+def test_hosts_storage_carries_composition_metadata():
+    for key in ("host_injection", "group_tag", "is_hidden"):
+        assert ast.unparse(_value_for_key(_host_dict_literal(), key)) == f"host.{key}"

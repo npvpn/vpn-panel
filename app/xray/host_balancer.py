@@ -1,23 +1,13 @@
-"""Чистая генерация xray-балансировщика для multi-address хостов подписки (NPVPN-1596).
+"""Клиентская балансировка: стратегия хоста либо совместимое поведение шаблона.
 
-Хост, связанный с несколькими нодами (или со статическим address через запятую),
-в формате v2ray-json отдаётся одним конфигом с N proxy-outbound (теги proxy, proxy-1, …)
-и балансировщиком strategy=leastPing + observatory.
-
-Стратегия leastPing (а не random): проверено вживую — RandomStrategy в xray-core observatory
-ИГНОРИРУЕТ (прозвон идёт, но мёртвая нода остаётся в пуле → ~1/N коннектов падает). observatory
-реально учитывает только leastPing/leastLoad (как в app/xray/cascade_config.py). leastPing
-выбирает живую ноду с наименьшим пингом и автоматически обходит мёртвую (бесконечный пинг).
-Трейд-офф: это «лучшая живая нода + failover», а не равномерный разброс — но отсев мёртвых
-xray даёт только так.
-
-Проба идёт ЧЕРЕЗ ноду до probeUrl: у живой ноды (VPN-выход) google/generate_204 доступен →
-низкий пинг; мёртвая → проба падает → выпадает из пула.
-
-Без импортов БД/шаблонов — покрывается pytest без окружения (как cascade_config/client_configs).
+Явный режим заменяет балансировщики и наблюдатели в копии клиентского документа.
+Без настройки сохраняется шаблон; для multi-address без своего балансировщика
+добавляется прежний leastPing. Серверные каскады и HAProxy здесь не изменяются.
 """
 
 from __future__ import annotations
+
+from copy import deepcopy
 
 PROXY_OUTBOUND_TAG = "proxy"
 HOST_BALANCER_TAG = "proxy-balancer"
@@ -64,24 +54,70 @@ def build_observatory() -> dict:
     }
 
 
-def apply_host_balancer(config: dict) -> dict:
-    """Дописать в собранный v2ray-json конфиг балансировщик, catch-all rule и observatory.
+def _catch_all(rule: dict) -> bool:
+    return (
+        rule.get("balancerTag") == HOST_BALANCER_TAG
+        and rule.get("network") in ("tcp,udp", "udp,tcp")
+        and not (set(rule) - {"type", "network", "balancerTag", "ruleTag"})
+    )
 
-    Вызывается только когда proxy-outbound'ов >1 (см. V2rayJsonConfig.add_balanced).
 
-    ВАЖНО: не мутирует config["routing"] на месте. Клиентские конфиги приходят из
-    общей карты документов (select_config, app/xray/client_configs.py), одной на всю
-    подписку, и мутация routing на месте протекла бы между серверами: одноадресные
-    хосты получали бы чужой balancer, а при 2+ multi-address хостах — по несколько
-    одинаковых балансировщиков с одним и тем же тегом. Сейчас копию документа делает
-    _assemble_config (app/subscription/v2ray.py), но эта функция чистая и на чужую
-    копию не полагается: строится новый dict routing (с новыми списками
-    balancers/rules) и присваивается обратно в config["routing"], не трогая
-    переданный внутрь исходный объект.
+def apply_host_balancer(config: dict, balancing: dict | None = None, *, participants: list[str] | None = None) -> dict:
+    """Шаблон владеет балансировкой до явного выбора стратегии хоста.
+
+    Управляемый режим заменяет секции балансировки только в копии документа.
+    Условия/порядок routing сохраняются; shared routing никогда не мутируется.
     """
-    routing = dict(config.get("routing") or {})
-    routing["balancers"] = list(routing.get("balancers", [])) + [build_balancer()]
-    routing["rules"] = list(routing.get("rules", [])) + [build_balancer_rule()]
+    routing = deepcopy(config.get("routing") or {})
+    if balancing is None:
+        if routing.get("balancers"):
+            return config
+        routing["balancers"] = [build_balancer()]
+        routing["rules"] = list(routing.get("rules", [])) + [build_balancer_rule()]
+        config["routing"] = routing
+        if "observatory" not in config and "burstObservatory" not in config:
+            config["observatory"] = build_observatory()
+        return config
+
+    selectors = participants if participants is not None else [PROXY_OUTBOUND_TAG]
+    strategy = {"type": balancing["strategy"]}
+    if balancing.get("settings") is not None:
+        strategy["settings"] = deepcopy(balancing["settings"])
+    routing["balancers"] = [{"tag": HOST_BALANCER_TAG, "selector": selectors, "strategy": strategy}]
+    rules = []
+    has_catch_all = False
+    for rule in routing.get("rules", []):
+        if rule.get("balancerTag") or rule.get("outboundTag") == PROXY_OUTBOUND_TAG:
+            rule.pop("outboundTag", None)
+            rule["balancerTag"] = HOST_BALANCER_TAG
+        if _catch_all(rule):
+            if has_catch_all:
+                continue
+            has_catch_all = True
+        rules.append(rule)
+    if not has_catch_all:
+        rules.append(build_balancer_rule())
+    routing["rules"] = rules
     config["routing"] = routing
-    config["observatory"] = build_observatory()
+    config.pop("observatory", None)
+    config.pop("burstObservatory", None)
+    probe = balancing.get("probe") or {}
+    if balancing["strategy"] == "leastPing":
+        config["observatory"] = {
+            "subjectSelector": selectors,
+            "probeUrl": probe["url"],
+            "probeInterval": probe["interval"],
+            "enableConcurrency": probe["enableConcurrency"],
+        }
+    elif balancing["strategy"] == "leastLoad":
+        config["burstObservatory"] = {
+            "subjectSelector": selectors,
+            "pingConfig": {
+                "destination": probe["url"],
+                "interval": probe["interval"],
+                "timeout": probe["timeout"],
+                "sampling": probe["sampling"],
+                "connectivity": probe["connectivity"],
+            },
+        }
     return config

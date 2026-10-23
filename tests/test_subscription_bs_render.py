@@ -29,6 +29,9 @@ _ROOT = pathlib.Path(__file__).parent.parent
 def _stub_module(name: str, attrs: dict) -> types.ModuleType:
     """Дописать недостающие атрибуты в заглушку модуля (её мог завести другой тест)."""
     module = sys.modules.get(name) or types.ModuleType(name)
+    if name == "app.templates":
+        # This is a package: keep it discoverable when other harnesses clear leaf stubs.
+        module.__path__ = [str(_ROOT / "app" / "templates")]
     for key, value in attrs.items():
         if getattr(module, key, None) is None:
             setattr(module, key, value)
@@ -887,3 +890,41 @@ def test_exhausted_node_is_not_rendered(xray_stub):
         _render(_v2ray_json_conf(), BsContext.empty(), subset=_subset_ctx(exhausted=frozenset({11, 22})))
     )
     assert set(_balanced_addresses(rendered)) == {"10.0.0.3", "10.0.0.4"}
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_host_managed_balancing_reaches_render_with_one_or_two_entries(xray_stub, count):
+    from app.models.host_balancing import HostBalancing
+
+    h = _host(*[f"entry{i}.example" for i in range(count)], node_ids=list(range(1, count + 1)))
+    h["balancing"] = HostBalancing(strategy="leastLoad").model_dump(mode="json")
+    h["balancer_nodes_source"] = "selected"
+    xray_stub([h])
+    conf = _v2ray_json_conf()
+    _render(conf, BsContext.empty())
+    cfg = conf.config[0]
+    assert len(_proxy_addresses(cfg)) == count
+    assert cfg["routing"]["balancers"][0]["strategy"]["type"] == "leastLoad"
+    assert "observatory" not in cfg and "burstObservatory" in cfg
+
+
+def test_empty_explicit_entry_pool_omits_only_that_host(xray_stub):
+    empty = _host(node_ids=[])
+    empty["balancer_nodes_source"] = "selected"
+    xray_stub([empty, _host("working.example", node_ids=[42])])
+    conf = _v2ray_json_conf()
+    _render(conf, BsContext.empty())
+    assert len(conf.config) == 1
+    assert _proxy_addresses(conf.config[0]) == ["working.example"]
+
+
+def test_managed_strategy_with_empty_legacy_pool_does_not_break_subscription(xray_stub):
+    from app.models.host_balancing import HostBalancing
+
+    empty = _host(node_ids=[])
+    empty["balancing"] = HostBalancing(strategy="leastLoad").model_dump(mode="json")
+    empty["balancer_nodes_source"] = "host"
+    xray_stub([empty, _host("working.example", node_ids=[42])])
+    conf = _v2ray_json_conf()
+    _render(conf, BsContext.empty())
+    assert "working.example" in _proxy_addresses(conf.config[-1])
