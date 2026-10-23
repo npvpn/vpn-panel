@@ -8,12 +8,13 @@ from pathlib import Path
 import pytest
 
 from app.models.host_balancing import HostBalancing
+from tests.test_hosts_dialog_logic_js import _node_strips_types
 
 ROOT = Path(__file__).parents[1]
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(
-    NODE is None or not (ROOT / "app/dashboard/node_modules/zod").exists(),
-    reason="Node and dashboard dependencies required",
+    not _node_strips_types() or not (ROOT / "app/dashboard/node_modules/zod").exists(),
+    reason="Node with native TypeScript support and dashboard dependencies required",
 )
 
 

@@ -7,6 +7,7 @@ import pytest
 
 from app.models.host_injection import HostInjection
 from tests.test_host_balancing_form import NODE, ROOT
+from tests.test_host_balancing_form import pytestmark as pytestmark
 
 
 def run_form(**data):
@@ -15,6 +16,7 @@ def run_form(**data):
         check=True,
         capture_output=True,
         text=True,
+        timeout=30,
     )
     return json.loads(result.stdout)
 
