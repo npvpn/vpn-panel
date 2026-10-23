@@ -18,6 +18,7 @@ from app.db.models import (
     XrayTemplateVersion,
 )
 from app.xray.client_configs import parse_json_object
+from app.xray.host_injection import template_injection
 
 _SESSION_CACHE_KEY = "_xray_templates"
 
@@ -88,7 +89,9 @@ class InvalidTemplateBody(Exception):
 
 def _validate(body: str | None) -> str:
     try:
-        parse_json_object(body)
+        document = parse_json_object(body)
+        if document is not None:
+            template_injection(document)
     except ValueError as exc:
         raise InvalidTemplateBody(str(exc)) from exc
     return body or ""
@@ -139,6 +142,7 @@ def _version_dict(row: XrayTemplateVersion) -> dict[str, Any]:
 def list_documents(db: Session) -> list[dict[str, Any]]:
     """Документы + мета текущей версии, в порядке создания."""
     out: list[dict[str, Any]] = []
+    lookup = build_template_lookup(get_active_bodies(db))
     for template in db.query(XrayTemplate).order_by(XrayTemplate.id).all():
         latest = (
             db.query(XrayTemplateVersion)
@@ -146,8 +150,18 @@ def list_documents(db: Session) -> list[dict[str, Any]]:
             .order_by(XrayTemplateVersion.version.desc())
             .first()
         )
+        injection = None
+        injection_error = False
+        try:
+            resolved = template_injection(lookup(template.id))
+            injection = resolved.model_dump(mode="json") if resolved else None
+        except ValueError:
+            # An invalid historical document must remain editable in the UI.
+            injection_error = True
         out.append(
             {
+                "effective_injection": injection,
+                "effective_injection_error": injection_error,
                 "id": template.id,
                 "slug": template.slug,
                 "title": template.title,
@@ -189,7 +203,7 @@ def save_version(db: Session, template_id: int, body: str | None, comment: str |
 
 def revert(db: Session, template_id: int, version: int, admin) -> dict[str, Any]:
     source = get_version(db, template_id, version)
-    return _append_version(db, template_id, str(source.body or ""), f"откат на версию {version}", admin)
+    return _append_version(db, template_id, _validate(str(source.body or "")), f"откат на версию {version}", admin)
 
 
 def _default_body(db: Session) -> str:
@@ -249,3 +263,35 @@ def delete_config(db: Session, template_id: int) -> None:
     db.delete(template)
     db.commit()
     invalidate(db)
+
+
+def build_template_lookup(bodies):
+    """Парсинг один раз на операцию; ошибочный документ не заменяется рабочим default."""
+    from app.templates import render_template
+    from app.xray.client_configs import make_template_lookup
+    from config import V2RAY_SUBSCRIPTION_TEMPLATE
+
+    configs = {}
+    for id_, raw in bodies.get("configs", {}).items():
+        try:
+            body = parse_json_object(raw)
+        except ValueError:
+            body = {"npvpn": None}
+        if body is not None:
+            configs[id_] = body
+    return make_template_lookup(configs, bodies.get("default_id"), lambda: render_template(V2RAY_SUBSCRIPTION_TEMPLATE))
+
+
+def composition_classifier(db: Session):
+    """Пакетный источник истины для pins и снимков, включая default/file template."""
+    from app.xray.host_injection import resolve_host_injection
+
+    lookup = build_template_lookup(get_active_bodies(db))
+
+    def is_composite(host):
+        try:
+            return resolve_host_injection(host.host_injection, lookup(host.client_config_id)) is not None
+        except ValueError:
+            return True  # Invalid composition cannot be pinned or reconstructed as an ordinary host.
+
+    return is_composite

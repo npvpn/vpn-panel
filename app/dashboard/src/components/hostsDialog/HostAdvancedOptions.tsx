@@ -1,4 +1,5 @@
 import {
+  Box,
   FormControl,
   Text,
   Popover,
@@ -33,11 +34,14 @@ import {
   Controller,
   UseFormRegister,
   useFormContext,
+  useWatch,
 } from "react-hook-form";
 import { XrayTemplateDocument, listTemplates } from "service/xrayTemplates";
 import { Bot } from "types/Bot";
 import { InfoIcon, PencilIcon, Error, Select } from "./constants";
 import { Trans } from "react-i18next";
+import { HostInjectionOptions } from "./HostInjectionOptions";
+import { templateInjection } from "./hostInjection";
 import { HostBalancingOptions } from "./HostBalancingOptions";
 import { RHFInput } from "./RHFInput";
 import { RHFCheckbox } from "./RHFCheckbox";
@@ -84,6 +88,11 @@ export const HostAdvancedOptions = memo(
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
     const [botSearch, setBotSearch] = useState("");
     const form = useFormContext();
+    const currentHost = useWatch({ control, name: `${hostKey}.${index}` }) || {};
+    const effectiveInjection = currentHost.host_injection ?? currentHost.template_injection;
+    const composite = !!effectiveInjection?.enabled;
+    const [templatesLoaded, setTemplatesLoaded] = useState(false);
+    const [templateError, setTemplateError] = useState(false);
 
     // Новый список ботов хоста; снятые боты теряют и аренду — см.
     // withoutUnboundRentals.
@@ -109,9 +118,17 @@ export const HostAdvancedOptions = memo(
       // Видов документов больше нет (NPVPN-2024): каждый документ — полный
       // самодостаточный конфиг и может быть назначен хосту.
       listTemplates()
-        .then((docs) => setClientConfigs(docs))
+        .then((docs) => { setClientConfigs(docs); setTemplatesLoaded(true); })
         .catch(() => setClientConfigs([]));
     }, []);
+
+    useEffect(() => {
+      if (!templatesLoaded) return;
+      try {
+        form.setValue(`${hostKey}.${index}.template_injection`, templateInjection(currentHost, clientConfigs));
+        setTemplateError(false);
+      } catch { setTemplateError(true); }
+    }, [templatesLoaded, clientConfigs, currentHost.client_config_id, hostKey, index]);
 
     return (
       <SimpleGrid
@@ -905,6 +922,7 @@ export const HostAdvancedOptions = memo(
             />
           </FormControl>
         )}
+        <Box as="fieldset" disabled={composite} display="contents">
         {/* NPVPN-2072: сужение адресов — свойство ХОСТА: у локаций разное число нод,
             и одна настройка на всего бота этого не выражала. */}
         <RHFCheckbox
@@ -931,6 +949,8 @@ export const HostAdvancedOptions = memo(
           inputProps={{ min: 1 }}
         />
 
+        </Box>
+        {composite && <Text gridColumn="1 / -1" fontSize="xs">{t("hostsDialog.injection.pinsHint")}</Text>}
         <FormControl>
           <FormLabel>{t("hostsDialog.clientConfig")}</FormLabel>
           <Controller
@@ -958,7 +978,9 @@ export const HostAdvancedOptions = memo(
             )}
           />
         </FormControl>
-        <HostBalancingOptions hostKey={hostKey} index={index} nodes={nodes} errors={accordionErrors} />
+        {templateError && <Text color="red.500" gridColumn="1 / -1">{t("hostsDialog.injection.invalidTemplate")}</Text>}
+        <HostInjectionOptions path={`${hostKey}.${index}`} errors={accordionErrors} />
+        <HostBalancingOptions hostKey={hostKey} index={index} nodes={nodes} errors={accordionErrors} composite={composite} />
       </SimpleGrid>
     );
   }

@@ -143,3 +143,8 @@ def test_hosts_storage_uses_entry_source_resolver():
 def test_hosts_storage_carries_managed_balancing_settings():
     for key in ("balancing", "balancer_nodes_source"):
         assert ast.unparse(_value_for_key(_host_dict_literal(), key)) == f"host.{key}"
+
+
+def test_hosts_storage_carries_composition_metadata():
+    for key in ("host_injection", "group_tag", "is_hidden"):
+        assert ast.unparse(_value_for_key(_host_dict_literal(), key)) == f"host.{key}"

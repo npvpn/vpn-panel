@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db import crud
 from app.db.models import ProxyHost, User, UserNodePin
+from app.services.xray_templates import composition_classifier
 from app.subscription.address_context import (
     choose_nodes,
     exhausted_from_snapshot,
@@ -172,6 +173,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
         .order_by(ProxyHost.id)
         .all()
     )
+    classify = composition_classifier(db)
     return [
         PinnableHost(
             host_id=cast(int, host.id),
@@ -179,7 +181,8 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
             nodes=[PinnableNode(node_id=cast(int, node.id), name=cast(str, node.name)) for node in visible_nodes(host)],
         )
         for host in hosts
-        if addresses_from_nodes(host)
+        if not classify(host)
+        and addresses_from_nodes(host)
         and visible_nodes(host)
         and host_allowed_for_bot(host.bot_usernames, user_bot_username)
         and host.inbound_tag in visible_tags
@@ -254,13 +257,19 @@ def _build_scope(db: Session, user_id: int, first_day: int, last_day: int) -> _H
         and host_allowed_for_bot(host.bot_usernames, user_bot_username)
         and (dbuser is None or host.inbound_tag in visible_tags)
     ]
+    classify = composition_classifier(db)
+    uncertain = {cast(int, host.id) for host in hosts if host.is_hidden or classify(host)}
+    composition = crud.get_host_composition_range(db, first_day, last_day)
+    for day in composition.values():
+        for host_id in uncertain:
+            day.pop(host_id, None)
     return _HistoryScope(
         user_id=user_id,
         offset=int(getattr(dbuser, "address_rotation_offset", 0) or 0) if dbuser else 0,
         # Единственная известная нам точка ротации — ПОСЛЕДНЯЯ (см. day_offset_known, C1).
         rotation_at=getattr(dbuser, "address_rotation_offset_at", None) if dbuser else None,
         hosts=hosts,
-        composition=crud.get_host_composition_range(db, first_day, last_day),
+        composition=composition,
         pins=crud.get_pins_covering_range(db, user_id, day_start_at(first_day), day_start_at(last_day + 1)),
         # Снимки эпох могут начинаться раньше запрошенного диапазона: период ротации
         # хоста бывает длиннее суток, и эпоха первого дня стартовала до него.

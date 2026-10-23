@@ -14,6 +14,8 @@ export type XrayTemplateDocument = {
   title: string;
   body: string;
   deletable: boolean;
+  effective_injection?: unknown;
+  effective_injection_error?: boolean;
   current: XrayTemplateVersionMeta | null;
 };
 

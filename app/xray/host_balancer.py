@@ -62,7 +62,7 @@ def _catch_all(rule: dict) -> bool:
     )
 
 
-def apply_host_balancer(config: dict, balancing: dict | None = None) -> dict:
+def apply_host_balancer(config: dict, balancing: dict | None = None, *, participants: list[str] | None = None) -> dict:
     """Шаблон владеет балансировкой до явного выбора стратегии хоста.
 
     Управляемый режим заменяет секции балансировки только в копии документа.
@@ -79,10 +79,11 @@ def apply_host_balancer(config: dict, balancing: dict | None = None) -> dict:
             config["observatory"] = build_observatory()
         return config
 
+    selectors = participants if participants is not None else [PROXY_OUTBOUND_TAG]
     strategy = {"type": balancing["strategy"]}
     if balancing.get("settings") is not None:
         strategy["settings"] = deepcopy(balancing["settings"])
-    routing["balancers"] = [{"tag": HOST_BALANCER_TAG, "selector": [PROXY_OUTBOUND_TAG], "strategy": strategy}]
+    routing["balancers"] = [{"tag": HOST_BALANCER_TAG, "selector": selectors, "strategy": strategy}]
     rules = []
     has_catch_all = False
     for rule in routing.get("rules", []):
@@ -103,14 +104,14 @@ def apply_host_balancer(config: dict, balancing: dict | None = None) -> dict:
     probe = balancing.get("probe") or {}
     if balancing["strategy"] == "leastPing":
         config["observatory"] = {
-            "subjectSelector": [PROXY_OUTBOUND_TAG],
+            "subjectSelector": selectors,
             "probeUrl": probe["url"],
             "probeInterval": probe["interval"],
             "enableConcurrency": probe["enableConcurrency"],
         }
     elif balancing["strategy"] == "leastLoad":
         config["burstObservatory"] = {
-            "subjectSelector": [PROXY_OUTBOUND_TAG],
+            "subjectSelector": selectors,
             "pingConfig": {
                 "destination": probe["url"],
                 "interval": probe["interval"],

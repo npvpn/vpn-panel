@@ -29,6 +29,9 @@ _ROOT = pathlib.Path(__file__).parent.parent
 def _stub_module(name: str, attrs: dict) -> types.ModuleType:
     """Дописать недостающие атрибуты в заглушку модуля (её мог завести другой тест)."""
     module = sys.modules.get(name) or types.ModuleType(name)
+    if name == "app.templates":
+        # This is a package: keep it discoverable when other harnesses clear leaf stubs.
+        module.__path__ = [str(_ROOT / "app" / "templates")]
     for key, value in attrs.items():
         if getattr(module, key, None) is None:
             setattr(module, key, value)

@@ -29,6 +29,7 @@ from sqlalchemy.orm import selectinload
 from app import logger, scheduler
 from app.db import GetDB, crud
 from app.db.models import ProxyHost
+from app.services.xray_templates import composition_classifier
 from app.subscription.address_context_builder import day_index
 from app.xray.address_policy import ARCHIVE_RETENTION_DAYS
 from app.xray.host_addresses import addresses_from_nodes, resolve_host_addresses, resolve_host_node_ids
@@ -74,8 +75,17 @@ def snapshot_host_composition() -> None:
             .filter(ProxyHost.is_disabled.isnot(True))
             .all()
         )
+        classify = composition_classifier(db)
         for host in hosts:
-            crud.write_host_composition_snapshot(db, epoch, host.id, _host_payload(host))
+            composite = classify(host)
+            crud.write_host_composition_snapshot(
+                db,
+                epoch,
+                host.id,
+                [] if composite else _host_payload(host),
+                is_composite=composite,
+                is_hidden=bool(host.is_hidden),
+            )
 
         # write_host_composition_snapshot сама не коммитит — коммитим здесь, один
         # раз на весь проход (десятки хостов), а не по одному на хост. КОММИТ

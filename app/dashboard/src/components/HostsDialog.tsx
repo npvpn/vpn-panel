@@ -89,7 +89,7 @@ function groupHosts(
   );
 
   hosts.forEach((host, index) => {
-    const { inbound_tag, host_id, ...rest } = host;
+    const { inbound_tag, host_id, template_injection, ...rest } = host;
 
     if (!payload[inbound_tag]) {
       payload[inbound_tag] = [];

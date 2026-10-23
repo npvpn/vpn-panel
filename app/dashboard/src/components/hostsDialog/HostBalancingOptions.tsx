@@ -11,7 +11,7 @@ function errorMessages(error: any): string[] {
   return Object.entries(error).flatMap(([key, value]) => key === "ref" ? [] : errorMessages(value));
 }
 
-export function HostBalancingOptions({ hostKey, index, nodes, errors }: { hostKey: string; index: number; nodes: NodeType[]; errors: any }) {
+export function HostBalancingOptions({ hostKey, index, nodes, errors, composite = false }: { hostKey: string; index: number; nodes: NodeType[]; errors: any; composite?: boolean }) {
   const { t } = useTranslation();
   const { control, register, setValue } = useFormContext();
   const path = `${hostKey}.${index}`;
@@ -30,7 +30,7 @@ export function HostBalancingOptions({ hostKey, index, nodes, errors }: { hostKe
     <Box gridColumn="1 / -1" borderTopWidth="1px" pt={3}>
       <Text fontWeight="semibold" mb={2}>{t("hostsDialog.balancing.title")}</Text>
       <VStack align="stretch" spacing={3}>
-        <FormControl>
+        <FormControl hidden={composite}>
           <FormLabel fontSize="sm">{t("hostsDialog.balancing.source")}</FormLabel>
           <Controller control={control} name={`${path}.balancer_nodes_source`} render={({ field }) => (
             <Select size="sm" {...field} value={field.value || "host"}>
@@ -39,7 +39,7 @@ export function HostBalancingOptions({ hostKey, index, nodes, errors }: { hostKe
             </Select>
           )} />
         </FormControl>
-        {source === "selected" && <>
+        {!composite && source === "selected" && <>
           <Text fontSize="sm">{t("hostsDialog.balancing.entryHint")}</Text>
           <Controller control={control} name={`${path}.balancer_node_ids`} render={({ field }) => {
             const ids: number[] = field.value || [];

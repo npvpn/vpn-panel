@@ -214,7 +214,6 @@ app/subscription/share.py:0: error: Incompatible types in assignment (expression
 app/subscription/share.py:0: error: Incompatible types in assignment (expression has type "str", variable has type "date")  [assignment]
 app/subscription/share.py:0: error: Argument 1 to "get" of "dict" has incompatible type "Any | None"; expected "str"  [arg-type]
 app/subscription/share.py:0: error: Argument 1 to "get" of "dict" has incompatible type "Any | None"; expected "str"  [arg-type]
-app/subscription/share.py:0: error: Incompatible types in assignment (expression has type "list[tuple[Any, list[Any]]]", variable has type "dict[Any, Any]")  [assignment]
 app/models/user.py:0: error: Unexpected keyword argument "nullable" for overloaded function "Field"  [call-overload]
 app/models/user.py:0: error: No overload variant of "Field" matches argument types "None", "bool"  [call-overload]
 app/models/user.py:0: note: Possible overload variants:

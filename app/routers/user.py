@@ -505,6 +505,10 @@ def create_user_pin_endpoint(
     host = db.query(DBProxyHost).filter(DBProxyHost.id == payload.host_id).first()
     if host is None:
         raise HTTPException(status_code=404, detail="Host not found")
+    from app.services.xray_templates import composition_classifier
+
+    if composition_classifier(db)(host):
+        raise HTTPException(status_code=400, detail="Composite host: pin source hosts instead")
     if not addresses_from_nodes(host):
         # Легаси-хост со статическим адресом: соответствия "адрес <-> нода" нет
         # по построению (см. AddressContext.pick), закреплять там нечего.

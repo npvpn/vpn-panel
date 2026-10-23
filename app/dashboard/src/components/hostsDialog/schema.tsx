@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { balancingSchema } from "./hostBalancing";
+import { injectionSchema } from "./hostInjection";
 
 export const hostItemSchema = z
   .object({
@@ -64,6 +65,10 @@ export const hostItemSchema = z
     // bot_usernames — бэкенд отвергает аренду без привязки.
     rented_bot_usernames: z.array(z.string()).default([]),
     node_ids: z.array(z.number()).default([]),
+    host_injection: injectionSchema.nullable().default(null),
+    group_tag: z.string().max(128).default(""),
+    is_hidden: z.boolean().default(false),
+    template_injection: injectionSchema.nullable().default(null),
     balancing: balancingSchema.nullable().default(null),
     balancer_nodes_source: z.enum(["host", "selected"]).default("host"),
     balancer_node_ids: z.array(z.number().int().positive()).default([]),
@@ -93,6 +98,8 @@ export const hostItemSchema = z
       }),
   })
   .superRefine((data, ctx) => {
+    const effective = data.host_injection ?? data.template_injection;
+    if (effective?.enabled && !effective.addVirtualHostAsOutbound) return;
     if (data.balancer_nodes_source === "selected" && !data.balancer_node_ids.length && !data.host_id) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["balancer_node_ids"], message: "Select at least one entry node" });
     }
