@@ -1,0 +1,48 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+# Only metadata is read. No checkout, credentials, or PR-controlled code.
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          title = os.environ.get("PR_TITLE", "")
+          match = re.fullmatch(r"(?:NPVPN-[1-9][0-9]*|chore|fix|refactor): (\S[^\r\n]*)", title)
+          errors = []
+          if match is None:
+              errors.append("Нужен формат «NPVPN-1234: суть на русском» либо chore:/fix:/refactor: для работ без задачи.")
+          if title != title.strip() or any(not char.isprintable() for char in title):
+              errors.append("Уберите пробелы по краям, переносы строк и управляющие символы.")
+          if match and not re.search(r"[А-Яа-яЁё]", match.group(1)):
+              errors.append("Описание должно содержать русский текст; технические названия можно оставить на английском.")
+          if title.endswith("."):
+              errors.append("В конце заголовка не нужна точка.")
+          if re.search(r"\(#[0-9]+\)", title):
+              errors.append("Не добавляйте номер PR (#N): его добавит GitHub при squash-merge.")
+          for error in errors:
+              print(f"::error::{error}")
+          if not errors:
+              print("Заголовок PR соответствует конвенции.")
+          sys.exit(bool(errors))
+          PY
