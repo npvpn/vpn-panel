@@ -56,11 +56,28 @@ def get_inbounds(admin: Admin = Depends(Admin.get_current)):
     return xray.config.inbounds_by_protocol
 
 
+def _host_response(db):
+    from app.xray.host_injection import template_injection
+
+    lookup = xray_templates_service.build_template_lookup(xray_templates_service.get_active_bodies(db))
+    result = {}
+    for tag in xray.config.inbounds_by_tag:
+        result[tag] = []
+        for host in crud.get_hosts(db, tag):
+            view = ProxyHost.model_validate(host)
+            try:
+                view.template_injection = template_injection(lookup(host.client_config_id))
+            except ValueError:
+                # Template editor reports the precise validation error; preserve host editability.
+                view.template_injection = None
+            result[tag].append(view)
+    return result
+
+
 @router.get("/hosts", response_model=dict[str, list[ProxyHost]], responses={403: responses._403})
 def get_hosts(db: Session = Depends(get_db), admin: Admin = Depends(Admin.check_sudo_admin)):
     """Get a list of proxy hosts grouped by inbound tag."""
-    hosts = {tag: crud.get_hosts(db, tag) for tag in xray.config.inbounds_by_tag}
-    return hosts
+    return _host_response(db)
 
 
 @router.put("/hosts", response_model=dict[str, list[ProxyHost]], responses={403: responses._403})
@@ -88,4 +105,4 @@ def modify_hosts(
 
     xray.hosts.update()
 
-    return {tag: crud.get_hosts(db, tag) for tag in xray.config.inbounds_by_tag}
+    return _host_response(db)

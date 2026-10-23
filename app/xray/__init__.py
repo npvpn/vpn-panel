@@ -93,6 +93,9 @@ def hosts(storage: dict):
                     # (тогда node_ids — просто все привязанные ноды без порядкового
                     # соответствия, и взвешивать по ним нельзя).
                     "addresses_from_nodes": addresses_from_nodes(host),
+                    "host_injection": host.host_injection,
+                    "group_tag": host.group_tag,
+                    "is_hidden": host.is_hidden,
                     "balancing": host.balancing,
                     "balancer_nodes_source": host.balancer_nodes_source,
                     # NPVPN-2072: настройки сужения лежат в кэше рядом с node_ids —

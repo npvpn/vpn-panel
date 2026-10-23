@@ -372,3 +372,21 @@ def test_list_documents_reports_default_as_not_deletable(db):
     assert by_slug[DEFAULT_CONFIG_SLUG]["deletable"] is False
     assert by_slug[BS_CONFIG_SLUG]["deletable"] is True
     assert all("kind" not in doc for doc in docs)
+
+
+def test_documents_include_effective_file_fallback_injection(db, monkeypatch):
+    import importlib
+
+    from app.models.host_injection import HostInjection
+
+    directive = {"addVirtualHostAsOutbound": True}
+    templates = importlib.import_module("app.templates")
+    monkeypatch.setattr(templates, "render_template", lambda *a, **kw: json.dumps({"npvpn": directive}))
+    db.query(XrayTemplateVersion).delete()
+    db.commit()
+    svc.invalidate(db)
+    docs = svc.list_documents(db)
+    assert docs
+    for document in docs:
+        assert document["body"] == ""
+        assert document["effective_injection"] == HostInjection.model_validate(directive).model_dump(mode="json")

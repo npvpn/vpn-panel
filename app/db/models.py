@@ -587,6 +587,9 @@ class ProxyHost(Base):
         return [bot.username for bot in self.bots if bot.id in rented_ids]
 
     nodes = relationship("Node", secondary=host_nodes_association, passive_deletes=True)
+    host_injection: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    group_tag: Mapped[str] = mapped_column(String(128), nullable=False, default="", server_default="")
+    is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     balancing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     balancer_nodes_source: Mapped[str] = mapped_column(
         String(16), nullable=False, default="host", server_default="host"
@@ -858,6 +861,8 @@ class HostCompositionSnapshot(Base):
     # для статического host.address: там нет соответствия "адрес <-> нода" по
     # построению (см. app/jobs/snapshot_host_composition.py:_host_payload).
     payload = Column(JSON, nullable=False)
+    is_composite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
 
 
 class UserNodePin(Base):
