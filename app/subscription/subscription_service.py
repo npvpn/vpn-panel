@@ -122,7 +122,7 @@ def build_subscription_response_headers(
         "support-url": resolve_support_url_header(bot_settings, str(request.url), token, revoked=is_revoked),
         "profile-title": encode_title(bot_settings["sub_profile_title"]),
         "announce": encode_title(announce_text),
-        "announce-url": bot_settings["bot_url"],
+        "announce-url": (str(bot_settings.get("web_url") or "").strip() or bot_settings["bot_url"]),
         "profile-update-interval": str(bot_settings["sub_update_interval"]),
         "subscription-userinfo": subscription_userinfo,
     }
