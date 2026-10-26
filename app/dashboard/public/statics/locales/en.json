@@ -647,5 +647,6 @@
   "hostsDialog.injection.diagnostics.selector_timeout": "Source selection timed out. Simplify the regular expression.",
   "hostsDialog.injection.diagnostics.selector_input_too_long": "Source name or tag is too long to check.",
   "hostsDialog.injection.diagnostics.form_override": "This host’s form settings override JSON injection. The effective selection includes the form override.",
-  "hostsDialog.injection.enabled": "Host enabled: available separately and as a source"
+  "hostsDialog.injection.enabled": "Host enabled: available separately and as a source",
+  "hostsDialog.changeInboundHint": "Changing the inbound keeps host settings. Moving from XHTTP to another transport clears Extra."
 }

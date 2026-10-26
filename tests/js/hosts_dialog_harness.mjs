@@ -16,13 +16,16 @@
 import { isSameHostValues } from "../../app/dashboard/src/components/hostsDialog/hostValues.ts";
 import * as botBindings from "../../app/dashboard/src/components/hostsDialog/botBindings.ts";
 import * as hostsFilter from "../../app/dashboard/src/components/hostsDialog/hostsFilter.ts";
+import { changeHostInbound } from "../../app/dashboard/src/components/hostsDialog/hostInbound.ts";
 
 const { orderBotTabRows, selectVisibleHosts } = hostsFilter;
 
 const scenario = JSON.parse(process.argv[2]);
 let result;
 
-if (scenario.op === "same") {
+if (scenario.op === "changeInbound") {
+  result = { host: changeHostInbound(scenario.host, scenario.tag, scenario.network), original: scenario.host };
+} else if (scenario.op === "same") {
   result = { same: isSameHostValues(scenario.a, scenario.b) };
 } else if (scenario.op === "visible") {
   let shown = null;

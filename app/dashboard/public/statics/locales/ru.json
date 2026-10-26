@@ -648,5 +648,6 @@
   "hostsDialog.injection.diagnostics.selector_timeout": "Выбор источников превысил лимит времени. Упростите регулярное выражение.",
   "hostsDialog.injection.diagnostics.selector_input_too_long": "Имя или тег источника слишком длинный для проверки.",
   "hostsDialog.injection.diagnostics.form_override": "Настройки формы этого хоста переопределяют JSON-инжект. Проверяется эффективный выбор с учётом формы.",
-  "hostsDialog.injection.enabled": "Хост включён: доступен отдельно и как источник"
+  "hostsDialog.injection.enabled": "Хост включён: доступен отдельно и как источник",
+  "hostsDialog.changeInboundHint": "Смена инбаунда сохраняет настройки хоста. При переходе с XHTTP на другой транспорт Extra очищается."
 }
