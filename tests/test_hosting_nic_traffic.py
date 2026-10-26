@@ -195,3 +195,41 @@ def test_adjustment_migration_round_trip_and_cascade():
             assert "node_hosting_traffic_adjustments" not in inspect(connection).get_table_names()
         finally:
             module.op = original_op
+
+
+def test_adjustment_without_daily_keeps_complete_mtd_fallback():
+    """Один offset не является расходом: без daily нужен полный скорректированный MTD."""
+    from app.db.models import NodeHostingTrafficAdjustment
+
+    db = _sqlite_session()
+    now = datetime.now(UTC)
+    node = Node(
+        name="mtd-only",
+        address="203.0.113.1",
+        port=62050,
+        api_port=62051,
+        status=NodeStatus.connected,
+        hosting_used_bytes=150,
+        hosting_used_at=now.replace(tzinfo=None),
+    )
+    db.add(node)
+    db.commit()
+    db.add(
+        NodeHostingTrafficAdjustment(
+            id="offset",
+            node_id=node.id,
+            raw_bytes=100,
+            actual_bytes=150,
+            delta_bytes=50,
+            reason="provider total",
+            created_at=now.replace(tzinfo=None),
+        )
+    )
+    db.commit()
+    now_msk = now.astimezone(MSK)
+    start = now_msk.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    rows, source = get_nodes_usage(db, start, now_msk)
+    row = next(row for row in rows if row.node_id == node.id)
+    assert source == "nic"
+    assert row.uplink + row.downlink == 150
+    db.close()

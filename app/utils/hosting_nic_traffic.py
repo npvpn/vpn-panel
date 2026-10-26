@@ -56,6 +56,8 @@ def nic_usage_from_daily(db: Session, start: datetime, end: datetime) -> dict[in
         .group_by(NodeHostingTrafficAdjustment.node_id)
         .all()
     )
+    # Offset без raw не является полным расходом. Не добавляем такой ID:
+    # иначе частичный offset подавит полный MTD fallback у get_nodes_usage.
     for node_id, delta in adjustments:
         if node_id in totals:
             totals[node_id] += int(delta)
