@@ -427,24 +427,38 @@ def update_hosts_batch(db: Session, modified_hosts: dict[str, list[ProxyHostModi
                     if host.id in destinations:
                         raise ValueError("duplicate host id in payload")
                     destinations[host.id] = tag
-        existing = db.query(ProxyHost).filter(ProxyHost.id.in_(destinations)).all()
+        existing = (
+            db.query(ProxyHost).options(joinedload(ProxyHost.inbound)).filter(ProxyHost.id.in_(destinations)).all()
+        )
         unknown = set(destinations) - {host.id for host in existing}
         if unknown:
             raise ValueError(f"unknown host ids: {sorted(unknown)}")
-        inbounds = db.query(ProxyInbound).filter(ProxyInbound.tag.in_(modified_hosts)).all()
-        known_tags = {inbound.tag for inbound in inbounds}
+        inbounds = {
+            cast(str, inbound.tag): inbound
+            for inbound in db.query(ProxyInbound).filter(ProxyInbound.tag.in_(modified_hosts)).all()
+        }
         for tag in modified_hosts:
-            if tag not in known_tags:
-                db.add(ProxyInbound(tag=tag))
+            if tag not in inbounds:
+                inbounds[tag] = ProxyInbound(tag=tag)
+                db.add(inbounds[tag])
         db.flush()
+        existing_orders = {cast(int, host.id): cast(int, host.order) for host in existing}
         for dbhost in existing:
-            setattr(dbhost, "inbound_tag", destinations[cast(int, dbhost.id)])
+            host_id = cast(int, dbhost.id)
+            destination = destinations[host_id]
+            if dbhost.inbound_tag != destination:
+                # Меняем relationship: ORM синхронизирует и прежний inbound,
+                # даже если его ключ отсутствует в запросе, а hosts уже загружен.
+                dbhost.inbound = inbounds[destination]
         db.flush()
-        # A caller may already have loaded inbound.hosts before moving hosts.
-        for inbound in inbounds:
-            db.expire(inbound, ["hosts"])
         for tag, hosts in modified_hosts.items():
-            update_hosts(db, tag, hosts, commit=False)
+            prepared = [
+                host.model_copy(update={"order": existing_orders[host.id]})
+                if host.order is None and host.id in existing_orders
+                else host
+                for host in hosts
+            ]
+            update_hosts(db, tag, prepared, commit=False)
         db.commit()
     except Exception:
         db.rollback()

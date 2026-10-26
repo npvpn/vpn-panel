@@ -544,7 +544,9 @@ class ProxyHost(Base):
     )
 
     inbound_tag = Column(String(256), ForeignKey("inbounds.tag"), nullable=False)
-    inbound = relationship("ProxyInbound", back_populates="hosts")
+    # Перенос обязан удалить хост из прежнего inbound.hosts даже когда
+    # many-to-one связь ещё не загружена. Иначе delete-orphan удалит сам хост.
+    inbound = relationship("ProxyInbound", back_populates="hosts", active_history=True)
     order = Column(Integer, nullable=False, server_default="0", default=0)
     allowinsecure = Column(Boolean, nullable=True)
     is_disabled = Column(Boolean, nullable=True, default=False)
