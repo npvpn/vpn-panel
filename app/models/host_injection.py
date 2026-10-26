@@ -79,3 +79,43 @@ class HostInjection(_Model):
         if not self.enabled and (self.injectHosts or self.addVirtualHostAsOutbound):
             raise ValueError("Disabled injection must not contain source settings")
         return self
+
+
+class InjectionPreviewHost(_Model):
+    id: Annotated[StrictInt, Field(gt=0)] | None = None
+    inbound_tag: str = Field(default="", max_length=256)
+    remark: str = Field(default="", max_length=512)
+    group_tag: str = Field(default="", max_length=128)
+    is_disabled: bool = False
+    is_hidden: bool = False
+    order: int = 0
+    client_config_id: int | None = None
+    # Keep invalid drafts intact so diagnostics can point to their exact field.
+    host_injection: dict | None = None
+
+
+class InjectionPreviewRequest(_Model):
+    recipient: InjectionPreviewHost
+    hosts: list[InjectionPreviewHost] = Field(default_factory=list, max_length=4096)
+    excluded_host_ids: list[Annotated[StrictInt, Field(gt=0)]] = Field(default_factory=list, max_length=4096)
+    template_body: str | None = Field(default=None, max_length=1_000_000)
+
+
+class InjectionDiagnostic(_Model):
+    code: str
+    level: Literal["warning", "error"] = "warning"
+    group: int | None = None
+    host_id: int | None = None
+    path: str = ""
+
+
+class InjectionGroupPreview(_Model):
+    group: int
+    host_ids: list[int] = Field(default_factory=list)
+    pattern: str = ""
+
+
+class InjectionPreview(_Model):
+    active: bool = False
+    groups: list[InjectionGroupPreview] = Field(default_factory=list)
+    issues: list[InjectionDiagnostic] = Field(default_factory=list)

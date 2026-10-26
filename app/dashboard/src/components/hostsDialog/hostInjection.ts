@@ -1,5 +1,49 @@
 import { z } from "zod";
 
+export function previewDraftHosts(
+  rows: Record<string, any>[],
+  completeCatalog: boolean
+) {
+  return rows
+    .map((host, index) =>
+      previewHost(completeCatalog ? { ...host, order: index } : host)
+    )
+    .filter((host) => host.id !== null);
+}
+
+export function previewExcludedIds(
+  saved: Record<string, any[]>,
+  rows: Record<string, any>[],
+  completeCatalog: boolean
+): number[] {
+  if (!completeCatalog) return [];
+  const retained = new Set(rows.map((host) => host.host_id));
+  return Object.values(saved)
+    .flat()
+    .map((host) => host.id)
+    .filter((id): id is number => typeof id === "number" && !retained.has(id));
+}
+
+// Only selector metadata crosses the diagnostics API; no keys or connection credentials.
+export function previewHost(host: Record<string, any>) {
+  return {
+    id:
+      typeof host.host_id === "number"
+        ? host.host_id
+        : typeof host.id === "number"
+        ? host.id
+        : null,
+    inbound_tag: host.inbound_tag || "",
+    remark: host.remark || "",
+    group_tag: host.group_tag || "",
+    is_disabled: !!host.is_disabled,
+    is_hidden: !!host.is_hidden,
+    order: host.order || 0,
+    client_config_id: host.client_config_id ?? null,
+    host_injection: host.host_injection ?? null,
+  };
+}
+
 const selectorSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -46,7 +90,7 @@ export const injectionGroupSchema = z
         Number(v.useHostRemarkAsTag) +
         Number(v.useHostTagAsTag) ===
       1,
-    "Choose exactly one tagging mode",
+    "Choose exactly one tagging mode"
   );
 export const injectionSchema = z
   .object({
@@ -87,7 +131,7 @@ type InjectionTemplate = {
 
 export function templateInjection(
   host: { client_config_id?: number | null },
-  templates: InjectionTemplate[],
+  templates: InjectionTemplate[]
 ): HostInjection | null {
   const chosen = templates.find((t) => t.id === host.client_config_id);
   const fallback = templates.find((t) => t.slug === "default");
@@ -107,7 +151,7 @@ export function templateInjection(
 }
 export function effectiveInjection(
   host: { host_injection?: unknown; client_config_id?: number | null },
-  templates: InjectionTemplate[],
+  templates: InjectionTemplate[]
 ): HostInjection | null {
   const value =
     host.host_injection == null

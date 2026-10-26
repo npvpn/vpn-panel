@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app import __version__, xray
 from app.db import Session, crud, get_db
 from app.models.admin import Admin
+from app.models.host_injection import InjectionPreview, InjectionPreviewRequest
 from app.models.proxy import ProxyHost, ProxyInbound, ProxyTypes
 from app.models.system import SystemStats
 from app.models.user import UserStatus
@@ -11,6 +12,16 @@ from app.utils import responses
 from app.utils.system import cpu_usage, memory_usage, realtime_bandwidth
 
 router = APIRouter(tags=["System"], prefix="/api", responses={401: responses._401})
+
+
+@router.post("/hosts/injection/preview", response_model=InjectionPreview)
+def preview_host_injection(
+    payload: InjectionPreviewRequest,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.check_sudo_admin),
+):
+    del admin
+    return xray_templates_service.preview_injection(db, payload, set(xray.config.inbounds_by_tag))
 
 
 @router.get("/system", response_model=SystemStats)

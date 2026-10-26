@@ -6,7 +6,7 @@ Append-only: активная редакция — версия с максим�
 from __future__ import annotations
 
 from functools import cache
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import func
 
@@ -16,6 +16,12 @@ from app.db.models import (
     ProxyHost,
     XrayTemplate,
     XrayTemplateVersion,
+)
+from app.models.host_injection import (
+    InjectionDiagnostic,
+    InjectionPreview,
+    InjectionPreviewHost,
+    InjectionPreviewRequest,
 )
 from app.xray.client_configs import parse_json_object
 from app.xray.host_injection import template_injection
@@ -295,3 +301,34 @@ def composition_classifier(db: Session):
             return True  # Invalid composition cannot be pinned or reconstructed as an ordinary host.
 
     return is_composite
+
+
+def preview_injection(db: Session, request: InjectionPreviewRequest, active_inbounds: set[str]) -> InjectionPreview:
+    """Sudo-only draft preview; no ORM mutation, commit or cache invalidation."""
+    from app.xray.host_injection import diagnose_injection
+
+    bodies = get_active_bodies(db)
+    if request.template_body is not None:
+        try:
+            parse_json_object(request.template_body)
+        except ValueError:
+            return InjectionPreview(issues=[InjectionDiagnostic(code="invalid_template", level="error")])
+        if request.recipient.client_config_id is None:
+            return InjectionPreview(issues=[InjectionDiagnostic(code="missing_template", level="error")])
+        bodies = {**bodies, "configs": {**bodies["configs"], request.recipient.client_config_id: request.template_body}}
+    lookup = build_template_lookup(bodies)
+    fields = InjectionPreviewHost.model_fields
+    catalog = {cast(int, host.id): {key: getattr(host, key) for key in fields} for host in db.query(ProxyHost).all()}
+    for excluded_id in request.excluded_host_ids:
+        catalog.pop(excluded_id, None)
+    for draft in request.hosts:
+        if draft.id is not None and draft.id in catalog:
+            catalog[draft.id].update(draft.model_dump(exclude_unset=True))
+    recipient = request.recipient.model_dump()
+    if request.recipient.id is not None and request.recipient.id in catalog:
+        recipient = {**catalog[request.recipient.id], **request.recipient.model_dump(exclude_unset=True)}
+        catalog[request.recipient.id] = recipient
+    result = diagnose_injection(recipient, list(catalog.values()), lookup, active_inbounds)
+    if request.template_body is not None and recipient["host_injection"] is not None:
+        result.issues.insert(0, InjectionDiagnostic(code="form_override"))
+    return result

@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from time import monotonic
 
-from app.models.host_injection import HostInjection, IdSelector, InjectionGroup, RegexSelector, compile_selector
+from pydantic import ValidationError
+
+from app.models.host_injection import (
+    SELECTION_SECONDS,
+    HostInjection,
+    IdSelector,
+    InjectionDiagnostic,
+    InjectionGroup,
+    InjectionGroupPreview,
+    InjectionPreview,
+    RegexSelector,
+    compile_selector,
+)
 
 
 class InjectionError(ValueError):
@@ -105,3 +117,81 @@ def validate_composed_tag_graph(config: dict) -> None:
         require_tag((outbound.get("proxySettings") or {}).get("tag"))
         stream = outbound.get("streamSettings") or {}
         require_tag((stream.get("sockopt") or {}).get("dialerProxy"))
+
+
+def diagnose_injection(
+    recipient: Mapping, hosts: Sequence[Mapping], template_for: Callable, active_inbounds: set[str]
+) -> InjectionPreview:
+    """Read-only source selection preview, not a per-user endpoint/render check."""
+    result = InjectionPreview()
+
+    def issue(code, *, group=None, host_id=None, path="", level="warning"):
+        result.issues.append(InjectionDiagnostic(code=code, group=group, host_id=host_id, path=path, level=level))
+
+    try:
+        injection = resolve_host_injection(
+            recipient.get("host_injection"), template_for(recipient.get("client_config_id"))
+        )
+    except ValidationError as exc:
+        for error in exc.errors(include_input=False, include_url=False):
+            issue("invalid_directive", level="error", path=".".join(map(str, error["loc"])))
+        return result
+    except ValueError as exc:
+        issue(exc.code if isinstance(exc, InjectionError) else "invalid_template", level="error")
+        return result
+    if injection is None:
+        return result
+    result.active = True
+    if recipient.get("is_disabled"):
+        issue("recipient_disabled")
+    if recipient.get("is_hidden"):
+        issue("recipient_hidden")
+    by_id = {host.get("id"): host for host in hosts}
+    eligible = [host for host in hosts if host.get("inbound_tag") in active_inbounds]
+    prefixes = set()
+    deadline = monotonic() + SELECTION_SECONDS
+    for index, group in enumerate(injection.injectHosts, 1):
+        preview = InjectionGroupPreview(group=index, pattern=getattr(group.selector, "pattern", ""))
+        result.groups.append(preview)
+        if group.tagPrefix is not None:
+            if group.tagPrefix in prefixes:
+                issue("duplicate_group_prefix", group=index, level="error")
+            prefixes.add(group.tagPrefix)
+        if group.selector.type == "sameTagAsRecipient" and not recipient.get("group_tag"):
+            issue("recipient_tag_missing", group=index)
+        if isinstance(group.selector, IdSelector):
+            for id_ in group.selector.values:
+                host = by_id.get(id_)
+                reason = None
+                if id_ == recipient.get("id"):
+                    reason = "self_source"
+                elif host is None:
+                    reason = "missing_source"
+                elif host.get("is_disabled"):
+                    reason = "disabled_source"
+                elif host.get("inbound_tag") not in active_inbounds:
+                    reason = "inactive_inbound"
+                elif group.selectFrom != "ALL" and bool(host.get("is_hidden")) != (group.selectFrom == "HIDDEN"):
+                    reason = "visibility_mismatch"
+                if reason:
+                    issue(reason, group=index, host_id=id_)
+        try:
+            selected = select_injected_hosts(group, recipient, eligible, deadline=deadline)
+        except InjectionError as exc:
+            issue(exc.code, group=index, level="error")
+            break
+        for host in selected:
+            try:
+                source = resolve_host_injection(host.get("host_injection"), template_for(host.get("client_config_id")))
+            except ValueError:
+                issue("invalid_source", group=index, host_id=host.get("id"))
+                continue
+            if source is not None and not source.addVirtualHostAsOutbound:
+                issue("virtual_source", group=index, host_id=host.get("id"))
+                continue
+            preview.host_ids.append(host["id"])
+        if not preview.host_ids:
+            issue("empty_group", group=index)
+    if not injection.addVirtualHostAsOutbound and not any(group.host_ids for group in result.groups):
+        issue("empty_injection", level="error")
+    return result

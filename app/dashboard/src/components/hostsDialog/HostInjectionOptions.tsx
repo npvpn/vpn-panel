@@ -15,13 +15,20 @@ import { useHosts } from "contexts/HostsContext";
 import { useDashboard } from "contexts/DashboardContext";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import { InjectionGroup, newInjectionGroup } from "./hostInjection";
+import {
+  InjectionGroup,
+  newInjectionGroup,
+  previewHost,
+  previewExcludedIds,
+  previewDraftHosts,
+} from "./hostInjection";
+import { InjectionDiagnostics } from "./InjectionDiagnostics";
 
 function messages(error: any): string[] {
   if (!error || typeof error !== "object") return [];
   if (error.message) return [error.message];
   return Object.entries(error).flatMap(([k, v]) =>
-    k === "ref" ? [] : messages(v),
+    k === "ref" ? [] : messages(v)
   );
 }
 const move = <T,>(items: T[], index: number, delta: number): T[] => {
@@ -33,9 +40,11 @@ const move = <T,>(items: T[], index: number, delta: number): T[] => {
 export function HostInjectionOptions({
   path,
   errors,
+  completeCatalog = false,
 }: {
   path: string;
   errors: any;
+  completeCatalog?: boolean;
 }) {
   const { t } = useTranslation();
   const tr = (key: string) => t(`hostsDialog.injection.${key}`);
@@ -49,7 +58,7 @@ export function HostInjectionOptions({
     hosts.forEach((host: any) => {
       if (host.id)
         available.set(host.id, { ...host, host_id: host.id, inbound_tag: tag });
-    }),
+    })
   );
   rows.forEach((host: any) => {
     if (host.host_id) available.set(host.host_id, host);
@@ -58,15 +67,17 @@ export function HostInjectionOptions({
   const connections = Array.from(inbounds.values()).flat();
   const describe = (host: any) => {
     const inbound = connections.find((i) => i.tag === host.inbound_tag);
-    return `${host.remark} · ${host.inbound_tag} · ${inbound?.network || ""}:${host.port || inbound?.port || ""} · #${host.host_id}`;
+    return `${host.remark} · ${host.inbound_tag} · ${inbound?.network || ""}:${
+      host.port || inbound?.port || ""
+    } · #${host.host_id}`;
   };
   const inherited = row.host_injection == null;
   const effective = row.host_injection ?? row.template_injection;
   const mode = inherited
     ? "template"
     : row.host_injection.enabled
-      ? "form"
-      : "off";
+    ? "form"
+    : "off";
   const set = (value: any) =>
     setValue(`${path}.host_injection`, value, {
       shouldDirty: true,
@@ -102,6 +113,7 @@ export function HostInjectionOptions({
             </Checkbox>
           )}
         />
+        <Text fontSize="xs">{tr("visibilityHint")}</Text>
         <FormControl>
           <FormLabel fontSize="sm">{tr("source")}</FormLabel>
           <Select
@@ -112,12 +124,12 @@ export function HostInjectionOptions({
                 e.target.value === "template"
                   ? null
                   : e.target.value === "off"
-                    ? { enabled: false }
-                    : {
-                        enabled: true,
-                        injectHosts: [newInjectionGroup()],
-                        addVirtualHostAsOutbound: false,
-                      },
+                  ? { enabled: false }
+                  : {
+                      enabled: true,
+                      injectHosts: [newInjectionGroup()],
+                      addVirtualHostAsOutbound: false,
+                    }
               )
             }
           >
@@ -195,8 +207,8 @@ export function HostInjectionOptions({
                           type === "ids"
                             ? { type, values: [] }
                             : type === "sameTagAsRecipient"
-                              ? { type }
-                              : { type, pattern: "^MAIN$" },
+                            ? { type }
+                            : { type, pattern: "^MAIN$" },
                         selectFrom: type === "ids" ? "ALL" : "HIDDEN",
                       });
                     }}
@@ -289,7 +301,7 @@ export function HostInjectionOptions({
                                 selector: {
                                   type: "ids",
                                   values: group.selector.values.filter(
-                                    (v) => v !== id,
+                                    (v) => v !== id
                                   ),
                                 },
                               })
@@ -346,8 +358,8 @@ export function HostInjectionOptions({
                       group.tagPrefix != null
                         ? "prefix"
                         : group.useHostTagAsTag
-                          ? "tag"
-                          : "remark"
+                        ? "tag"
+                        : "remark"
                     }
                     onChange={(e) =>
                       change(i, {
@@ -400,6 +412,13 @@ export function HostInjectionOptions({
             </FormErrorMessage>
           </FormControl>
         )}
+        <InjectionDiagnostics
+          request={{
+            recipient: previewHost(row),
+            excluded_host_ids: previewExcludedIds(saved, rows, completeCatalog),
+            hosts: previewDraftHosts(rows, completeCatalog),
+          }}
+        />
       </VStack>
     </Box>
   );

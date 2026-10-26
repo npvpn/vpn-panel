@@ -75,3 +75,41 @@ def test_file_template_injection_comes_from_server_metadata():
     for selected in (None, 1, 2):
         assert run_form(op="effective", host={"client_config_id": selected}, templates=templates) == directive
     assert run_form(op="effective", host={"client_config_id": 3}, templates=templates) is None
+
+
+def test_preview_preserves_draft_identity_and_excludes_connection_secrets():
+    from app.models.host_injection import InjectionPreviewHost
+
+    host = {
+        "id": "rhf-generated",
+        "host_id": 12,
+        "inbound_tag": "VLESS",
+        "group_tag": "edited",
+        "is_hidden": True,
+        "host_injection": {"enabled": False},
+        "sni": "private",
+        "password": "secret",
+        "client_config_id": 4,
+    }
+    result = run_form(op="preview", host=host)
+    validated = InjectionPreviewHost.model_validate(result)
+    assert validated.id == 12 and validated.group_tag == "edited" and validated.is_hidden
+    assert validated.host_injection == {"enabled": False} and validated.client_config_id == 4
+    assert "sni" not in result and "password" not in result
+    assert run_form(op="preview", host={"id": "new-rhf"})["id"] is None
+
+
+def test_preview_only_complete_form_excludes_removed_hosts():
+    data = {
+        "op": "excluded",
+        "saved": {"a": [{"id": 1}, {"id": 2}], "b": [{"id": 3}]},
+        "rows": [{"host_id": 1}, {"host_id": 3}, {"id": "new-rhf"}],
+    }
+    assert run_form(**data, complete=True) == [2]
+    assert run_form(**data, complete=False) == []
+
+
+def test_preview_draft_order_matches_save_including_unsaved_rows():
+    rows = [{"host_id": 3, "order": 9}, {"id": "new"}, {"host_id": 1, "order": 0}]
+    assert [(h["id"], h["order"]) for h in run_form(op="drafts", rows=rows, complete=True)] == [(3, 0), (1, 2)]
+    assert [(h["id"], h["order"]) for h in run_form(op="drafts", rows=rows, complete=False)] == [(3, 9), (1, 0)]

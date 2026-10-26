@@ -66,6 +66,7 @@ export type HostAdvancedOptionsProps = {
   // Remark/address are already editable inline wherever this modal is opened
   // from a mobile card or the create-host row, so skip the duplicates there.
   hideRemarkAddress?: boolean;
+  completeCatalog?: boolean;
 };
 
 export const HostAdvancedOptions = memo(
@@ -83,6 +84,7 @@ export const HostAdvancedOptions = memo(
     proxyALPN,
     proxyFingerprint,
     hideRemarkAddress,
+    completeCatalog,
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
@@ -979,7 +981,11 @@ export const HostAdvancedOptions = memo(
           />
         </FormControl>
         {templateError && <Text color="red.500" gridColumn="1 / -1">{t("hostsDialog.injection.invalidTemplate")}</Text>}
-        <HostInjectionOptions path={`${hostKey}.${index}`} errors={accordionErrors} />
+        <HostInjectionOptions
+          path={`${hostKey}.${index}`}
+          errors={accordionErrors}
+          completeCatalog={completeCatalog}
+        />
         <HostBalancingOptions hostKey={hostKey} index={index} nodes={nodes} errors={accordionErrors} composite={composite} />
       </SimpleGrid>
     );

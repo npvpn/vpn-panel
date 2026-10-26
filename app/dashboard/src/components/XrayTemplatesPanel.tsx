@@ -46,6 +46,7 @@ import {
   saveTemplate,
 } from "service/xrayTemplates";
 import { JsonEditor } from "./JsonEditor";
+import { TemplateInjectionDiagnostics } from "./hostsDialog/InjectionDiagnostics";
 
 const CloseIcon = chakra(XMarkIcon, { baseStyle: { w: 3.5, h: 3.5 } });
 
@@ -475,6 +476,14 @@ export const XrayTemplatesPanel: FC = () => {
           onChange={(e) => setComment(e.target.value)}
         />
       </FormControl>
+
+      {selectedId != null && (
+        <TemplateInjectionDiagnostics
+          key={selectedId}
+          templateId={selectedId}
+          body={normalizeBody(body)}
+        />
+      )}
 
       <HStack justify="space-between">
         <Button
