@@ -4,10 +4,31 @@
 
   var READY_TIMEOUT_MS = 15000;
   var IDENTITY_TIMEOUT_MS = 15000;
-  var TEXT_LOADING = 'Загружаем чат…';
   var TEXT_FAILED_TG = 'Чат недоступен, напишите в Telegram';
   var TEXT_FAILED_LATER = 'Чат недоступен, попробуйте позже';
   var sdkPromise = null;
+  // меню, из которого сейчас запущен чат: chatwoot:error приходит асинхронно, уже после
+  // setUser, и ошибку нужно показать там, откуда открывали
+  var activeChat = null;
+  var LAST_TOKEN_KEY = 'cw_sub_token';
+
+  // Страницы разных подписок в одном браузере (общее устройство): Chatwoot держит
+  // переписку в cookie, и следующий открыл бы чат предыдущего. Подписка сменилась —
+  // забываем прошлую сессию чата до запуска SDK (reset() после run() перезагружает
+  // виджет без chatwoot:ready). Свою историю владелец получит обратно по identity
+  function forgetPreviousChat(cfg) {
+    try {
+      var last = window.localStorage.getItem(LAST_TOKEN_KEY);
+      if (last && last !== cfg.token) {
+        ['cw_conversation', 'cw_user_' + cfg.chat.website_token].forEach(function (name) {
+          document.cookie = name + '=; Max-Age=0; path=/';
+        });
+      }
+      window.localStorage.setItem(LAST_TOKEN_KEY, cfg.token);
+    } catch (e) {
+      // хранилище недоступно (приватный режим) — чат всё равно работает
+    }
+  }
 
   function loadSdk(baseUrl) {
     return new Promise(function (resolve, reject) {
@@ -16,7 +37,10 @@
       script.src = baseUrl + '/packs/js/sdk.js';
       script.async = true;
       script.onload = function () { resolve(); };
-      script.onerror = function () { reject(new Error('chatwoot sdk')); };
+      script.onerror = function () {
+        if (script.remove) { script.remove(); }
+        reject(new Error('chatwoot sdk'));
+      };
       document.head.appendChild(script);
     });
   }
@@ -48,17 +72,31 @@
     });
   }
 
-  // SDK + chatwoot:ready — один раз на страницу (повторный run() Chatwoot не поддерживает),
-  // сбой загрузки SDK запоминается до перезагрузки. Identity ниже — повторяемый.
+  // SDK + chatwoot:ready. run() — один раз на страницу (повторный Chatwoot не поддерживает).
+  // Сбой не навсегда: сервер чата режет запросы по IP (429), а это бывает временно — следующий
+  // клик пробует снова: скрипт не загрузился — грузим заново, виджет запущен, но не ответил —
+  // ждём его ещё раз. Identity ниже — повторяемый.
+  var sdkStarted = false;
+
   function ensureSdk(cfg) {
+    if (window.$chatwoot && window.$chatwoot.hasLoaded) { return Promise.resolve(); }
     if (!sdkPromise) {
-      window.chatwootSettings = { hideMessageBubble: true };
       var ready = waitReady();
       ready.catch(function () {});  // без «Uncaught (in promise)», если SDK не загрузился
-      sdkPromise = loadSdk(cfg.chat.base_url).then(function () {
-        window.chatwootSDK.run({ websiteToken: cfg.chat.website_token, baseUrl: cfg.chat.base_url });
-        return ready;
-      });
+      var attempt;
+      if (sdkStarted) {
+        attempt = ready;
+      } else {
+        forgetPreviousChat(cfg);
+        window.chatwootSettings = { hideMessageBubble: true };
+        attempt = loadSdk(cfg.chat.base_url).then(function () {
+          sdkStarted = true;
+          window.chatwootSDK.run({ websiteToken: cfg.chat.website_token, baseUrl: cfg.chat.base_url });
+          return ready;
+        });
+      }
+      sdkPromise = attempt;
+      attempt.catch(function () { if (sdkPromise === attempt) { sdkPromise = null; } });
     }
     return sdkPromise;
   }
@@ -72,7 +110,6 @@
         email: identity.email || undefined
       });
       window.$chatwoot.setCustomAttributes({ source: 'subscription_page' });
-      window.$chatwoot.toggle('open');
     });
   }
 
@@ -152,31 +189,84 @@
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
-    document.addEventListener('click', function (event) { if (!root.contains(event.target)) { setOpen(false); } });
-    document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { setOpen(false); } });
+    // Текущая попытка открыть чат. Пока грузится — спиннер на месте иконки «Чат на сайте»
+    // (как в вебе; на «Помощь» лоадера нет); ушли из меню, не дождавшись, — чат потом сам
+    // не всплывает.
+    var waiting = null;
+
+    function setLoading(button, on) {
+      if (button !== chatBtn) { return; }
+      if (on) { button.classList.add('is-loading'); } else { button.classList.remove('is-loading'); }
+      button.setAttribute('aria-busy', on ? 'true' : 'false');
+    }
+
+    function cancelWaiting() {
+      if (!waiting) { return; }
+      waiting.cancelled = true;
+      setLoading(waiting.button, false);
+      waiting = null;
+    }
+
+    function leaveMenu() {
+      cancelWaiting();
+      setOpen(false);
+    }
+
+    document.addEventListener('click', function (event) { if (!root.contains(event.target)) { leaveMenu(); } });
+    document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { leaveMenu(); } });
+    var tgLink = root.querySelector('a.support-menu__item');
+    if (tgLink) { tgLink.addEventListener('click', leaveMenu); }
 
     // Только чат (без Telegram) — вилка не нужна: «Помощь» сразу открывает чат,
     // а список остаётся только под статус загрузки/ошибки.
     var direct = cfg.mode === 'chat';
 
-    function runChat(button) {
-      if (button.disabled) { return; }
-      button.disabled = true;
-      setStatus(root, TEXT_LOADING);
+    function failText() {
+      return cfg.tg_url ? TEXT_FAILED_TG : TEXT_FAILED_LATER;
+    }
+
+    function failChat() {
+      setStatus(root, failText());
       if (direct) { setOpen(true); }
+    }
+
+    // Chatwoot отклонил пользователя (например, неверная подпись) — без этого окно
+    // оставалось открытым с анонимным пустым чатом
+    window.addEventListener('chatwoot:error', function () {
+      if (activeChat !== root) { return; }
+      if (window.$chatwoot) { window.$chatwoot.toggle('close'); }
+      failChat();
+      // после успешного запуска список уже закрыт — открываем, иначе ошибку не видно
+      setOpen(true);
+    });
+
+    function runChat(button) {
+      if (waiting) { return; }
+      var attempt = { button: button, cancelled: false };
+      waiting = attempt;
+      activeChat = root;
+      // прошлая ошибка уходит, пока пробуем снова
+      setStatus(root, '');
+      setLoading(button, true);
       startChat(cfg).then(function () {
-        setStatus(root, '');
+        if (attempt.cancelled) { return; }
+        window.$chatwoot.toggle('open');
         setOpen(false);
       }).catch(function () {
-        setStatus(root, cfg.tg_url ? TEXT_FAILED_TG : TEXT_FAILED_LATER);
-        if (direct) { setOpen(true); }
-      }).then(function () { button.disabled = false; });
+        // ушли из меню — ошибку увидят при следующем открытии, само меню не всплывает
+        if (attempt.cancelled) { setStatus(root, failText()); } else { failChat(); }
+      }).then(function () {
+        if (waiting === attempt) {
+          waiting = null;
+          setLoading(button, false);
+        }
+      });
     }
 
     if (direct) {
       toggle.addEventListener('click', function () { runChat(toggle); });
     } else {
-      toggle.addEventListener('click', function () { setOpen(list.hidden); });
+      toggle.addEventListener('click', function () { if (list.hidden) { setOpen(true); } else { leaveMenu(); } });
       if (chatBtn && cfg.chat) {
         chatBtn.addEventListener('click', function () { runChat(chatBtn); });
       }
