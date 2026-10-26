@@ -865,6 +865,22 @@ class UserNodePin(Base):
     host = relationship("ProxyHost", passive_deletes=True)
 
 
+class NodeHostingTrafficAdjustment(Base):
+    """Аудит поправок NIC: raw не меняется, отменённые записи остаются в истории."""
+
+    __tablename__ = "node_hosting_traffic_adjustments"
+    id = Column(String(36), primary_key=True)  # UUID операции CLI, ключ повтора
+    node_id = Column(Integer, ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    node = relationship("Node", passive_deletes=True)
+    raw_bytes = Column(BigInteger, nullable=False)
+    actual_bytes = Column(BigInteger, nullable=False)
+    delta_bytes = Column(BigInteger, nullable=False)
+    reason = Column(String(500), nullable=False)
+    created_at = Column(DateTime, nullable=False, index=True)  # UTC
+    cancelled_at = Column(DateTime, nullable=True)
+    cancel_reason = Column(String(500), nullable=True)
+
+
 class NodeHostingNicDaily(Base):
     """Суточный NIC in+out на VPN-ноде (календарный день MSK).
 

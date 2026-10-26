@@ -13,7 +13,7 @@ from typing import Any, cast
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.db.models import NodeHostingNicDaily
+from app.db.models import NodeHostingNicDaily, NodeHostingTrafficAdjustment
 
 MSK = timezone(timedelta(hours=3), name="MSK")
 
@@ -37,7 +37,29 @@ def nic_usage_from_daily(db: Session, start: datetime, end: datetime) -> dict[in
         .group_by(NodeHostingNicDaily.node_id)
         .all()
     )
-    return {int(node_id): (0, int(total or 0)) for node_id, total in rows}
+    totals = {int(node_id): int(total or 0) for node_id, total in rows}
+    # Календарные сутки те же, что у daily. MTD fallback ниже уже скорректирован
+    # sidecar-ом, поэтому повторно применять к нему ledger нельзя.
+    start_utc = datetime.combine(day_from, datetime.min.time(), tzinfo=MSK).astimezone(UTC).replace(tzinfo=None)
+    end_utc = (
+        datetime.combine(day_to + timedelta(days=1), datetime.min.time(), tzinfo=MSK)
+        .astimezone(UTC)
+        .replace(tzinfo=None)
+    )
+    adjustments = (
+        db.query(NodeHostingTrafficAdjustment.node_id, func.sum(NodeHostingTrafficAdjustment.delta_bytes))
+        .filter(
+            NodeHostingTrafficAdjustment.cancelled_at.is_(None),
+            NodeHostingTrafficAdjustment.created_at >= start_utc,
+            NodeHostingTrafficAdjustment.created_at < end_utc,
+        )
+        .group_by(NodeHostingTrafficAdjustment.node_id)
+        .all()
+    )
+    for node_id, delta in adjustments:
+        if node_id in totals:
+            totals[node_id] += int(delta)
+    return {node_id: (0, max(0, total)) for node_id, total in totals.items()}
 
 
 def fallback_usage_from_db(
