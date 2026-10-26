@@ -69,17 +69,30 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
           onClick={() => onToggle(node.id!)}
         >
           <HStack w="full" justifyContent="space-between" pr={2}>
-            <Text
-              as="span"
-              fontWeight="medium"
-              fontSize="sm"
-              flex="1"
-              textAlign="left"
-              color="gray.700"
-              _dark={{ color: "gray.300" }}
-            >
-              {node.name}
-            </Text>
+            <HStack flex="1" minW={0} spacing={2}>
+              <Text
+                as="span"
+                fontWeight="medium"
+                fontSize="sm"
+                textAlign="left"
+                color="gray.700"
+                _dark={{ color: "gray.300" }}
+                noOfLines={1}
+                title={node.name}
+              >
+                {node.name}
+              </Text>
+              {node.id != null && (
+                <Badge
+                  flexShrink={0}
+                  fontFamily="mono"
+                  userSelect="all"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  ID: {node.id}
+                </Badge>
+              )}
+            </HStack>
             <HStack>
               {node.xray_version && (
                 <Badge
