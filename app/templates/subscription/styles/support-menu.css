@@ -10,7 +10,16 @@
 .support-menu__item:disabled:hover { background: none; }
 .support-menu__item .support-menu__icon { color: #7b7b7b; }
 .support-menu__icon { flex-shrink: 0; }
-.support-menu__status { margin: 0; padding: 4px 16px 8px; font-size: 13px; color: #6b6b6b; }
+/* NPVPN-2256: пока грузится чат — спиннер на месте иконки пункта «Чат на сайте», как в вебе;
+   синий, как на странице «Пожалуйста, подождите». На кнопке «Помощь» лоадера нет. */
+.is-loading > .support-menu__icon { display: none; }
+.is-loading > .support-menu__spinner { display: flex; flex-shrink: 0; color: #007aff; animation: support-menu-spin 1s linear infinite; }
+@keyframes support-menu-spin { to { transform: rotate(360deg); } }
+.support-menu__status { margin: 0; padding: 4px 16px 8px; font-size: 13px; font-weight: 400; color: #7b7b7b; }
+/* Под «Чат на сайте» (как в вебе). width 0 + min-width 100%: подпись не расширяет меню,
+   а переносится по его ширине — иначе меню прыгало при ошибке. */
+.support-menu__item-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.support-menu__item .support-menu__status { width: 0; min-width: 100%; padding: 0; white-space: normal; }
 /* Десктоп: прижимаем к правому краю контейнера .wrapper (max-width 1280px), а не окна —
    справа такой же отступ, как слева у сайдбара (16px). На узких экранах — 24px от края. */
 @media (min-width: 1024px) { .support-menu { right: max(24px, calc((100vw - 1280px) / 2 + 16px)); } }

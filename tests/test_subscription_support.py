@@ -142,6 +142,14 @@ def test_response_headers_wiring_support_url():
     assert _response_headers({**CHAT, **TG}, revoked=True)["support-url"] == TG["sub_support_url"]
 
 
+def test_announce_url_prefers_web_url():
+    assert _response_headers({"web_url": "https://cab.example", "bot_url": "https://t.me/bot"})["announce-url"] == (
+        "https://cab.example"
+    )
+    assert _response_headers({"web_url": "  ", "bot_url": "https://t.me/bot"})["announce-url"] == "https://t.me/bot"
+    assert _response_headers({"bot_url": "https://t.me/bot"})["announce-url"] == "https://t.me/bot"
+
+
 @pytest.mark.parametrize(("revoked", "mode", "has_chat"), [(False, "menu", True), (True, "telegram", False)])
 def test_page_context_passes_source_bot_id_and_revoked(monkeypatch, revoked, mode, has_chat):
     import sys
