@@ -27,7 +27,7 @@ import { PlusIcon as HeroIconPlusIcon } from "@heroicons/react/24/outline";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useHosts } from "contexts/HostsContext";
-import { FC, useCallback, useEffect, useMemo, useState } from "react";
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FieldErrors,
   FormProvider,
@@ -38,6 +38,8 @@ import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
 import { Bot } from "types/Bot";
 import { z } from "zod";
+import { clearHashParam, readHashParams } from "utils/hashParams";
+import { normalizeHostUsername, planHostDeepLink } from "utils/hostDeepLink";
 import { useDashboard } from "../contexts/DashboardContext";
 import { NodeType } from "../contexts/NodesContext";
 import { Icon } from "./Icon";
@@ -141,6 +143,15 @@ export const HostsDialog: FC = () => {
   const [botTabFilters, setBotTabFilters] = useState<BotTabFilters>(
     EMPTY_BOT_TAB_FILTERS
   );
+  const deepLinkUsername = useMemo(
+    () => normalizeHostUsername(readHashParams().get("host")),
+    []
+  );
+  const [deepLinkPending, setDeepLinkPending] = useState(
+    deepLinkUsername !== ""
+  );
+  const deepLinkPendingRef = useRef(deepLinkUsername !== "");
+  const didOpenDeepLink = useRef(false);
   const updateBotTabFilters = useCallback(
     (update: Partial<BotTabFilters>) =>
       setBotTabFilters((prev) => ({ ...prev, ...update })),
@@ -167,6 +178,12 @@ export const HostsDialog: FC = () => {
   const inboundTags = useMemo(() => {
     return hosts ? Object.keys(hosts) : [];
   }, [hosts]);
+
+  useEffect(() => {
+    if (!deepLinkUsername || didOpenDeepLink.current) return;
+    didOpenDeepLink.current = true;
+    onEditingHosts(true);
+  }, [deepLinkUsername, onEditingHosts]);
 
   useEffect(() => {
     if (!isEditingHosts) return;
@@ -216,9 +233,39 @@ export const HostsDialog: FC = () => {
       setSearch("");
       setInboundFilter("");
       setActiveOnly(true);
-      setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
+      if (!deepLinkPendingRef.current) {
+        setTabIndex(0);
+        setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
+      }
     }
   }, [hosts, isEditingHosts, form]);
+
+  useEffect(() => {
+    if (
+      !deepLinkPending ||
+      !deepLinkUsername ||
+      !isEditingHosts ||
+      isAuxLoading ||
+      !hosts
+    ) {
+      return;
+    }
+    const plan = planHostDeepLink(
+      deepLinkUsername,
+      bots.map((bot) => bot.username)
+    );
+    setTabIndex(plan.tabIndex);
+    setBotTabFilters((prev) => ({ ...prev, selectedBot: plan.selectedBot }));
+    deepLinkPendingRef.current = false;
+    setDeepLinkPending(false);
+  }, [
+    deepLinkPending,
+    deepLinkUsername,
+    isEditingHosts,
+    isAuxLoading,
+    hosts,
+    bots,
+  ]);
 
   const onClose = useCallback(() => {
     setSearch("");
@@ -227,6 +274,9 @@ export const HostsDialog: FC = () => {
     setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
     setIsAddingHost(false);
     setTabIndex(0);
+    deepLinkPendingRef.current = false;
+    setDeepLinkPending(false);
+    clearHashParam("host");
     setIsAuxLoading(true);
     setBaseline(null);
     setIsConfirmOpen(false);
