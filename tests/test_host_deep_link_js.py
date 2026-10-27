@@ -57,6 +57,40 @@ def test_unknown_bot_opens_tab_with_empty_filter():
     assert _plan("missing", ["a", "b"]) == {"open": True, "tabIndex": 1, "selectedBot": ""}
 
 
+def test_bot_match_ignores_case_and_keeps_stored_name():
+    assert _plan("@VPN_Bot", ["other", "vpn_bot"]) == {
+        "open": True,
+        "tabIndex": 1,
+        "selectedBot": "vpn_bot",
+    }
+
+
+def _selection(selected: str, bots: list[str], keep_empty: bool) -> str:
+    script = (
+        "import { resolveBotTabSelection } from './app/dashboard/src/utils/hostDeepLink.ts';"
+        "const [selected, bots, keepEmpty] = JSON.parse(process.argv[1]);"
+        "console.log(JSON.stringify(resolveBotTabSelection(selected, bots, keepEmpty)));"
+    )
+    proc = subprocess.run(
+        [_NODE, "--input-type=module", "-e", script, json.dumps([selected, bots, keep_empty])],
+        cwd=_PANEL,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+def test_unknown_link_does_not_pick_first_bot():
+    assert _selection("", ["a", "b"], True) == ""
+
+
+def test_manual_tab_still_picks_first_bot():
+    assert _selection("", ["a", "b"], False) == "a"
+
+
 def test_single_bot_opens_dialog_without_bot_tab():
     assert _plan("only", ["only"]) == {"open": True, "tabIndex": 0, "selectedBot": ""}
 

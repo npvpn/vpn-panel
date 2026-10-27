@@ -147,6 +147,8 @@ export const HostsDialog: FC = () => {
   const [botTabFilters, setBotTabFilters] = useState<BotTabFilters>(
     EMPTY_BOT_TAB_FILTERS
   );
+  // Неизвестный бот в ссылке: вкладка «По ботам» без фильтра, первого не подставляем.
+  const [keepEmptyBot, setKeepEmptyBot] = useState(false);
   const deepLinkUsername = useMemo(
     () => normalizeHostUsername(readHashParams().get("host")),
     []
@@ -280,6 +282,7 @@ export const HostsDialog: FC = () => {
     );
     if (next.pending) return;
     setTabIndex(next.tabIndex);
+    setKeepEmptyBot(next.tabIndex === 1 && next.selectedBot === "");
     setBotTabFilters((prev) => ({ ...prev, selectedBot: next.selectedBot }));
     deepLinkPendingRef.current = false;
     setDeepLinkPending(false);
@@ -297,6 +300,7 @@ export const HostsDialog: FC = () => {
     setInboundFilter("");
     setActiveOnly(true);
     setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
+    setKeepEmptyBot(false);
     setIsAddingHost(false);
     setTabIndex(0);
     deepLinkPendingRef.current = false;
@@ -758,6 +762,7 @@ export const HostsDialog: FC = () => {
                             nodes={nodes}
                             inboundMap={inboundMap}
                             filters={botTabFilters}
+                            keepEmptyBot={keepEmptyBot}
                             onFiltersChange={updateBotTabFilters}
                             onSaveAndContinue={saveAndContinue}
                           />

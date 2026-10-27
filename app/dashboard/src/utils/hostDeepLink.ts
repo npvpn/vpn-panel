@@ -22,11 +22,25 @@ export function planHostDeepLink(
   if (botUsernames.length < 2) {
     return { open: true, tabIndex: 0, selectedBot: "" };
   }
+  const match = botUsernames.find(
+    (name) => name.toLowerCase() === username.toLowerCase()
+  );
   return {
     open: true,
     tabIndex: 1,
-    selectedBot: botUsernames.includes(username) ? username : "",
+    selectedBot: match ?? "",
   };
+}
+
+/** Пустой фильтр неизвестного бота не заменяется первым из списка. */
+export function resolveBotTabSelection(
+  selectedBot: string,
+  botUsernames: string[],
+  keepEmpty: boolean
+): string {
+  if (selectedBot === "" && keepEmpty) return "";
+  if (botUsernames.includes(selectedBot)) return selectedBot;
+  return botUsernames[0] ?? "";
 }
 
 export type HostDeepLinkUi = {
