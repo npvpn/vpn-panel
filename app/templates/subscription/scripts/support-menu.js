@@ -13,20 +13,27 @@
   var LAST_TOKEN_KEY = 'cw_sub_token';
 
   // Страницы разных подписок в одном браузере (общее устройство): Chatwoot держит
-  // переписку в cookie, и следующий открыл бы чат предыдущего. Подписка сменилась —
-  // забываем прошлую сессию чата до запуска SDK (reset() после run() перезагружает
-  // виджет без chatwoot:ready). Свою историю владелец получит обратно по identity
+  // переписку в cookie, и следующий открыл бы чат предыдущего. Сессию чата оставляем,
+  // только если точно знаем, что она этой же подписки; иначе (подписка сменилась, первый
+  // заход после выкладки — токена ещё нет, хранилище недоступно) забываем её до запуска
+  // SDK (reset() после run() перезагружает виджет без chatwoot:ready). Свою историю
+  // владелец получит обратно по identity
   function forgetPreviousChat(cfg) {
+    var last = null;
     try {
-      var last = window.localStorage.getItem(LAST_TOKEN_KEY);
-      if (last && last !== cfg.token) {
-        ['cw_conversation', 'cw_user_' + cfg.chat.website_token].forEach(function (name) {
-          document.cookie = name + '=; Max-Age=0; path=/';
-        });
-      }
+      last = window.localStorage.getItem(LAST_TOKEN_KEY);
+    } catch (e) {
+      // хранилище недоступно (приватный режим) — чья сессия в cookie, не знаем
+    }
+    if (last !== cfg.token) {
+      ['cw_conversation', 'cw_user_' + cfg.chat.website_token].forEach(function (name) {
+        document.cookie = name + '=; Max-Age=0; path=/';
+      });
+    }
+    try {
       window.localStorage.setItem(LAST_TOKEN_KEY, cfg.token);
     } catch (e) {
-      // хранилище недоступно (приватный режим) — чат всё равно работает
+      // не запомнили — в следующий раз сессия чата снова забудется, чат всё равно работает
     }
   }
 

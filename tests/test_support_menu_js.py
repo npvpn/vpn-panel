@@ -30,6 +30,7 @@ def _run(
     identity_ok=True,
     chatwoot_error=False,
     last_token=None,
+    storage_broken=False,
     sdk="present",
     ready_delay=0,
 ) -> dict:
@@ -38,6 +39,7 @@ def _run(
         "identityOk": identity_ok,
         "chatwootError": chatwoot_error,
         "lastToken": last_token,
+        "storageBroken": storage_broken,
         "sdk": sdk,
         "readyDelay": ready_delay,
         "roots": roots,
@@ -137,6 +139,23 @@ def test_other_subscription_before_forgets_previous_chat():
     out = _run(roots=_two("chat"), clicks=[(0, "toggle")], last_token="OTHER")
     assert set(out["cookiesCleared"]) == {"cw_conversation", "cw_user_wt"}
     assert out["storedToken"] == "TOKEN"
+    assert out["chatOpened"] is True
+
+
+# Первый заход после выкладки: токена ещё нет, а cookie Chatwoot могли остаться от другой
+# подписки — чья сессия, не знаем, поэтому забываем.
+def test_no_saved_subscription_forgets_chat_session():
+    out = _run(roots=_two("chat"), clicks=[(0, "toggle")], last_token=None)
+    assert set(out["cookiesCleared"]) == {"cw_conversation", "cw_user_wt"}
+    assert out["storedToken"] == "TOKEN"
+    assert out["chatOpened"] is True
+
+
+# localStorage недоступен (приватный режим) — проверить подписку нечем: сессию забываем,
+# чат всё равно открывается.
+def test_storage_unavailable_forgets_chat_session_and_chat_still_works():
+    out = _run(roots=_two("chat"), clicks=[(0, "toggle")], storage_broken=True)
+    assert set(out["cookiesCleared"]) == {"cw_conversation", "cw_user_wt"}
     assert out["chatOpened"] is True
 
 

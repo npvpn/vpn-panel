@@ -6,7 +6,8 @@
 // Вход (argv[2], JSON): { search, identityOk, chatwootError, lastToken, sdk, readyDelay, roots: [{ mode, tgUrl, visible }], clicks: [[rootIndex, target]] }
 // target: "toggle" | "chat" | "tg" | "escape" (клики — по очереди, с паузой);
 // chatwootError — Chatwoot отклоняет setUser (как SET_USER_ERROR);
-// lastToken — подписка, открытая в этом браузере раньше;
+// lastToken — подписка, открытая в этом браузере раньше; storageBroken — localStorage бросает
+// исключение (приватный режим);
 // sdk: "present" (уже на странице) | "failOnce" (первая загрузка скрипта падает, вторая — нет);
 // readyDelay — через сколько мс после run() виджет присылает chatwoot:ready.
 // Выход: { identityCalls, scriptLoads, chatOpened, chatClosed, setUser, cookiesCleared, storedToken,
@@ -108,8 +109,14 @@ Object.defineProperty(document, 'cookie', {
 const window = Object.assign(makeTarget(), {
   location: { search: scenario.search || '' },
   localStorage: {
-    getItem: (key) => (key in storage ? storage[key] : null),
-    setItem: (key, value) => { storage[key] = String(value); },
+    getItem: (key) => {
+      if (scenario.storageBroken) { throw new Error('SecurityError'); }
+      return key in storage ? storage[key] : null;
+    },
+    setItem: (key, value) => {
+      if (scenario.storageBroken) { throw new Error('SecurityError'); }
+      storage[key] = String(value);
+    },
   },
   innerHeight: 800,
   matchMedia: () => ({ matches: true }),
