@@ -39,7 +39,11 @@ import { fetch } from "service/http";
 import { Bot } from "types/Bot";
 import { z } from "zod";
 import { clearHashParam, readHashParams } from "utils/hashParams";
-import { normalizeHostUsername, planHostDeepLink } from "utils/hostDeepLink";
+import {
+  applyHostDeepLinkWhenReady,
+  normalizeHostUsername,
+  resetHostsFormTab,
+} from "utils/hostDeepLink";
 import { useDashboard } from "../contexts/DashboardContext";
 import { NodeType } from "../contexts/NodesContext";
 import { Icon } from "./Icon";
@@ -151,6 +155,10 @@ export const HostsDialog: FC = () => {
     deepLinkUsername !== ""
   );
   const deepLinkPendingRef = useRef(deepLinkUsername !== "");
+  // fetchHosts пишет в стор после своего промиса. Пока ответа нет, hosts === {}
+  // и это нельзя считать загруженным списком: иначе план ссылки снимется раньше
+  // прихода хостов, и сброс формы вернёт вкладку «Все».
+  const [hostsRequestSettled, setHostsRequestSettled] = useState(false);
   const didOpenDeepLink = useRef(false);
   const updateBotTabFilters = useCallback(
     (update: Partial<BotTabFilters>) =>
@@ -188,8 +196,11 @@ export const HostsDialog: FC = () => {
   useEffect(() => {
     if (!isEditingHosts) return;
 
+    let cancelled = false;
+
     const loadData = async () => {
       setIsAuxLoading(true);
+      setHostsRequestSettled(false);
 
       try {
         const [, botsData, nodesData] = await Promise.all([
@@ -198,16 +209,23 @@ export const HostsDialog: FC = () => {
           fetch<NodeType[]>("/nodes").catch(() => [] as NodeType[]),
         ]);
 
+        if (cancelled) return;
         setBots(botsData);
         setNodes(nodesData);
       } catch (error) {
         console.error("Failed to load data:", error);
       } finally {
-        setIsAuxLoading(false);
+        if (!cancelled) {
+          setHostsRequestSettled(true);
+          setIsAuxLoading(false);
+        }
       }
     };
 
     loadData();
+    return () => {
+      cancelled = true;
+    };
   }, [isEditingHosts, fetchHosts]);
 
   const form = useForm<z.infer<typeof hostsFormSchema>>({
@@ -233,29 +251,36 @@ export const HostsDialog: FC = () => {
       setSearch("");
       setInboundFilter("");
       setActiveOnly(true);
-      if (!deepLinkPendingRef.current) {
-        setTabIndex(0);
+      const nextTab = resetHostsFormTab({
+        pending: deepLinkPendingRef.current,
+        tabIndex: 0,
+        selectedBot: "",
+      });
+      if (!nextTab.pending) {
+        setTabIndex(nextTab.tabIndex);
         setBotTabFilters(EMPTY_BOT_TAB_FILTERS);
       }
     }
   }, [hosts, isEditingHosts, form]);
 
   useEffect(() => {
-    if (
-      !deepLinkPending ||
-      !deepLinkUsername ||
-      !isEditingHosts ||
-      isAuxLoading ||
-      !hosts
-    ) {
-      return;
-    }
-    const plan = planHostDeepLink(
-      deepLinkUsername,
-      bots.map((bot) => bot.username)
+    if (!deepLinkPending || !deepLinkUsername || !isEditingHosts) return;
+    const next = applyHostDeepLinkWhenReady(
+      {
+        pending: true,
+        tabIndex: 0,
+        selectedBot: "",
+      },
+      {
+        username: deepLinkUsername,
+        botUsernames: bots.map((bot) => bot.username),
+        auxLoading: isAuxLoading,
+        hostsRequestSettled,
+      }
     );
-    setTabIndex(plan.tabIndex);
-    setBotTabFilters((prev) => ({ ...prev, selectedBot: plan.selectedBot }));
+    if (next.pending) return;
+    setTabIndex(next.tabIndex);
+    setBotTabFilters((prev) => ({ ...prev, selectedBot: next.selectedBot }));
     deepLinkPendingRef.current = false;
     setDeepLinkPending(false);
   }, [
@@ -263,7 +288,7 @@ export const HostsDialog: FC = () => {
     deepLinkUsername,
     isEditingHosts,
     isAuxLoading,
-    hosts,
+    hostsRequestSettled,
     bots,
   ]);
 

@@ -18,7 +18,7 @@ type HostsStore = {
   isLoading: boolean;
   isPostLoading: boolean;
   hosts: HostsSchema;
-  fetchHosts: () => void;
+  fetchHosts: () => Promise<void>;
   setHosts: (hosts: HostsSchema) => Promise<void>;
 };
 export const useHosts = create<HostsStore>((set) => ({
@@ -27,8 +27,10 @@ export const useHosts = create<HostsStore>((set) => ({
   hosts: {},
   fetchHosts: () => {
     set({ isLoading: true });
-    fetch("/hosts")
-      .then((hosts) => set({ hosts }))
+    return fetch("/hosts")
+      .then((hosts) => {
+        set({ hosts });
+      })
       .finally(() => set({ isLoading: false }));
   },
   setHosts: (body) => {
