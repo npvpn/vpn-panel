@@ -50,7 +50,8 @@ const selectorSchema = z.discriminatedUnion("type", [
       type: z.literal("ids"),
       values: z
         .array(z.number().int().positive())
-        .min(1)
+        // ключ перевода: сообщение zod по умолчанию — техническое и только по-английски
+        .min(1, "hostsDialog.injection.errors.noHosts")
         .max(256)
         .refine((v) => new Set(v).size === v.length, "Host IDs must be unique"),
     })
@@ -58,13 +59,19 @@ const selectorSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("remarkRegex"),
-      pattern: z.string().min(1).max(256),
+      pattern: z
+        .string()
+        .min(1, "hostsDialog.injection.errors.noPattern")
+        .max(256),
     })
     .strict(),
   z
     .object({
       type: z.literal("tagRegex"),
-      pattern: z.string().min(1).max(256),
+      pattern: z
+        .string()
+        .min(1, "hostsDialog.injection.errors.noPattern")
+        .max(256),
     })
     .strict(),
   z.object({ type: z.literal("sameTagAsRecipient") }).strict(),

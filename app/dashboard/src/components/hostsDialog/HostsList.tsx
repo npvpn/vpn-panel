@@ -25,14 +25,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import {
-  FC,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FieldArrayWithId,
   UseFieldArrayInsert,
@@ -52,6 +45,7 @@ import {
 } from "constants/Proxies";
 import { NodeType } from "contexts/NodesContext";
 import { hostsTableSx } from "./constants";
+import { InfoHint } from "./InfoHint";
 import { hostsFormSchema } from "./schema";
 import { HostRow } from "./HostRow";
 import { selectVisibleHosts, ShownHosts } from "./hostsFilter";
@@ -65,6 +59,16 @@ const dndMeasuring = {
 const pointerSensorOptions = { activationConstraint: { distance: 4 } };
 const keyboardSensorOptions = { coordinateGetter: sortableKeyboardCoordinates };
 const dndModifiers = [restrictToVerticalAxis];
+
+// Пояснение к колонке — одна иконка в заголовке, а не подсказка в каждой строке:
+// при движении мыши по таблице построчные подсказки всплывали постоянно
+// заголовок колонки с подсказкой: иконка по центру строки, а не по базовой линии текста
+const ColumnTitle = ({ title, hint }: { title: string; hint: string }) => (
+  <Box as="span" display="inline-flex" alignItems="center" gap={1}>
+    {title}
+    <InfoHint text={hint} />
+  </Box>
+);
 
 export type HostColumnWidths = {
   drag: number;
@@ -195,7 +199,9 @@ export const HostsList: FC<Props> = ({
         inbound_tag: watchedValues?.[i * 6 + 2] as string | undefined,
         bot_usernames: watchedValues?.[i * 6 + 3] as string[] | undefined,
         is_disabled: watchedValues?.[i * 6 + 4] as boolean | undefined,
-        rented_bot_usernames: watchedValues?.[i * 6 + 5] as string[] | undefined,
+        rented_bot_usernames: watchedValues?.[i * 6 + 5] as
+          | string[]
+          | undefined,
       })),
     [watchedValues, fields.length]
   );
@@ -343,10 +349,7 @@ export const HostsList: FC<Props> = ({
   });
 
   return (
-    <Box
-      ref={tableContainerRef}
-      w="full"
-    >
+    <Box ref={tableContainerRef} w="full">
       {visibleIndexes.length === 0 ? (
         <Text opacity={0.7} fontSize="sm" py={4} textAlign="center">
           {t("hostsDialog.notFound")}
@@ -373,7 +376,10 @@ export const HostsList: FC<Props> = ({
               <Tr>
                 <Th {...thBorder} w={`${columnWidths.drag}px`} px={1} />
                 <Th {...thBorder} w={`${columnWidths.inbound}px`}>
-                  {t("hostsDialog.columnInbound")}
+                  <ColumnTitle
+                    title={t("hostsDialog.columnInbound")}
+                    hint={t("hostsDialog.changeInboundHint")}
+                  />
                 </Th>
                 <Th {...thBorder} w={`${columnWidths.remark}px`}>
                   Remark
@@ -389,7 +395,10 @@ export const HostsList: FC<Props> = ({
                   w={`${columnWidths.enabled}px`}
                   whiteSpace="nowrap"
                 >
-                  {t("hostsDialog.columnEnabled")}
+                  <ColumnTitle
+                    title={t("hostsDialog.columnEnabled")}
+                    hint={t("hostsDialog.injection.visibilityHint")}
+                  />
                 </Th>
                 <Th
                   {...thBorder}

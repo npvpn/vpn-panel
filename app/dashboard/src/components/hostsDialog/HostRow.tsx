@@ -225,16 +225,12 @@ export const HostRow = memo(function HostRow({
       control={control}
       name={`${HOST_KEY}.${index}.is_disabled`}
       render={({ field }) => (
-        <Tooltip label={t("hostsDialog.injection.visibilityHint")}>
-          <Box as="span">
-            <Switch
-              aria-label={t("hostsDialog.injection.enabled")}
-              colorScheme="primary"
-              isChecked={!field.value}
-              onChange={(e) => field.onChange(!e.target.checked)}
-            />
-          </Box>
-        </Tooltip>
+        <Switch
+          aria-label={t("hostsDialog.injection.enabled")}
+          colorScheme="primary"
+          isChecked={!field.value}
+          onChange={(e) => field.onChange(!e.target.checked)}
+        />
       )}
     />
   );

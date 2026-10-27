@@ -924,6 +924,8 @@ export const HostAdvancedOptions = memo(
             />
           </FormControl>
         )}
+        {/* почему поля ниже неактивны — до них, а не после */}
+        {composite && <Text gridColumn="1 / -1" fontSize="xs">{t("hostsDialog.injection.pinsHint")}</Text>}
         <Box as="fieldset" disabled={composite} display="contents">
         {/* NPVPN-2072: сужение адресов — свойство ХОСТА: у локаций разное число нод,
             и одна настройка на всего бота этого не выражала. */}
@@ -952,7 +954,6 @@ export const HostAdvancedOptions = memo(
         />
 
         </Box>
-        {composite && <Text gridColumn="1 / -1" fontSize="xs">{t("hostsDialog.injection.pinsHint")}</Text>}
         <FormControl>
           <FormLabel>{t("hostsDialog.clientConfig")}</FormLabel>
           <Controller

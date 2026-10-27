@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
 import { previewHost } from "./hostInjection";
+import { InfoHint } from "./InfoHint";
 
 type PreviewRequest = {
   recipient: ReturnType<typeof previewHost>;
@@ -67,10 +68,12 @@ function DiagnosticRequest({ request }: { request: PreviewRequest }) {
   };
   return (
     <VStack align="stretch" spacing={2}>
-      <Button size="sm" alignSelf="start" onClick={check} isLoading={loading}>
-        {tr("check")}
-      </Button>
-      <Text fontSize="xs">{tr("scope")}</Text>
+      <Box display="flex" alignItems="center" gap={1}>
+        <Button size="sm" onClick={check} isLoading={loading}>
+          {tr("check")}
+        </Button>
+        <InfoHint text={tr("scope")} />
+      </Box>
       <Box aria-live="polite">
         {failed && (
           <Text role="alert" color="red.500" fontSize="sm">

@@ -6,6 +6,7 @@ import {
   FormErrorMessage,
   FormLabel,
   HStack,
+  IconButton,
   Input,
   Select,
   Text,
@@ -23,6 +24,10 @@ import {
   previewDraftHosts,
 } from "./hostInjection";
 import { InjectionDiagnostics } from "./InjectionDiagnostics";
+import { InfoHint } from "./InfoHint";
+import { DeleteIcon } from "components/DeleteUserModal";
+import { PlusIcon } from "@heroicons/react/24/outline";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 function messages(error: any): string[] {
   if (!error || typeof error !== "object") return [];
@@ -67,7 +72,7 @@ export function HostInjectionOptions({
   const connections = Array.from(inbounds.values()).flat();
   const describe = (host: any) => {
     const inbound = connections.find((i) => i.tag === host.inbound_tag);
-    return `${host.remark} · ${host.inbound_tag} · ${inbound?.network || ""}:${
+    return `${host.inbound_tag} · ${inbound?.network || ""}:${
       host.port || inbound?.port || ""
     } · #${host.host_id}`;
   };
@@ -93,29 +98,61 @@ export function HostInjectionOptions({
     ...messages(errors?.group_tag),
     ...messages(errors?.is_hidden),
   ];
+  // Ошибка — у своего поля, а не общей строкой внизу блока: в длинной форме иначе
+  // непонятно, что исправлять. Внизу остаются только ошибки без своего поля
+  const shown: string[] = [];
+  const fieldErrors = (error: any) => {
+    const list = [...new Set(messages(error))];
+    shown.push(...list);
+    return list.length ? (
+      <Text fontSize="xs" color="red.500">
+        {list.map((m) => t(m)).join("; ")}
+      </Text>
+    ) : null;
+  };
+  const groupError = (i: number, key: string) =>
+    fieldErrors(errors?.host_injection?.injectHosts?.[i]?.[key]);
+  // свёрнутый блок показывает состояние; открыт сразу, если сборка включена
+  const status =
+    mode === "form"
+      ? t("hostsDialog.injection.status.form", { count: groups.length })
+      : mode === "template" && effective?.enabled
+      ? tr("status.template")
+      : tr("status.off");
   return (
-    <Box gridColumn="1 / -1" borderTopWidth="1px" pt={3}>
-      <Text fontWeight="semibold">{tr("title")}</Text>
-      <VStack align="stretch" spacing={3} mt={2}>
+    <CollapsibleSection
+      title={tr("title")}
+      status={status}
+      defaultOpen={!!effective?.enabled}
+      hasErrors={errorList.length > 0}
+    >
+      <VStack align="stretch" spacing={3}>
         <FormControl>
           <FormLabel fontSize="sm">{tr("groupTag")}</FormLabel>
           <Input size="sm" maxLength={128} {...register(`${path}.group_tag`)} />
+          {fieldErrors(errors?.group_tag)}
         </FormControl>
         <Controller
           control={control}
           name={`${path}.is_hidden`}
           render={({ field }) => (
-            <Checkbox
-              isChecked={!!field.value}
-              onChange={(e) => field.onChange(e.target.checked)}
-            >
-              {tr("hidden")}
-            </Checkbox>
+            <HStack spacing={1}>
+              <Checkbox
+                isChecked={!!field.value}
+                onChange={(e) => field.onChange(e.target.checked)}
+              >
+                {tr("hidden")}
+              </Checkbox>
+              <InfoHint text={tr("visibilityHint")} />
+            </HStack>
           )}
         />
-        <Text fontSize="xs">{tr("visibilityHint")}</Text>
+        {fieldErrors(errors?.is_hidden)}
         <FormControl>
-          <FormLabel fontSize="sm">{tr("source")}</FormLabel>
+          <FormLabel fontSize="sm" display="flex" alignItems="center" gap={1}>
+            {tr("source")}
+            <InfoHint text={tr("priority")} />
+          </FormLabel>
           <Select
             size="sm"
             value={mode}
@@ -138,14 +175,13 @@ export function HostInjectionOptions({
             <option value="form">{tr("form")}</option>
           </Select>
         </FormControl>
-        <Text fontSize="xs">{tr("priority")}</Text>
         {inherited && (
           <Text fontSize="sm">
             {effective ? tr("templateActive") : tr("templateInactive")}
           </Text>
         )}
         {effective?.enabled && (
-          <Text fontSize="sm" color="orange.500">
+          <Text fontSize="sm">
             {effective.addVirtualHostAsOutbound
               ? tr("ownHint")
               : tr("virtualHint")}{" "}
@@ -165,6 +201,13 @@ export function HostInjectionOptions({
             >
               {tr("own")}
             </Checkbox>
+            {/* «выберите источники или своё подключение» — про группы целиком */}
+            {fieldErrors([
+              errors?.host_injection?.message && errors.host_injection,
+              errors?.host_injection?.injectHosts?.message &&
+                errors.host_injection.injectHosts,
+              errors?.host_injection?.addVirtualHostAsOutbound,
+            ])}
             {groups.map((group, i) => (
               <Box borderWidth="1px" borderRadius="md" p={3} key={i}>
                 <HStack mb={2}>
@@ -187,37 +230,47 @@ export function HostInjectionOptions({
                   >
                     ↓
                   </Button>
-                  <Button
+                  <IconButton
+                    aria-label={tr("remove")}
                     size="xs"
+                    colorScheme="red"
+                    variant="ghost"
                     onClick={() => setGroups(groups.filter((_, j) => i !== j))}
                   >
-                    {tr("remove")}
-                  </Button>
+                    <DeleteIcon />
+                  </IconButton>
                 </HStack>
                 <VStack align="stretch" spacing={2}>
-                  <Select
-                    size="sm"
-                    aria-label={tr("selector")}
-                    value={group.selector.type}
-                    onChange={(e) => {
-                      const type = e.target
-                        .value as InjectionGroup["selector"]["type"];
-                      change(i, {
-                        selector:
-                          type === "ids"
-                            ? { type, values: [] }
-                            : type === "sameTagAsRecipient"
-                            ? { type }
-                            : { type, pattern: "^MAIN$" },
-                        selectFrom: type === "ids" ? "ALL" : "HIDDEN",
-                      });
-                    }}
-                  >
-                    <option value="ids">{tr("ids")}</option>
-                    <option value="tagRegex">{tr("tagRegex")}</option>
-                    <option value="remarkRegex">{tr("remarkRegex")}</option>
-                    <option value="sameTagAsRecipient">{tr("sameTag")}</option>
-                  </Select>
+                  <FormControl>
+                    <FormLabel fontSize="xs" mb={1}>
+                      {tr("selector")}
+                    </FormLabel>
+                    <Select
+                      size="sm"
+                      aria-label={tr("selector")}
+                      value={group.selector.type}
+                      onChange={(e) => {
+                        const type = e.target
+                          .value as InjectionGroup["selector"]["type"];
+                        change(i, {
+                          selector:
+                            type === "ids"
+                              ? { type, values: [] }
+                              : type === "sameTagAsRecipient"
+                              ? { type }
+                              : { type, pattern: "^MAIN$" },
+                          selectFrom: type === "ids" ? "ALL" : "HIDDEN",
+                        });
+                      }}
+                    >
+                      <option value="ids">{tr("ids")}</option>
+                      <option value="tagRegex">{tr("tagRegex")}</option>
+                      <option value="remarkRegex">{tr("remarkRegex")}</option>
+                      <option value="sameTagAsRecipient">
+                        {tr("sameTag")}
+                      </option>
+                    </Select>
+                  </FormControl>
                   {group.selector.type === "ids" ? (
                     <>
                       <Text fontSize="xs">{tr("persistedOnly")}</Text>
@@ -245,8 +298,17 @@ export function HostInjectionOptions({
                                 })
                               }
                             >
-                              {describe(host)}
-                              {host.is_disabled ? ` (${tr("disabled")})` : ""}
+                              {/* название — главное; инбаунд, порт и номер мельче,
+                                  иначе соседние хосты различались только «#id» в конце */}
+                              <Text>{host.remark}</Text>
+                              <Text
+                                fontSize="sm"
+                                color="gray.600"
+                                _dark={{ color: "gray.300" }}
+                              >
+                                {describe(host)}
+                                {host.is_disabled ? ` · ${tr("disabled")}` : ""}
+                              </Text>
                             </Checkbox>
                           );
                         })}
@@ -293,8 +355,11 @@ export function HostInjectionOptions({
                           >
                             ↓
                           </Button>
-                          <Button
+                          <IconButton
+                            aria-label={tr("remove")}
                             size="xs"
+                            colorScheme="red"
+                            variant="ghost"
                             onClick={() =>
                               group.selector.type === "ids" &&
                               change(i, {
@@ -307,8 +372,8 @@ export function HostInjectionOptions({
                               })
                             }
                           >
-                            {tr("remove")}
-                          </Button>
+                            <DeleteIcon />
+                          </IconButton>
                         </HStack>
                       ))}
                     </>
@@ -336,43 +401,57 @@ export function HostInjectionOptions({
                       </Text>
                     )
                   )}
-                  <Select
-                    size="sm"
-                    aria-label={tr("pool")}
-                    value={group.selectFrom}
-                    onChange={(e) =>
-                      change(i, {
-                        selectFrom: e.target
-                          .value as InjectionGroup["selectFrom"],
-                      })
-                    }
-                  >
-                    <option value="HIDDEN">{tr("poolHidden")}</option>
-                    <option value="NOT_HIDDEN">{tr("poolVisible")}</option>
-                    <option value="ALL">{tr("poolAll")}</option>
-                  </Select>
-                  <Select
-                    size="sm"
-                    aria-label={tr("tagging")}
-                    value={
-                      group.tagPrefix != null
-                        ? "prefix"
-                        : group.useHostTagAsTag
-                        ? "tag"
-                        : "remark"
-                    }
-                    onChange={(e) =>
-                      change(i, {
-                        tagPrefix: e.target.value === "prefix" ? "proxy" : null,
-                        useHostTagAsTag: e.target.value === "tag",
-                        useHostRemarkAsTag: e.target.value === "remark",
-                      })
-                    }
-                  >
-                    <option value="prefix">{tr("prefix")}</option>
-                    <option value="tag">{tr("hostTag")}</option>
-                    <option value="remark">{tr("hostRemark")}</option>
-                  </Select>
+                  {/* ошибка выбора — под полем выбора (список хостов или выражение) */}
+                  {groupError(i, "selector")}
+                  <FormControl>
+                    <FormLabel fontSize="xs" mb={1}>
+                      {tr("pool")}
+                    </FormLabel>
+                    <Select
+                      size="sm"
+                      aria-label={tr("pool")}
+                      value={group.selectFrom}
+                      onChange={(e) =>
+                        change(i, {
+                          selectFrom: e.target
+                            .value as InjectionGroup["selectFrom"],
+                        })
+                      }
+                    >
+                      <option value="HIDDEN">{tr("poolHidden")}</option>
+                      <option value="NOT_HIDDEN">{tr("poolVisible")}</option>
+                      <option value="ALL">{tr("poolAll")}</option>
+                    </Select>
+                  </FormControl>
+                  {groupError(i, "selectFrom")}
+                  <FormControl>
+                    <FormLabel fontSize="xs" mb={1}>
+                      {tr("tagging")}
+                    </FormLabel>
+                    <Select
+                      size="sm"
+                      aria-label={tr("tagging")}
+                      value={
+                        group.tagPrefix != null
+                          ? "prefix"
+                          : group.useHostTagAsTag
+                          ? "tag"
+                          : "remark"
+                      }
+                      onChange={(e) =>
+                        change(i, {
+                          tagPrefix:
+                            e.target.value === "prefix" ? "proxy" : null,
+                          useHostTagAsTag: e.target.value === "tag",
+                          useHostRemarkAsTag: e.target.value === "remark",
+                        })
+                      }
+                    >
+                      <option value="prefix">{tr("prefix")}</option>
+                      <option value="tag">{tr("hostTag")}</option>
+                      <option value="remark">{tr("hostRemark")}</option>
+                    </Select>
+                  </FormControl>
                   {group.tagPrefix != null && (
                     <Input
                       size="sm"
@@ -382,12 +461,27 @@ export function HostInjectionOptions({
                       onChange={(e) => change(i, { tagPrefix: e.target.value })}
                     />
                   )}
+                  {groupError(i, "tagPrefix")}
+                  {groupError(i, "useHostTagAsTag")}
+                  {groupError(i, "useHostRemarkAsTag")}
                 </VStack>
               </Box>
             ))}
+            {/* как «Add new host»: видно, что кнопка продолжает список групп,
+                а серая «Check sources» ниже — отдельная проверка */}
             <Button
               size="sm"
               alignSelf="start"
+              variant="outline"
+              colorScheme="primary"
+              borderRadius="6px"
+              _hover={{ bg: "rgba(57, 111, 228, 0.08)" }}
+              _active={{ bg: "rgba(57, 111, 228, 0.16)" }}
+              _dark={{
+                _hover: { bg: "rgba(116, 154, 236, 0.12)" },
+                _active: { bg: "rgba(116, 154, 236, 0.2)" },
+              }}
+              leftIcon={<PlusIcon width="16px" strokeWidth={2} />}
               isDisabled={groups.length >= 32}
               onClick={() =>
                 setGroups([
@@ -405,13 +499,18 @@ export function HostInjectionOptions({
             </Button>
           </>
         )}
-        {!!errorList.length && (
-          <FormControl isInvalid>
-            <FormErrorMessage>
-              {[...new Set(errorList)].join("; ")}
-            </FormErrorMessage>
-          </FormControl>
-        )}
+        {(() => {
+          const rest = [...new Set(errorList)].filter(
+            (m) => !shown.includes(m)
+          );
+          return rest.length ? (
+            <FormControl isInvalid>
+              <FormErrorMessage>
+                {rest.map((m) => t(m)).join("; ")}
+              </FormErrorMessage>
+            </FormControl>
+          ) : null;
+        })()}
         <InjectionDiagnostics
           request={{
             recipient: previewHost(row),
@@ -420,6 +519,6 @@ export function HostInjectionOptions({
           }}
         />
       </VStack>
-    </Box>
+    </CollapsibleSection>
   );
 }

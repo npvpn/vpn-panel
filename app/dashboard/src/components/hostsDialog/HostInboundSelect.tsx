@@ -1,4 +1,4 @@
-import { Tooltip } from "@chakra-ui/react";
+import { Box, Tooltip } from "@chakra-ui/react";
 import { memo } from "react";
 import { Controller, useFormContext } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -24,29 +24,39 @@ export const HostInboundSelect = memo(function HostInboundSelect({
       control={control}
       name={`hosts.${index}.inbound_tag`}
       render={({ field }) => (
-        <Tooltip label={t("hostsDialog.changeInboundHint")} placement="top">
-          <Select
-            {...field}
-            aria-label={t("hostsDialog.selectInbound") ?? "Inbound"}
-            title={field.value}
-            size="xs"
-            minW={0}
-            fontSize="xs"
-            onChange={(event) => {
-              const current = getValues(`hosts.${index}`);
-              const tag = event.target.value;
-              const next = changeHostInbound(current, tag, inboundMap.get(tag)?.network);
-              field.onChange(next.inbound_tag);
-              if (next.xhttp_extra !== current.xhttp_extra) {
-                setValue(`hosts.${index}.xhttp_extra`, next.xhttp_extra, {
-                  shouldDirty: true,
-                  shouldValidate: true,
-                });
-              }
-            }}
-          >
-            {inboundTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
-          </Select>
+        // полное название — в строке оно обрезается
+        <Tooltip label={field.value} placement="top" openDelay={300}>
+          <Box minW={0}>
+            <Select
+              {...field}
+              aria-label={t("hostsDialog.selectInbound") ?? "Inbound"}
+              size="xs"
+              minW={0}
+              fontSize="xs"
+              onChange={(event) => {
+                const current = getValues(`hosts.${index}`);
+                const tag = event.target.value;
+                const next = changeHostInbound(
+                  current,
+                  tag,
+                  inboundMap.get(tag)?.network
+                );
+                field.onChange(next.inbound_tag);
+                if (next.xhttp_extra !== current.xhttp_extra) {
+                  setValue(`hosts.${index}.xhttp_extra`, next.xhttp_extra, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  });
+                }
+              }}
+            >
+              {inboundTags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </Select>
+          </Box>
         </Tooltip>
       )}
     />
