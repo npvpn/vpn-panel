@@ -55,6 +55,29 @@ def test_rejects_invalid_groups(value):
     assert not run_form(op="validate", value=value)["success"]
 
 
+@pytest.mark.parametrize(
+    "selector,key",
+    [
+        ({"type": "ids", "values": [1, 1]}, "uniqueHosts"),
+        ({"type": "ids", "values": list(range(1, 258))}, "maxHosts"),
+        ({"type": "tagRegex", "pattern": "a" * 257}, "maxPattern"),
+        ({"type": "remarkRegex", "pattern": "a" * 257}, "maxPattern"),
+    ],
+)
+def test_selector_errors_have_translations(selector, key):
+    """Ограничения схемы показывают понятный перевод на выбранном языке."""
+    from pathlib import Path
+
+    value = {"injectHosts": [{"selector": selector, "tagPrefix": "proxy"}]}
+    result = run_form(op="validate", value=value)
+    message = "hostsDialog.injection.errors." + key
+    assert not result["success"]
+    assert message in [issue["message"] for issue in result["error"]["issues"]]
+    for language in ("en", "ru"):
+        locale = json.loads((Path(ROOT) / f"app/dashboard/public/statics/locales/{language}.json").read_text())
+        assert locale[message] and locale[message] != message
+
+
 def test_effective_mode_uses_selected_default_and_form_precedence():
     templates = [
         {"id": 1, "slug": "default", "body": json.dumps({"npvpn": {"addVirtualHostAsOutbound": True}})},

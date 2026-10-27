@@ -194,6 +194,51 @@ def test_deleted_source_reference_preserved_but_new_missing_rejected(db):
         crud.update_hosts_batch(db, {"VLESS": [payload(id=receiver_id, host_injection=injection([999]))]})
 
 
+@pytest.mark.parametrize("same_inbound,source_first", [(True, False), (False, True), (False, False)])
+def test_new_reference_to_source_deleted_in_same_batch_is_rejected(db, same_inbound, source_first):
+    """Новая ссылка проверяется по итоговому пакету независимо от порядка инбаундов."""
+    source = crud.add_host(db, "VLESS", payload())[0]
+    receiver_tag = "VLESS" if same_inbound else "OTHER"
+    receiver = crud.add_host(db, receiver_tag, payload(remark="Receiver"))[-1]
+    source_id, receiver_id = source.id, receiver.id
+    rows = [payload(id=receiver_id, remark="Changed", host_injection=injection([source_id]))]
+    batch = {"VLESS": rows} if same_inbound else {"OTHER": rows, "VLESS": []}
+    if source_first:
+        batch = dict(reversed(list(batch.items())))
+    with pytest.raises(ValueError, match="host_injection"):
+        crud.update_hosts_batch(db, batch)
+    db.expire_all()
+    assert db.get(ProxyHost, source_id) is not None
+    assert db.get(ProxyHost, receiver_id).remark == "Receiver"
+    assert db.get(ProxyHost, receiver_id).host_injection is None
+
+
+def test_new_reference_to_source_removed_by_single_inbound_update_is_rejected(db):
+    """Прямая CRUD-операция также не сохраняет новую ссылку на удаляемый источник."""
+    source = crud.add_host(db, "VLESS", payload())[0]
+    receiver = crud.add_host(db, "VLESS", payload(remark="Receiver"))[-1]
+    with pytest.raises(ValueError, match="host_injection"):
+        crud.update_hosts(db, "VLESS", [payload(id=receiver.id, host_injection=injection([source.id]))])
+    assert not db.dirty and not db.deleted
+
+
+def test_new_reference_to_source_moved_by_batch_is_retained(db):
+    """Перенос источника не считается удалением; ID остаётся доступен для новых ссылок."""
+    source = crud.add_host(db, "VLESS", payload())[0]
+    receiver = crud.add_host(db, "VLESS", payload(remark="Receiver"))[-1]
+    source_id, receiver_id = source.id, receiver.id
+    crud.update_hosts_batch(
+        db,
+        {
+            "VLESS": [payload(id=receiver_id, host_injection=injection([source_id]))],
+            "OTHER": [Payload.model_validate(source)],
+        },
+    )
+    db.expire_all()
+    assert db.get(ProxyHost, source_id).inbound_tag == "OTHER"
+    assert db.get(ProxyHost, receiver_id).host_injection["injectHosts"][0]["selector"]["values"] == [source_id]
+
+
 def test_template_save_and_revert_validate_directives(db):
     tpl = XrayTemplate(slug="injected", title="Injected")
     db.add(tpl)

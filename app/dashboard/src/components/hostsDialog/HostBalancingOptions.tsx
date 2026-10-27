@@ -23,7 +23,11 @@ export function HostBalancingOptions({ hostKey, index, nodes, errors, composite 
   const messages = [...errorMessages(errors?.balancing), ...errorMessages(errors?.balancer_node_ids), ...errorMessages(errors?.balancer_nodes_source)];
   const fieldError = (suffix: string) => suffix.split(".").reduce((value, key) => value?.[key], errors?.balancing);
   // Ошибка — у своего поля, а не общей строкой внизу блока. Внизу — только ошибки без своего поля
-  const shown: string[] = [];
+  // Controller вызывает render после вычисления rest в родителе: отмечаем ошибки
+  // существующих строк заранее, не скрывая ошибку самого массива costs.
+  const shown: string[] = balancing?.strategy === "leastLoad"
+    ? (balancing.settings?.costs || []).flatMap((_: unknown, i: number) => errorMessages(fieldError(`settings.costs.${i}`)))
+    : [];
   const fieldErrors = (error: any) => {
     const list = [...new Set(errorMessages(error))];
     shown.push(...list);

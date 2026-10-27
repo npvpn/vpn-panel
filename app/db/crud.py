@@ -224,7 +224,9 @@ def _get_nodes_by_ids(db: Session, node_ids: list[int]) -> list[Node]:
     return [nodes_by_id[node_id] for node_id in unique_ids]
 
 
-def _prepare_host_injection(db: Session, host: ProxyHostModify, target: ProxyHost | None = None) -> dict:
+def _prepare_host_injection(
+    db: Session, host: ProxyHostModify, target: ProxyHost | None = None, *, source_ids: set[int] | None = None
+) -> dict:
     """Старые клиенты не сбрасывают композицию; удалённые ссылки не оживают."""
     result = {}
     for key in ("host_injection", "group_tag", "is_hidden"):
@@ -243,13 +245,19 @@ def _prepare_host_injection(db: Session, host: ProxyHostModify, target: ProxyHos
 
     new_ids = referenced_ids(result["host_injection"]) - referenced_ids(target.host_injection if target else None)
     if new_ids:
-        found = {id_ for (id_,) in db.query(ProxyHost.id).filter(ProxyHost.id.in_(new_ids)).all()}
+        found = (
+            source_ids
+            if source_ids is not None
+            else {id_ for (id_,) in db.query(ProxyHost.id).filter(ProxyHost.id.in_(new_ids)).all()}
+        )
         if new_ids - found:
             raise ValueError("host_injection: unknown source host IDs")
     return result
 
 
-def _prepare_host_balancing(db: Session, host: ProxyHostModify, target: ProxyHost | None = None) -> dict:
+def _prepare_host_balancing(
+    db: Session, host: ProxyHostModify, target: ProxyHost | None = None, *, source_ids: set[int] | None = None
+) -> dict:
     """Проверка всего нового состояния до мутаций/flush в пакетном upsert."""
     fields = host.model_fields_set
     source = (
@@ -277,7 +285,7 @@ def _prepare_host_balancing(db: Session, host: ProxyHostModify, target: ProxyHos
         "balancing": balancing,
         "balancer_nodes_source": source,
         "balancer_nodes": nodes,
-        **_prepare_host_injection(db, host, target),
+        **_prepare_host_injection(db, host, target, source_ids=source_ids),
     }
 
 
@@ -328,7 +336,12 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
 
 
 def update_hosts(
-    db: Session, inbound_tag: str, modified_hosts: list[ProxyHostModify], *, commit: bool = True
+    db: Session,
+    inbound_tag: str,
+    modified_hosts: list[ProxyHostModify],
+    *,
+    commit: bool = True,
+    source_ids: set[int] | None = None,
 ) -> list[ProxyHost]:
     """Обновляет хосты инбаунда, сохраняя identity существующих строк.
 
@@ -363,8 +376,12 @@ def update_hosts(
     if unknown:
         raise ValueError(f"host id does not belong to inbound {inbound_tag}: {sorted(unknown)}")
 
-    balancing_fields = [_prepare_host_balancing(db, host, existing.get(host.id)) for host in modified_hosts]
     incoming_id_set = set(incoming_ids)
+    if source_ids is None:
+        source_ids = {id_ for (id_,) in db.query(ProxyHost.id).all()} - (set(existing) - incoming_id_set)
+    balancing_fields = [
+        _prepare_host_balancing(db, host, existing.get(host.id), source_ids=source_ids) for host in modified_hosts
+    ]
     for host, order, balance in zip(modified_hosts, orders, balancing_fields):
         target = existing[host.id] if host.id is not None else ProxyHost(inbound=inbound)
         for key, value in balance.items():
@@ -433,6 +450,13 @@ def update_hosts_batch(db: Session, modified_hosts: dict[str, list[ProxyHostModi
         unknown = set(destinations) - {host.id for host in existing}
         if unknown:
             raise ValueError(f"unknown host ids: {sorted(unknown)}")
+        # Новые ссылки валидируются по итоговому пакету, а не по промежуточной БД:
+        # источник мог ещё не удалиться при обработке более раннего inbound.
+        source_ids = {
+            id_
+            for id_, tag in db.query(ProxyHost.id, ProxyHost.inbound_tag).all()
+            if tag not in modified_hosts or id_ in destinations
+        }
         inbounds = {
             cast(str, inbound.tag): inbound
             for inbound in db.query(ProxyInbound).filter(ProxyInbound.tag.in_(modified_hosts)).all()
@@ -458,7 +482,7 @@ def update_hosts_batch(db: Session, modified_hosts: dict[str, list[ProxyHostModi
                 else host
                 for host in hosts
             ]
-            update_hosts(db, tag, prepared, commit=False)
+            update_hosts(db, tag, prepared, commit=False, source_ids=source_ids)
         db.commit()
     except Exception:
         db.rollback()

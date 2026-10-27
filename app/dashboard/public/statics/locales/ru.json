@@ -654,5 +654,8 @@
   "hostsDialog.injection.diagnostics.selector_input_too_long": "Имя или тег источника слишком длинный для проверки.",
   "hostsDialog.injection.diagnostics.form_override": "Настройки формы этого хоста переопределяют JSON-инжект. Проверяется эффективный выбор с учётом формы.",
   "hostsDialog.injection.enabled": "Хост включён: доступен отдельно и как источник",
-  "hostsDialog.changeInboundHint": "Смена инбаунда сохраняет настройки хоста. При переходе с XHTTP на другой транспорт Extra очищается."
+  "hostsDialog.changeInboundHint": "Смена инбаунда сохраняет настройки хоста. При переходе с XHTTP на другой транспорт Extra очищается.",
+  "hostsDialog.injection.errors.maxHosts": "Выберите не больше 256 хостов в одной группе.",
+  "hostsDialog.injection.errors.uniqueHosts": "Выберите каждый хост в группе только один раз.",
+  "hostsDialog.injection.errors.maxPattern": "В выражении должно быть не больше 256 символов."
 }

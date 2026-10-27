@@ -381,6 +381,7 @@ export function HostInjectionOptions({
                     <Input
                       size="sm"
                       aria-label={tr("pattern")}
+                      maxLength={256}
                       value={group.selector.pattern}
                       onChange={(e) =>
                         change(i, {

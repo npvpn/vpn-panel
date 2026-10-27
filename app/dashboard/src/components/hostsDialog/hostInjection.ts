@@ -52,8 +52,8 @@ const selectorSchema = z.discriminatedUnion("type", [
         .array(z.number().int().positive())
         // ключ перевода: сообщение zod по умолчанию — техническое и только по-английски
         .min(1, "hostsDialog.injection.errors.noHosts")
-        .max(256)
-        .refine((v) => new Set(v).size === v.length, "Host IDs must be unique"),
+        .max(256, "hostsDialog.injection.errors.maxHosts")
+        .refine((v) => new Set(v).size === v.length, "hostsDialog.injection.errors.uniqueHosts"),
     })
     .strict(),
   z
@@ -62,7 +62,7 @@ const selectorSchema = z.discriminatedUnion("type", [
       pattern: z
         .string()
         .min(1, "hostsDialog.injection.errors.noPattern")
-        .max(256),
+        .max(256, "hostsDialog.injection.errors.maxPattern"),
     })
     .strict(),
   z
@@ -71,7 +71,7 @@ const selectorSchema = z.discriminatedUnion("type", [
       pattern: z
         .string()
         .min(1, "hostsDialog.injection.errors.noPattern")
-        .max(256),
+        .max(256, "hostsDialog.injection.errors.maxPattern"),
     })
     .strict(),
   z.object({ type: z.literal("sameTagAsRecipient") }).strict(),

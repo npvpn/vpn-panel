@@ -173,7 +173,7 @@ def generate_subscription(
         def _safe_json(raw, name):
             try:
                 return parse_json_object(raw)
-            except ValueError as exc:
+            except ValueError:
                 logger.warning("[sub] invalid %s", name)
                 return {"npvpn": None}
 
@@ -475,7 +475,7 @@ def process_inbounds_and_tags(
         template_for = (
             (lambda host: conf.base_template(host.get("client_config_id")))
             if isinstance(conf, V2rayJsonConfig)
-            else (lambda host: {})
+            else (lambda _host: {})
         )
     candidates = prepare_candidates(
         inbounds,
