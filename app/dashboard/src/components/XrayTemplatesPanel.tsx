@@ -46,6 +46,7 @@ import {
   saveTemplate,
 } from "service/xrayTemplates";
 import { JsonEditor } from "./JsonEditor";
+import { TemplateInjectionDiagnostics } from "./hostsDialog/InjectionDiagnostics";
 
 const CloseIcon = chakra(XMarkIcon, { baseStyle: { w: 3.5, h: 3.5 } });
 
@@ -450,6 +451,13 @@ export const XrayTemplatesPanel: FC = () => {
         </FormHelperText>
       </FormControl>
 
+      <Box as="details">
+        <Box as="summary" cursor="pointer">{t("hostsDialog.injection.jsonHelp")}</Box>
+        <Text fontSize="sm" mt={2}>{t("hostsDialog.injection.jsonHint")}</Text>
+        <Box as="pre" fontSize="xs" overflowX="auto" mt={2}>{JSON.stringify({ npvpn: { injectHosts: [{ selector: { type: "tagRegex", pattern: "^MAIN$" }, tagPrefix: "proxy", selectFrom: "NOT_HIDDEN" }], addVirtualHostAsOutbound: false } }, null, 2)}</Box>
+        <Text fontSize="xs">{t("hostsDialog.injection.idsHint")}</Text>
+        <Box as="pre" fontSize="xs" overflowX="auto">{'"selector": { "type": "ids", "values": [1, 2] }'}</Box>
+      </Box>
       <FormControl isInvalid={!!validationError}>
         <Box minH="220px">
           <JsonEditor json={editorJson} onChange={setBody} />
@@ -468,6 +476,14 @@ export const XrayTemplatesPanel: FC = () => {
           onChange={(e) => setComment(e.target.value)}
         />
       </FormControl>
+
+      {selectedId != null && (
+        <TemplateInjectionDiagnostics
+          key={selectedId}
+          templateId={selectedId}
+          body={normalizeBody(body)}
+        />
+      )}
 
       <HStack justify="space-between">
         <Button

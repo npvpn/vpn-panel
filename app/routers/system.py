@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app import __version__, xray
 from app.db import Session, crud, get_db
 from app.models.admin import Admin
+from app.models.host_injection import InjectionPreview, InjectionPreviewRequest
 from app.models.proxy import ProxyHost, ProxyInbound, ProxyTypes
 from app.models.system import SystemStats
 from app.models.user import UserStatus
@@ -11,6 +12,16 @@ from app.utils import responses
 from app.utils.system import cpu_usage, memory_usage, realtime_bandwidth
 
 router = APIRouter(tags=["System"], prefix="/api", responses={401: responses._401})
+
+
+@router.post("/hosts/injection/preview", response_model=InjectionPreview)
+def preview_host_injection(
+    payload: InjectionPreviewRequest,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.check_sudo_admin),
+):
+    del admin
+    return xray_templates_service.preview_injection(db, payload, set(xray.config.inbounds_by_tag))
 
 
 @router.get("/system", response_model=SystemStats)
@@ -56,11 +67,28 @@ def get_inbounds(admin: Admin = Depends(Admin.get_current)):
     return xray.config.inbounds_by_protocol
 
 
+def _host_response(db):
+    from app.xray.host_injection import template_injection
+
+    lookup = xray_templates_service.build_template_lookup(xray_templates_service.get_active_bodies(db))
+    result = {}
+    for tag in xray.config.inbounds_by_tag:
+        result[tag] = []
+        for host in crud.get_hosts(db, tag):
+            view = ProxyHost.model_validate(host)
+            try:
+                view.template_injection = template_injection(lookup(host.client_config_id))
+            except ValueError:
+                # Template editor reports the precise validation error; preserve host editability.
+                view.template_injection = None
+            result[tag].append(view)
+    return result
+
+
 @router.get("/hosts", response_model=dict[str, list[ProxyHost]], responses={403: responses._403})
 def get_hosts(db: Session = Depends(get_db), admin: Admin = Depends(Admin.check_sudo_admin)):
     """Get a list of proxy hosts grouped by inbound tag."""
-    hosts = {tag: crud.get_hosts(db, tag) for tag in xray.config.inbounds_by_tag}
-    return hosts
+    return _host_response(db)
 
 
 @router.put("/hosts", response_model=dict[str, list[ProxyHost]], responses={403: responses._403})
@@ -82,11 +110,10 @@ def modify_hosts(
         raise HTTPException(status_code=422, detail={"client_config_id": str(exc)}) from exc
 
     try:
-        for inbound_tag, hosts in modified_hosts.items():
-            crud.update_hosts(db, inbound_tag, hosts)
+        crud.update_hosts_batch(db, modified_hosts)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
 
     xray.hosts.update()
 
-    return {tag: crud.get_hosts(db, tag) for tag in xray.config.inbounds_by_tag}
+    return _host_response(db)

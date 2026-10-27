@@ -46,6 +46,13 @@ export const EMPTY_HOST: z.infer<typeof hostItemSchema> = {
   bot_usernames: [],
   node_ids: [],
   client_config_id: null,
+  host_injection: null,
+  group_tag: "",
+  is_hidden: false,
+  template_injection: null,
+  balancing: null,
+  balancer_nodes_source: "host",
+  balancer_node_ids: [],
   // NPVPN-2044: новый хост не виден никому, пока его не привязали к боту.
   rented_bot_usernames: [],
   address_subset_enabled: false,
@@ -203,11 +210,16 @@ export const AddHostForm: FC<Props> = ({
                 control={form.control}
                 name={`${HOST_KEY}.0.is_disabled`}
                 render={({ field }) => (
-                  <Switch
-                    colorScheme="primary"
-                    isChecked={!field.value}
-                    onChange={(e) => field.onChange(!e.target.checked)}
-                  />
+                  <Tooltip label={t("hostsDialog.injection.visibilityHint")}>
+                    <Box as="span">
+                      <Switch
+                        aria-label={t("hostsDialog.injection.enabled")}
+                        colorScheme="primary"
+                        isChecked={!field.value}
+                        onChange={(e) => field.onChange(!e.target.checked)}
+                      />
+                    </Box>
+                  </Tooltip>
                 )}
               />
 

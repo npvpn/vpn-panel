@@ -10,7 +10,7 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Query, Session, joinedload
+from sqlalchemy.orm import Query, Session, joinedload, selectinload
 from sqlalchemy.sql.functions import coalesce
 
 from app.db.models import (
@@ -120,8 +120,14 @@ def get_hosts(db: Session, inbound_tag: str) -> list[ProxyHost]:
     Returns:
         List[ProxyHost]: List of hosts for the inbound.
     """
-    inbound = get_or_create_inbound(db, inbound_tag)
-    return sorted(inbound.hosts, key=lambda host: (host.order, host.id))
+    get_or_create_inbound(db, inbound_tag)
+    return (
+        db.query(ProxyHost)
+        .filter(ProxyHost.inbound_tag == inbound_tag)
+        .options(selectinload(ProxyHost.nodes), selectinload(ProxyHost.balancer_nodes), selectinload(ProxyHost.bots))
+        .order_by(ProxyHost.order, ProxyHost.id)
+        .all()
+    )
 
 
 def _max_host_order(db: Session, exclude_inbound_tag: str | None = None) -> int:
@@ -218,6 +224,71 @@ def _get_nodes_by_ids(db: Session, node_ids: list[int]) -> list[Node]:
     return [nodes_by_id[node_id] for node_id in unique_ids]
 
 
+def _prepare_host_injection(
+    db: Session, host: ProxyHostModify, target: ProxyHost | None = None, *, source_ids: set[int] | None = None
+) -> dict:
+    """Старые клиенты не сбрасывают композицию; удалённые ссылки не оживают."""
+    result = {}
+    for key in ("host_injection", "group_tag", "is_hidden"):
+        value = getattr(host, key) if target is None or key in host.model_fields_set else getattr(target, key)
+        if key == "host_injection" and value is not None and hasattr(value, "model_dump"):
+            value = value.model_dump(mode="json")
+        result[key] = value
+
+    def referenced_ids(value):
+        return {
+            id_
+            for group in (value or {}).get("injectHosts", [])
+            if group["selector"]["type"] == "ids"
+            for id_ in group["selector"]["values"]
+        }
+
+    new_ids = referenced_ids(result["host_injection"]) - referenced_ids(target.host_injection if target else None)
+    if new_ids:
+        found = (
+            source_ids
+            if source_ids is not None
+            else {id_ for (id_,) in db.query(ProxyHost.id).filter(ProxyHost.id.in_(new_ids)).all()}
+        )
+        if new_ids - found:
+            raise ValueError("host_injection: unknown source host IDs")
+    return result
+
+
+def _prepare_host_balancing(
+    db: Session, host: ProxyHostModify, target: ProxyHost | None = None, *, source_ids: set[int] | None = None
+) -> dict:
+    """Проверка всего нового состояния до мутаций/flush в пакетном upsert."""
+    fields = host.model_fields_set
+    source = (
+        host.balancer_nodes_source
+        if target is None or "balancer_nodes_source" in fields
+        else target.balancer_nodes_source
+    )
+    nodes = (
+        _get_nodes_by_ids(db, host.balancer_node_ids)
+        if target is None or "balancer_node_ids" in fields
+        else list(target.balancer_nodes)
+    )
+    old_ids = (
+        set(target.balancer_node_ids) if target is not None and target.balancer_nodes_source == "selected" else set()
+    )
+    if source == "selected":
+        if not nodes and (target is None or target.balancer_nodes_source != "selected" or target.balancer_node_ids):
+            raise ValueError("balancer_node_ids: select at least one entry node")
+        if any(node.status == NodeStatus.disabled and node.id not in old_ids for node in nodes):
+            raise ValueError("balancer_node_ids: disabled entry nodes cannot be added")
+    balancing = host.balancing.model_dump(mode="json") if host.balancing is not None else None
+    if target is not None and "balancing" not in fields:
+        balancing = target.balancing
+    return {
+        "balancing": balancing,
+        "balancer_nodes_source": source,
+        "balancer_nodes": nodes,
+        **_prepare_host_injection(db, host, target, source_ids=source_ids),
+    }
+
+
 def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[ProxyHost]:
     """
     Adds a new host to a proxy inbound.
@@ -230,6 +301,7 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
     Returns:
         List[ProxyHost]: Updated list of hosts for the inbound.
     """
+    balancing_fields = _prepare_host_balancing(db, host)
     inbound = get_or_create_inbound(db, inbound_tag)
     bots = _get_bots_by_usernames(db, host.bot_usernames)
     nodes = _get_nodes_by_ids(db, host.node_ids)
@@ -255,6 +327,7 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
             address_rotation_days=host.address_rotation_days,
             bots=bots,
             nodes=nodes,
+            **balancing_fields,
         )
     )
     db.commit()
@@ -262,7 +335,14 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
     return get_hosts(db, inbound_tag)
 
 
-def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostModify]) -> list[ProxyHost]:
+def update_hosts(
+    db: Session,
+    inbound_tag: str,
+    modified_hosts: list[ProxyHostModify],
+    *,
+    commit: bool = True,
+    source_ids: set[int] | None = None,
+) -> list[ProxyHost]:
     """Обновляет хосты инбаунда, сохраняя identity существующих строк.
 
     NPVPN-2044: раньше здесь было `inbound.hosts = [ProxyHost(...) ...]`, то есть
@@ -280,7 +360,11 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
     Returns:
         List[ProxyHost]: Updated list of hosts for the inbound.
     """
-    inbound = get_or_create_inbound(db, inbound_tag)
+    inbound = db.query(ProxyInbound).filter(ProxyInbound.tag == inbound_tag).first()
+    if inbound is None:
+        inbound = ProxyInbound(tag=inbound_tag)
+        db.add(inbound)
+        db.flush()
     orders = _resolve_host_orders(db, inbound_tag, modified_hosts)
 
     incoming_ids = [host.id for host in modified_hosts if host.id is not None]
@@ -293,8 +377,15 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
         raise ValueError(f"host id does not belong to inbound {inbound_tag}: {sorted(unknown)}")
 
     incoming_id_set = set(incoming_ids)
-    for host, order in zip(modified_hosts, orders):
+    if source_ids is None:
+        source_ids = {id_ for (id_,) in db.query(ProxyHost.id).all()} - (set(existing) - incoming_id_set)
+    balancing_fields = [
+        _prepare_host_balancing(db, host, existing.get(host.id), source_ids=source_ids) for host in modified_hosts
+    ]
+    for host, order, balance in zip(modified_hosts, orders, balancing_fields):
         target = existing[host.id] if host.id is not None else ProxyHost(inbound=inbound)
+        for key, value in balance.items():
+            setattr(target, key, value)
         target.remark = host.remark
         target.address = host.address
         target.port = host.port
@@ -331,9 +422,71 @@ def update_hosts(db: Session, inbound_tag: str, modified_hosts: list[ProxyHostMo
         if host_id not in incoming_id_set:
             db.delete(host)
 
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(inbound)
     return get_hosts(db, inbound_tag)
+
+
+def update_hosts_batch(db: Session, modified_hosts: dict[str, list[ProxyHostModify]]) -> None:
+    """Один PUT /hosts — одна транзакция, включая перенос между inbound.
+
+    Identity хоста и его связи сохраняются. Любая ошибка откатывает весь запрос,
+    поэтому обновлять кэш можно только после успешного возврата этой функции.
+    """
+    try:
+        destinations: dict[int, str] = {}
+        for tag, hosts in modified_hosts.items():
+            for host in hosts:
+                if host.id is not None:
+                    if host.id in destinations:
+                        raise ValueError("duplicate host id in payload")
+                    destinations[host.id] = tag
+        existing = (
+            db.query(ProxyHost).options(joinedload(ProxyHost.inbound)).filter(ProxyHost.id.in_(destinations)).all()
+        )
+        unknown = set(destinations) - {host.id for host in existing}
+        if unknown:
+            raise ValueError(f"unknown host ids: {sorted(unknown)}")
+        # Новые ссылки валидируются по итоговому пакету, а не по промежуточной БД:
+        # источник мог ещё не удалиться при обработке более раннего inbound.
+        source_ids = {
+            id_
+            for id_, tag in db.query(ProxyHost.id, ProxyHost.inbound_tag).all()
+            if tag not in modified_hosts or id_ in destinations
+        }
+        inbounds = {
+            cast(str, inbound.tag): inbound
+            for inbound in db.query(ProxyInbound).filter(ProxyInbound.tag.in_(modified_hosts)).all()
+        }
+        for tag in modified_hosts:
+            if tag not in inbounds:
+                inbounds[tag] = ProxyInbound(tag=tag)
+                db.add(inbounds[tag])
+        db.flush()
+        existing_orders = {cast(int, host.id): cast(int, host.order) for host in existing}
+        for dbhost in existing:
+            host_id = cast(int, dbhost.id)
+            destination = destinations[host_id]
+            if dbhost.inbound_tag != destination:
+                # Меняем relationship: ORM синхронизирует и прежний inbound,
+                # даже если его ключ отсутствует в запросе, а hosts уже загружен.
+                dbhost.inbound = inbounds[destination]
+        db.flush()
+        for tag, hosts in modified_hosts.items():
+            prepared = [
+                host.model_copy(update={"order": existing_orders[host.id]})
+                if host.order is None and host.id in existing_orders
+                else host
+                for host in hosts
+            ]
+            update_hosts(db, tag, prepared, commit=False, source_ids=source_ids)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def get_user_queryset(db: Session) -> Query:
@@ -2529,7 +2682,15 @@ def get_pins_covering_day(db: Session, user_id: int, day_start: datetime, day_en
     return pins
 
 
-def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int, payload: list[dict]) -> None:
+def write_host_composition_snapshot(
+    db: Session,
+    epoch_index: int,
+    host_id: int,
+    payload: list[dict],
+    *,
+    is_composite: bool = False,
+    is_hidden: bool = False,
+) -> None:
     """Идемпотентная запись состава хоста на сутки (NPVPN-2072).
 
     Первая запись дня выигрывает: при конфликте (epoch_index, host_id) строка НЕ
@@ -2555,7 +2716,13 @@ def write_host_composition_snapshot(db: Session, epoch_index: int, host_id: int,
     снимков не должен зависеть от того, удастся ли не связанная с ним по смыслу
     подчистка).
     """
-    values = {"epoch_index": epoch_index, "host_id": host_id, "payload": payload}
+    values = {
+        "epoch_index": epoch_index,
+        "host_id": host_id,
+        "payload": payload,
+        "is_composite": is_composite,
+        "is_hidden": is_hidden,
+    }
     stmt: Any
     if db.bind is not None and db.bind.dialect.name == "mysql":
         mysql_stmt = mysql_insert(HostCompositionSnapshot).values(**values)
@@ -2577,7 +2744,11 @@ def get_host_composition(db: Session, epoch_index: int) -> dict[int, list[dict]]
     """
     rows = (
         db.query(HostCompositionSnapshot.host_id, HostCompositionSnapshot.payload)
-        .filter(HostCompositionSnapshot.epoch_index == epoch_index)
+        .filter(
+            HostCompositionSnapshot.epoch_index == epoch_index,
+            HostCompositionSnapshot.is_composite.is_(False),
+            HostCompositionSnapshot.is_hidden.is_(False),
+        )
         .all()
     )
     return {row.host_id: row.payload for row in rows}
@@ -2598,6 +2769,8 @@ def get_host_composition_range(db: Session, first_day: int, last_day: int) -> di
             HostCompositionSnapshot.payload,
         )
         .filter(
+            HostCompositionSnapshot.is_composite.is_(False),
+            HostCompositionSnapshot.is_hidden.is_(False),
             HostCompositionSnapshot.epoch_index >= first_day,
             HostCompositionSnapshot.epoch_index <= last_day,
         )

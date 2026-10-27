@@ -52,7 +52,7 @@ from app.subscription.address_context_builder import _EPOCH_ORIGIN, day_index
 from app.subscription.bot_settings import resolve_bot_settings
 from app.utils import report, responses
 from app.utils.request_context import request_id_var
-from app.xray.host_addresses import resolve_host_node_ids
+from app.xray.host_addresses import addresses_from_nodes, resolve_host_node_ids
 from config import SYNC_INBOUNDS_DB_CHUNK_SIZE, SYNC_INBOUNDS_MAX_CONCURRENCY
 
 router = APIRouter(tags=["User"], prefix="/api", responses={401: responses._401})
@@ -505,7 +505,11 @@ def create_user_pin_endpoint(
     host = db.query(DBProxyHost).filter(DBProxyHost.id == payload.host_id).first()
     if host is None:
         raise HTTPException(status_code=404, detail="Host not found")
-    if host.address:
+    from app.services.xray_templates import composition_classifier
+
+    if composition_classifier(db)(host):
+        raise HTTPException(status_code=400, detail="Composite host: pin source hosts instead")
+    if not addresses_from_nodes(host):
         # Легаси-хост со статическим адресом: соответствия "адрес <-> нода" нет
         # по построению (см. AddressContext.pick), закреплять там нечего.
         raise HTTPException(status_code=400, detail="Host has a static address, nothing to pin by node")
