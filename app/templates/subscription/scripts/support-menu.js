@@ -17,7 +17,10 @@
   // только если точно знаем, что она этой же подписки; иначе (подписка сменилась, первый
   // заход после выкладки — токена ещё нет, хранилище недоступно) забываем её до запуска
   // SDK (reset() после run() перезагружает виджет без chatwoot:ready). Свою историю
-  // владелец получит обратно по identity
+  // владелец получит обратно по identity.
+  // Вызывать вплотную к run(): cookie общие для вкладок, и пока грузится скрипт, другая
+  // вкладка могла запустить чат своей подписки. Проверка и run() — подряд, без await,
+  // поэтому вклиниться другая вкладка не успевает
   function forgetPreviousChat(cfg) {
     var last = null;
     try {
@@ -33,7 +36,13 @@
     try {
       window.localStorage.setItem(LAST_TOKEN_KEY, cfg.token);
     } catch (e) {
-      // не запомнили — в следующий раз сессия чата снова забудется, чат всё равно работает
+      // не запомнили (например, хранилище переполнено) — убираем старую запись: иначе в
+      // следующий раз чужую сессию примем за сессию той подписки и не почистим
+      try {
+        window.localStorage.removeItem(LAST_TOKEN_KEY);
+      } catch (e2) {
+        // хранилище недоступно целиком — чтение тоже упадёт, и сессия забудется
+      }
     }
   }
 
@@ -94,9 +103,9 @@
       if (sdkStarted) {
         attempt = ready;
       } else {
-        forgetPreviousChat(cfg);
         window.chatwootSettings = { hideMessageBubble: true };
         attempt = loadSdk(cfg.chat.base_url).then(function () {
+          forgetPreviousChat(cfg);
           sdkStarted = true;
           window.chatwootSDK.run({ websiteToken: cfg.chat.website_token, baseUrl: cfg.chat.base_url });
           return ready;

@@ -31,6 +31,8 @@ def _run(
     chatwoot_error=False,
     last_token=None,
     storage_broken=False,
+    storage_full=False,
+    other_tab_during_load=False,
     sdk="present",
     ready_delay=0,
 ) -> dict:
@@ -40,6 +42,8 @@ def _run(
         "chatwootError": chatwoot_error,
         "lastToken": last_token,
         "storageBroken": storage_broken,
+        "storageFull": storage_full,
+        "otherTabDuringLoad": other_tab_during_load,
         "sdk": sdk,
         "readyDelay": ready_delay,
         "roots": roots,
@@ -213,3 +217,21 @@ def test_sdk_load_failure_then_retry_loads_again():
     assert retried["scriptLoads"] == 2
     assert retried["chatOpened"] is True
     assert retried["roots"][0]["status"] == ""
+
+
+# Пока грузился скрипт чата, другая вкладка открыла чат своей подписки — cookie уже её.
+# Проверка идёт вплотную к run(), поэтому чужую сессию забываем и здесь.
+def test_other_tab_switched_subscription_while_sdk_loading_forgets_session():
+    out = _run(roots=_two("chat"), clicks=[(0, "toggle")], last_token="TOKEN", sdk="load", other_tab_during_load=True)
+    assert set(out["cookiesCleared"]) == {"cw_conversation", "cw_user_wt"}
+    assert out["storedToken"] == "TOKEN"
+    assert out["chatOpened"] is True
+
+
+# Записать подписку не удалось (хранилище переполнено) — старую запись удаляем, иначе в следующий
+# раз чужую сессию приняли бы за сессию той подписки.
+def test_failed_to_save_subscription_removes_stale_record():
+    out = _run(roots=_two("chat"), clicks=[(0, "toggle")], last_token="OTHER", storage_full=True)
+    assert set(out["cookiesCleared"]) == {"cw_conversation", "cw_user_wt"}
+    assert out["storedToken"] is None
+    assert out["chatOpened"] is True

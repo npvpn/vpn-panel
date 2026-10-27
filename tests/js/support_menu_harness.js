@@ -7,8 +7,10 @@
 // target: "toggle" | "chat" | "tg" | "escape" (клики — по очереди, с паузой);
 // chatwootError — Chatwoot отклоняет setUser (как SET_USER_ERROR);
 // lastToken — подписка, открытая в этом браузере раньше; storageBroken — localStorage бросает
-// исключение (приватный режим);
-// sdk: "present" (уже на странице) | "failOnce" (первая загрузка скрипта падает, вторая — нет);
+// исключение (приватный режим); storageFull — не пишет (QuotaExceededError), но читает и удаляет;
+// sdk: "present" (уже на странице) | "load" (скрипт грузится) | "failOnce" (первая загрузка
+// скрипта падает, вторая — нет); otherTabDuringLoad — пока грузится скрипт, другая вкладка
+// открыла чат своей подписки (в localStorage её токен);
 // readyDelay — через сколько мс после run() виджет присылает chatwoot:ready.
 // Выход: { identityCalls, scriptLoads, chatOpened, chatClosed, setUser, cookiesCleared, storedToken,
 //          roots: [{ listOpen, status, chatLoading, toggleLoading }] }.
@@ -91,6 +93,7 @@ const document = Object.assign(makeTarget(), {
       const failed = scenario.sdk === 'failOnce' && state.scriptLoads === 1;
       setTimeout(() => {
         if (failed) { script.onerror(); return; }
+        if (scenario.otherTabDuringLoad) { storage.cw_sub_token = 'OTHER'; }
         window.chatwootSDK = sdk;
         script.onload();
       }, 0);
@@ -115,7 +118,12 @@ const window = Object.assign(makeTarget(), {
     },
     setItem: (key, value) => {
       if (scenario.storageBroken) { throw new Error('SecurityError'); }
+      if (scenario.storageFull) { throw new Error('QuotaExceededError'); }
       storage[key] = String(value);
+    },
+    removeItem: (key) => {
+      if (scenario.storageBroken) { throw new Error('SecurityError'); }
+      delete storage[key];
     },
   },
   innerHeight: 800,
@@ -143,7 +151,7 @@ const sdk = {
       setTimeout(() => window.dispatch('chatwoot:ready'), scenario.readyDelay || 0);
     },
 };
-if (scenario.sdk !== 'failOnce') { window.chatwootSDK = sdk; }
+if (!scenario.sdk || scenario.sdk === 'present') { window.chatwootSDK = sdk; }
 
 async function fakeFetch(url, opts) {
   state.identityCalls += 1;
