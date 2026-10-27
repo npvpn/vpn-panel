@@ -235,3 +235,12 @@ def test_failed_to_save_subscription_removes_stale_record():
     assert set(out["cookiesCleared"]) == {"cw_conversation", "cw_user_wt"}
     assert out["storedToken"] is None
     assert out["chatOpened"] is True
+
+
+# Ушли из меню, не дождавшись чата, а потом Chatwoot отклонил пользователя — меню само не открывается.
+def test_chatwoot_error_after_leaving_menu_does_not_reopen_it():
+    out = _run(
+        roots=_two("menu"), clicks=[(0, "toggle"), (0, "chat"), (0, "escape")], chatwoot_error=True, ready_delay=30
+    )
+    assert out["chatOpened"] is False
+    assert out["roots"][0]["listOpen"] is False

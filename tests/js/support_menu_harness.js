@@ -193,5 +193,8 @@ const TARGETS = { chat: '[data-support-chat]', tg: 'a.support-menu__item', toggl
       chatLoading: loading(r.parts['[data-support-chat]']),
       toggleLoading: loading(r.parts['[data-support-toggle]']),
     })),
-  }));
+  }), () => {
+    // таймеры скрипта (ожидание chatwoot:ready до 15 с) держали бы процесс — результат уже записан
+    process.exit(0);
+  });
 })();

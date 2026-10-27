@@ -221,6 +221,8 @@
       waiting.cancelled = true;
       setLoading(waiting.button, false);
       waiting = null;
+      // запуск отменён — его поздний chatwoot:error не должен сам открывать меню
+      if (activeChat === root) { activeChat = null; }
     }
 
     function leaveMenu() {
