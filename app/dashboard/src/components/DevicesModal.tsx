@@ -1,6 +1,13 @@
 import {
   Alert,
+  AlertDialog,
+  AlertDialogBody,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogOverlay,
   AlertIcon,
+  Button,
   Badge,
   chakra,
   Flex,
@@ -21,6 +28,7 @@ import {
 
 import { TrashIcon } from "@heroicons/react/24/outline";
 import dayjs from "dayjs";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { User, UserDevice } from "types/User";
 import { fetch } from "service/http";
@@ -62,6 +70,15 @@ export const DevicesModal = ({
   toast,
 }: DeviceModalProps) => {
   const { t } = useTranslation();
+  // NPVPN-2291: корзина удаляла устройство сразу, одним кликом — его легко было
+  // снести случайно. Теперь сначала подтверждение
+  const [deviceToDelete, setDeviceToDelete] = useState<UserDevice | null>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
+
+  const confirmDelete = () => {
+    if (deviceToDelete) deleteDevice(deviceToDelete.id);
+    setDeviceToDelete(null);
+  };
 
   const deleteDevice = async (deviceId: number) => {
     if (!editingUser) return;
@@ -214,7 +231,7 @@ export const DevicesModal = ({
                       isLoading={deletingDeviceId === device.id}
                       onClick={(e) => {
                         e.stopPropagation();
-                        deleteDevice(device.id);
+                        setDeviceToDelete(device);
                       }}
                       flexShrink={0}
                       minW="28px"
@@ -444,15 +461,49 @@ export const DevicesModal = ({
           direction="column"
           align="center"
           justify="center"
-          py={12}
+          py={8}
           px={6}
-          minH="200px"
         >
           <Text color="gray.500" fontSize="md" textAlign="center">
             {t("userDialog.devicesEmpty")}
           </Text>
         </Flex>
       )}
+      {/* не по центру: окно «Устройства» стоит вверху, и подтверждение открывается
+          поверх него, а не отдельно в середине экрана */}
+      <AlertDialog
+        isOpen={!!deviceToDelete}
+        leastDestructiveRef={cancelDeleteRef}
+        onClose={() => setDeviceToDelete(null)}
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              {t("userDialog.deviceDeleteConfirm.title")}
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              <Text fontSize="sm">
+                {t("userDialog.deviceDeleteConfirm.prompt", {
+                  device:
+                    deviceToDelete?.device_model || deviceToDelete?.hwid || "",
+                  username: editingUser?.username ?? "",
+                })}
+              </Text>
+            </AlertDialogBody>
+            <AlertDialogFooter>
+              <Button
+                ref={cancelDeleteRef}
+                onClick={() => setDeviceToDelete(null)}
+              >
+                {t("cancel")}
+              </Button>
+              <Button colorScheme="red" ml={3} onClick={confirmDelete}>
+                {t("delete")}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </ModalBody>
   );
 };

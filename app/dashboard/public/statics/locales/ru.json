@@ -250,6 +250,8 @@
   "userDialog.devicesClose": "Закрыть",
   "userDialog.devicesLoadError": "Не удалось загрузить устройства",
   "userDialog.deviceDeleted": "Устройство успешно удалено",
+  "userDialog.deviceDeleteConfirm.title": "Удалить устройство?",
+  "userDialog.deviceDeleteConfirm.prompt": "Устройство {{device}} пользователя {{username}} будет удалено.",
   "userDialog.deviceDeleteError": "Не удалось удалить устройство",
   "userDialog.deviceOs": "ОС",
   "userDialog.deviceVerOs": "Версия ОС",
