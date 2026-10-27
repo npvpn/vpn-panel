@@ -250,6 +250,8 @@
   "userDialog.devicesClose": "Close",
   "userDialog.devicesLoadError": "Failed to load devices",
   "userDialog.deviceDeleted": "Device deleted successfully",
+  "userDialog.deviceDeleteConfirm.title": "Delete device?",
+  "userDialog.deviceDeleteConfirm.prompt": "Device {{device}} of user {{username}} will be deleted.",
   "userDialog.deviceDeleteError": "Failed to delete device",
   "userDialog.deviceOs": "OS",
   "userDialog.deviceVerOs": "OS version",
