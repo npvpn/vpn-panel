@@ -199,6 +199,7 @@ bot/effective-inbound доступы. Hidden не равен disabled. Поля 
 а не пустой подтверждённый набор. Пины относятся к исходным хостам; получатель не создаёт
 фиктивный набор node_id из разнотипных подключений. Полный контракт и rollback — в
 [`host-balancing.md`](host-balancing.md).
+
 ### Ручная сверка трафика хостинга
 
 `node_hosting_traffic_adjustments` хранит аудируемые поправки к NIC, отдельно
