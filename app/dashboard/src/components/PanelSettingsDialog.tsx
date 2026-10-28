@@ -710,7 +710,15 @@ export const PanelSettingsDialog: FC = () => {
                     align="flex-start"
                     gap={6}
                   >
-                    <VStack spacing={4} align="stretch" flex="1" minW={0}>
+                    {/* колонка не тянется сама: у родителя align="flex-start", и на узком
+                        экране короткие тексты сжимали её вместе с полями */}
+                    <VStack
+                      spacing={4}
+                      align="stretch"
+                      flex="1"
+                      minW={0}
+                      w="full"
+                    >
                       <Box maxW={{ md: "320px" }}>
                         <HappScenarioSelect
                           value={previewScenario}
@@ -1108,7 +1116,8 @@ export const PanelSettingsDialog: FC = () => {
       >
         <ModalOverlay />
         <ModalContent>
-          <ModalCloseButton />
+          {/* шапка превью закреплена (sticky) и перекрывала крестик */}
+          <ModalCloseButton zIndex={2} />
           <ModalBody pt={3}>
             <HappSubscriptionPreview
               settings={settings}
