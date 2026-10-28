@@ -1145,7 +1145,13 @@ export const UserDialog: FC<UserDialogProps> = () => {
         size="6xl"
       >
         <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
-        <ModalContent mx="3" w="fit-content" maxW="calc(100vw - 2rem)">
+        {/* по ширине содержимого, но не уже 448px: без устройств окно схлопывалось в узкую колонку */}
+        <ModalContent
+          mx="3"
+          w="fit-content"
+          minW={{ base: "auto", md: "md" }}
+          maxW="calc(100vw - 2rem)"
+        >
           <ModalHeader pt={6}>
             <HStack gap={2} justifyContent="space-between">
               <Text fontWeight="semibold" fontSize="lg">

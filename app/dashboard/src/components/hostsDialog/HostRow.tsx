@@ -31,6 +31,7 @@ import { DeleteIcon } from "components/DeleteUserModal";
 import { RHFInput } from "./RHFInput";
 import { HostInfoPopover } from "./HostInfoPopover";
 import { HostAdvancedOptionsModal } from "./HostAdvancedOptionsModal";
+import { HostInboundSelect } from "./HostInboundSelect";
 import { AdvancedOptionsButton } from "./AdvancedOptionsButton";
 import { hostsFormSchema } from "./schema";
 import { HostColumnWidths } from "./HostsList";
@@ -39,7 +40,8 @@ import { z } from "zod";
 type HostRowProps = {
   id: string;
   index: number;
-  inboundTag: string;
+  inboundTags: string[];
+  inboundMap: Map<string, any>;
   remark?: string;
   address?: string;
   botUsernames?: string[];
@@ -150,7 +152,8 @@ const DragHandleCell = memo(function DragHandleCell({
 export const HostRow = memo(function HostRow({
   id,
   index,
-  inboundTag,
+  inboundTags,
+  inboundMap,
   remark,
   address,
   botUsernames,
@@ -176,6 +179,10 @@ export const HostRow = memo(function HostRow({
     useFormContext<z.infer<typeof hostsFormSchema>>();
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const inboundSelect = useMemo(
+    () => <HostInboundSelect index={index} inboundTags={inboundTags} inboundMap={inboundMap} />,
+    [index, inboundTags, inboundMap]
+  );
 
   const botNames = (botUsernames || []).map((username) => {
     const bot = bots.find((b) => b.username === username);
@@ -219,6 +226,7 @@ export const HostRow = memo(function HostRow({
       name={`${HOST_KEY}.${index}.is_disabled`}
       render={({ field }) => (
         <Switch
+          aria-label={t("hostsDialog.injection.enabled")}
           colorScheme="primary"
           isChecked={!field.value}
           onChange={(e) => field.onChange(!e.target.checked)}
@@ -258,14 +266,7 @@ export const HostRow = memo(function HostRow({
           <VStack flex="1" minW={0} p={3} spacing={2} align="stretch">
             <HStack justify="space-between" align="center">
               <HStack spacing={2} rowGap={2} wrap="wrap">
-                <Badge
-                  colorScheme="gray"
-                  fontSize="0.7rem"
-                  maxW="100%"
-                  isTruncated
-                >
-                  {inboundTag}
-                </Badge>
+                <Box minW={0} flex="1">{inboundSelect}</Box>
 
                 {botBadgeLabel && (
                   <Tooltip
@@ -405,20 +406,7 @@ export const HostRow = memo(function HostRow({
           whiteSpace="nowrap"
           w={columnWidths ? `${columnWidths.inbound}px` : undefined}
         >
-          <Tooltip label={inboundTag} placement="top">
-            <Badge
-              colorScheme="gray"
-              fontSize="0.7rem"
-              maxW={
-                columnWidths
-                  ? `${Math.max(columnWidths.inbound - 24, 0)}px`
-                  : "200px"
-              }
-              isTruncated
-            >
-              {inboundTag}
-            </Badge>
-          </Tooltip>
+          {inboundSelect}
         </Td>
 
         <Td
@@ -501,7 +489,7 @@ export const HostRow = memo(function HostRow({
       </>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [columnWidths, inboundTag, remark, address, botBadgeLabel, botBadgeTooltip]
+    [columnWidths, inboundSelect, remark, address, botBadgeLabel, botBadgeTooltip]
   );
 
   const renderTableLayout = () => (
@@ -574,6 +562,7 @@ export const HostRow = memo(function HostRow({
         proxyALPN={proxyALPN}
         proxyFingerprint={proxyFingerprint}
         hideRemarkAddress={!isTableView}
+        completeCatalog
         remark={remark}
       />
     </>

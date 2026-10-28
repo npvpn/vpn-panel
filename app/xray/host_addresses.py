@@ -1,6 +1,11 @@
 from app.models.node import NodeStatus
 
 
+def addresses_from_nodes(host) -> bool:
+    """Явный входной пул сильнее статического адреса хоста."""
+    return getattr(host, "balancer_nodes_source", "host") == "selected" or not bool(host.address)
+
+
 def visible_nodes(host) -> list:
     """Ноды хоста, которые он реально «представляет» клиенту.
 
@@ -8,7 +13,9 @@ def visible_nodes(host) -> list:
     строятся по ОДНОМУ И ТОМУ ЖЕ множеству нод — иначе БС-признак/БС-блокировка
     хоста могут относиться к ноде, чей адрес в подписку уже не попадает.
 
-    - статический host.address (в т.ч. домен-маскировка) → хост отдаёт этот адрес
+    - selected → выбранные входные ноды, кроме disabled, по id; статический
+      адрес и прежние downstream-ноды не участвуют;
+    - в режиме host статический host.address (в т.ч. домен-маскировка) → хост отдаёт этот адрес
       всегда, за ним стоят ВСЕ привязанные ноды, включая disabled: disabled в панели
       не значит, что сервер физически выключен, и БС-лимит по такой ноде обходить
       нельзя;
@@ -21,6 +28,10 @@ def visible_nodes(host) -> list:
     для формы закрепления и валидация /pins, NPVPN-2072) должны видеть тот же
     набор нод, что и рендер подписки, а не отдельно собранную копию.
     """
+    if getattr(host, "balancer_nodes_source", "host") == "selected":
+        return sorted(
+            (node for node in host.balancer_nodes if node.status != NodeStatus.disabled), key=lambda node: node.id
+        )
     if host.address:
         return list(host.nodes)
     return [node for node in host.nodes if node.status != NodeStatus.disabled]
@@ -29,10 +40,10 @@ def visible_nodes(host) -> list:
 def resolve_host_addresses(host) -> list[str]:
     """Адреса хоста для подписки.
 
-    Приоритет у статического host.address (обратная совместимость). Если он
-    пуст — собираем Node.address связанных нод (см. visible_nodes).
+    selected использует только отдельный входной пул. В режиме host приоритет
+    у статического address, иначе Node.address связанных нод (см. visible_nodes).
     """
-    if host.address:
+    if not addresses_from_nodes(host):
         return [i.strip() for i in host.address.split(",")]
     return [node.address for node in visible_nodes(host)]
 

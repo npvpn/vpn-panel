@@ -3,8 +3,17 @@
 // подделкой DOM / Chatwoot SDK / fetch и печатает итоговое состояние JSON-ом.
 // Зависимостей нет — только встроенные модули Node.
 //
-// Вход (argv[2], JSON): { search, identityOk, roots: [{ mode, tgUrl, visible }], clicks: [[rootIndex, target]] }
-// target: "toggle" | "chat". Выход: { identityCalls, chatOpened, setUser, roots: [{ listOpen, status }] }.
+// Вход (argv[2], JSON): { search, identityOk, chatwootError, lastToken, sdk, readyDelay, roots: [{ mode, tgUrl, visible }], clicks: [[rootIndex, target]] }
+// target: "toggle" | "chat" | "tg" | "escape" (клики — по очереди, с паузой);
+// chatwootError — Chatwoot отклоняет setUser (как SET_USER_ERROR);
+// lastToken — подписка, открытая в этом браузере раньше; storageBroken — localStorage бросает
+// исключение (приватный режим); storageFull — не пишет (QuotaExceededError), но читает и удаляет;
+// sdk: "present" (уже на странице) | "load" (скрипт грузится) | "failOnce" (первая загрузка
+// скрипта падает, вторая — нет); otherTabDuringLoad — пока грузится скрипт, другая вкладка
+// открыла чат своей подписки (в localStorage её токен);
+// readyDelay — через сколько мс после run() виджет присылает chatwoot:ready.
+// Выход: { identityCalls, scriptLoads, chatOpened, chatClosed, setUser, cookiesCleared, storedToken,
+//          roots: [{ listOpen, status, chatLoading, toggleLoading }] }.
 'use strict';
 
 const fs = require('node:fs');
@@ -61,41 +70,88 @@ function makeRoot({ mode, tgUrl = '', visible = true }) {
     chat: { base_url: 'https://chat.test', website_token: 'wt', identity_url: 'https://bot.test/identity', bot_id: 7 },
   });
   const toggle = new FakeEl({ visible });
+  const tgLink = new FakeEl({ visible });
   const list = new FakeEl({ visible });
   list.hidden = true;
   const status = new FakeEl();
   status.hidden = true;
   root.parts = { 'script[data-support-config]': cfg, '[data-support-toggle]': toggle, '[data-support-list]': list, '[data-support-status]': status };
   if (mode === 'menu') { root.parts['[data-support-chat]'] = new FakeEl({ visible }); }
+  if (tgUrl) { root.parts['a.support-menu__item'] = tgLink; }
   return root;
 }
 
 const roots = scenario.roots.map(makeRoot);
-const state = { identityCalls: 0, chatOpened: false, setUser: null };
+const state = { identityCalls: 0, scriptLoads: 0, chatOpened: false, chatClosed: false, setUser: null, cookiesCleared: [] };
+const storage = scenario.lastToken ? { cw_sub_token: scenario.lastToken } : {};
 
+// Скрипт SDK: «загружается» асинхронно; при sdk: "failOnce" первая попытка падает.
 const document = Object.assign(makeTarget(), {
-  head: { appendChild() {} },
-  createElement: () => ({}),
+  head: {
+    appendChild(script) {
+      state.scriptLoads += 1;
+      const failed = scenario.sdk === 'failOnce' && state.scriptLoads === 1;
+      setTimeout(() => {
+        if (failed) { script.onerror(); return; }
+        if (scenario.otherTabDuringLoad) { storage.cw_sub_token = 'OTHER'; }
+        window.chatwootSDK = sdk;
+        script.onload();
+      }, 0);
+    },
+  },
+  createElement: () => ({ remove() {} }),
   querySelectorAll: (selector) => (selector === '[data-support-menu]' ? roots : []),
+});
+
+// скрипт стирает cookie Chatwoot записью «имя=; Max-Age=0»; Object.assign сеттер
+// не переносит — задаём отдельно
+Object.defineProperty(document, 'cookie', {
+  set(value) { state.cookiesCleared.push(value.split('=')[0]); },
 });
 
 const window = Object.assign(makeTarget(), {
   location: { search: scenario.search || '' },
+  localStorage: {
+    getItem: (key) => {
+      if (scenario.storageBroken) { throw new Error('SecurityError'); }
+      return key in storage ? storage[key] : null;
+    },
+    setItem: (key, value) => {
+      if (scenario.storageBroken) { throw new Error('SecurityError'); }
+      if (scenario.storageFull) { throw new Error('QuotaExceededError'); }
+      storage[key] = String(value);
+    },
+    removeItem: (key) => {
+      if (scenario.storageBroken) { throw new Error('SecurityError'); }
+      delete storage[key];
+    },
+  },
   innerHeight: 800,
   matchMedia: () => ({ matches: true }),
   getComputedStyle: () => ({ position: 'static', fontSize: '16px' }),
-  // SDK уже на странице: run() поднимает виджет и шлёт chatwoot:ready, как настоящий.
-  chatwootSDK: {
+});
+
+// SDK: run() поднимает виджет и шлёт chatwoot:ready, как настоящий.
+const sdk = {
     run() {
       window.$chatwoot = {
-        setUser(identifier, attrs) { state.setUser = { identifier, ...attrs }; },
+        setUser(identifier, attrs) {
+          state.setUser = { identifier, ...attrs };
+          // Chatwoot отвечает на setUser асинхронно
+          if (scenario.chatwootError) {
+            setTimeout(() => window.dispatch('chatwoot:error', { detail: 'SET_USER_ERROR' }), 0);
+          }
+        },
         setCustomAttributes() {},
-        toggle(action) { if (action === 'open') { state.chatOpened = true; } },
+        toggle(action) {
+          if (action === 'open') { state.chatOpened = true; }
+          if (action === 'close') { state.chatClosed = true; }
+        },
       };
-      setTimeout(() => window.dispatch('chatwoot:ready'), 0);
+      setTimeout(() => window.dispatch('chatwoot:ready'), scenario.readyDelay || 0);
     },
-  },
-});
+};
+if (!scenario.sdk || scenario.sdk === 'present') { window.chatwootSDK = sdk; }
 
 async function fakeFetch(url, opts) {
   state.identityCalls += 1;
@@ -109,20 +165,36 @@ const context = vm.createContext({
 });
 vm.runInContext(fs.readFileSync(SCRIPT, 'utf8'), context, { filename: SCRIPT });
 
-document.dispatch('DOMContentLoaded');
-for (const [index, target] of scenario.clicks || []) {
-  const root = roots[index];
-  const el = target === 'chat' ? root.parts['[data-support-chat]'] : root.parts['[data-support-toggle]'];
-  el.dispatch('click', { target: el });
-}
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const TARGETS = { chat: '[data-support-chat]', tg: 'a.support-menu__item', toggle: '[data-support-toggle]' };
 
-// Дать отработать промисам (SDK → ready → identity → setUser → toggle).
-setTimeout(() => {
+(async () => {
+  document.dispatch('DOMContentLoaded');
+  // По очереди, с паузой — между кликами успевают отработать промисы (повтор после сбоя и т. п.)
+  for (const [index, target] of scenario.clicks || []) {
+    if (target === 'escape') {
+      document.dispatch('keydown', { key: 'Escape' });
+    } else {
+      const el = roots[index].parts[TARGETS[target]];
+      el.dispatch('click', { target: el });
+    }
+    await sleep(10);
+  }
+
+  // Дать отработать промисам (SDK → ready → identity → setUser → toggle).
+  await sleep(80);
+  const loading = (el) => !!el && el.classes.has('is-loading');
   process.stdout.write(JSON.stringify({
     ...state,
+    storedToken: storage.cw_sub_token || null,
     roots: roots.map((r) => ({
       listOpen: !r.parts['[data-support-list]'].hidden,
       status: r.parts['[data-support-status]'].hidden ? '' : r.parts['[data-support-status]'].textContent,
+      chatLoading: loading(r.parts['[data-support-chat]']),
+      toggleLoading: loading(r.parts['[data-support-toggle]']),
     })),
-  }));
-}, 50);
+  }), () => {
+    // таймеры скрипта (ожидание chatwoot:ready до 15 с) держали бы процесс — результат уже записан
+    process.exit(0);
+  });
+})();

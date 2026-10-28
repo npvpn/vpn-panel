@@ -8,11 +8,13 @@ from uuid import UUID
 
 from jinja2.exceptions import TemplateNotFound
 
+from app.models.host_balancing import HostBalancing
 from app.subscription.funcs import get_grpc_gun, get_grpc_multi
 from app.templates import render_template
 from app.utils.helpers import UUIDEncoder
 from app.xray.client_configs import select_config
 from app.xray.host_balancer import apply_host_balancer, proxy_outbound_tag
+from app.xray.host_injection import InjectionError, strip_injection_directives, validate_composed_tag_graph
 from config import (
     EXTERNAL_CONFIG,
     GRPC_USER_AGENT_TEMPLATE,
@@ -448,16 +450,15 @@ class V2rayJsonConfig(str):
             self._file_template_cache = json.loads(render_template(V2RAY_SUBSCRIPTION_TEMPLATE))
         return self._file_template_cache
 
-    def _assemble_config(self, remarks, outbounds, client_config_id=None):
-        # Документ самодостаточен: берём его целиком и лишь дописываем в него этот
-        # сервер. remarks/outbounds — инъекция сервера, а не подмена секции конфига:
-        # без неё в подписке не будет точки подключения.
+    def base_template(self, client_config_id=None):
         base = select_config(self.configs, self.default_id, client_config_id)
-        if base is None:
-            base = self._file_template()
+        return base if base is not None else self._file_template()
+
+    def _assemble_config(self, remarks, outbounds, client_config_id=None):
+        base = self.base_template(client_config_id)
         # deepcopy обязателен: select_config отдаёт ОБЩИЙ объект из карты, а дальше
         # он мутируется — без копии второй сервер унёс бы outbounds первого.
-        json_template = copy.deepcopy(base)
+        json_template = strip_injection_directives(base)
         json_template["remarks"] = remarks
         # .get: конфиг без ключа outbounds — валидный JSON-объект, рендер на нём падать не должен.
         json_template["outbounds"] = outbounds + json_template.get("outbounds", [])
@@ -466,8 +467,47 @@ class V2rayJsonConfig(str):
     def add_config(self, remarks, outbounds, client_config_id=None):
         self.config.append(self._assemble_config(remarks, outbounds, client_config_id))
 
+    def build_endpoint_outbounds(self, endpoint, tag: str, *, helper_tag: str):
+        inbound = endpoint.inbound
+        dialer = self.make_dialer_outbound(inbound.get("fragment_setting"), inbound.get("noise_setting"))
+        if dialer:
+            dialer["tag"] = helper_tag
+        outbound = self._build_proxy_outbound(
+            tag, endpoint.address, inbound, endpoint.settings, helper_tag if dialer else ""
+        )
+        return [outbound, dialer] if dialer else [outbound]
+
+    def add_composed(self, remark, endpoints, client_config_id=None, balancing=None):
+        outbounds = []
+        participants = [tag for tag, _ in endpoints]
+        for index, (tag, endpoint) in enumerate(endpoints):
+            outbounds.extend(self.build_endpoint_outbounds(endpoint, tag, helper_tag=f"__npvpn_dialer_{index}"))
+        config = self._assemble_config(remark, outbounds, client_config_id)
+        tags = [outbound.get("tag") for outbound in config["outbounds"] if outbound.get("tag")]
+        if len(tags) != len(set(tags)):
+            raise InjectionError("outbound_tag_collision")
+        managed = balancing is not None or not (config.get("routing") or {}).get("balancers")
+        if managed:
+            others = set(tags) - set(participants)
+            if any(other.startswith(tag) for tag in participants for other in others):
+                raise InjectionError("outbound_prefix_collision")
+            balancing = balancing or HostBalancing(strategy="leastPing").model_dump(mode="json")
+            config = apply_host_balancer(config, balancing, participants=participants)
+        validate_composed_tag_graph(config)
+        self.config.append(config)
+
+    def add_blocked(self, remark, stub):
+        # Dedicated placeholder cannot inherit injection/routing or expose real endpoints.
+        self.config.append({"remarks": remark, "outbounds": [{"tag": "proxy", "protocol": "blackhole"}]})
+
     def add_balanced(
-        self, remark: str, addresses: list, inbound: dict, settings: dict, client_config_id: int | None = None
+        self,
+        remark: str,
+        addresses: list,
+        inbound: dict,
+        settings: dict,
+        client_config_id: int | None = None,
+        balancing: dict | None = None,
     ):
         """Multi-address хост → один конфиг с N proxy-outbound + xray-балансировщик."""
         dialer = self.make_dialer_outbound(inbound["fragment_setting"], inbound["noise_setting"])
@@ -479,7 +519,7 @@ class V2rayJsonConfig(str):
         if dialer:
             outbounds.append(dialer)
         config = self._assemble_config(remark, outbounds, client_config_id)
-        self.config.append(apply_host_balancer(config))
+        self.config.append(apply_host_balancer(config, balancing))
 
     def render(self, reverse=False):
         if reverse:

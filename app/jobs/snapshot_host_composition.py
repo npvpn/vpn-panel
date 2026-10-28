@@ -29,9 +29,10 @@ from sqlalchemy.orm import selectinload
 from app import logger, scheduler
 from app.db import GetDB, crud
 from app.db.models import ProxyHost
+from app.services.xray_templates import composition_classifier
 from app.subscription.address_context_builder import day_index
 from app.xray.address_policy import ARCHIVE_RETENTION_DAYS
-from app.xray.host_addresses import resolve_host_addresses, resolve_host_node_ids
+from app.xray.host_addresses import addresses_from_nodes, resolve_host_addresses, resolve_host_node_ids
 from config import JOB_SNAPSHOT_HOST_COMPOSITION_INTERVAL
 
 # Тот же горизонт, что и у остального архива журнала NPVPN-2072 (M4) — единый
@@ -54,7 +55,7 @@ def _host_payload(host: ProxyHost) -> list[dict]:
     указывать её вовсе.
     """
     addresses = resolve_host_addresses(host)
-    if host.address:
+    if not addresses_from_nodes(host):
         return [{"node_id": None, "address": address} for address in addresses]
     node_ids = resolve_host_node_ids(host)
     return [{"node_id": node_id, "address": address} for node_id, address in zip(node_ids, addresses, strict=True)]
@@ -69,10 +70,22 @@ def snapshot_host_composition() -> None:
         # без неё _host_payload бьёт по БД за нодами отдельным SELECT на каждый
         # хост (N+1) в джобе, которая крутится каждый час (NPVPN-2072).
         hosts = (
-            db.query(ProxyHost).options(selectinload(ProxyHost.nodes)).filter(ProxyHost.is_disabled.isnot(True)).all()
+            db.query(ProxyHost)
+            .options(selectinload(ProxyHost.nodes), selectinload(ProxyHost.balancer_nodes))
+            .filter(ProxyHost.is_disabled.isnot(True))
+            .all()
         )
+        classify = composition_classifier(db)
         for host in hosts:
-            crud.write_host_composition_snapshot(db, epoch, host.id, _host_payload(host))
+            composite = classify(host)
+            crud.write_host_composition_snapshot(
+                db,
+                epoch,
+                host.id,
+                [] if composite else _host_payload(host),
+                is_composite=composite,
+                is_hidden=bool(host.is_hidden),
+            )
 
         # write_host_composition_snapshot сама не коммитит — коммитим здесь, один
         # раз на весь проход (десятки хостов), а не по одному на хост. КОММИТ

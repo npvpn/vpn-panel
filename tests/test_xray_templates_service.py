@@ -11,6 +11,7 @@ import sys
 import types
 
 import pytest
+from pydantic import TypeAdapter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -28,6 +29,7 @@ from app.db.models import (  # noqa: E402
     XrayTemplate,
     XrayTemplateVersion,
 )
+from app.models.xray_template import XrayTemplateDocument  # noqa: E402
 from app.services import xray_templates as svc  # noqa: E402
 from app.services.xray_templates import get_active_bodies  # noqa: E402
 
@@ -372,3 +374,36 @@ def test_list_documents_reports_default_as_not_deletable(db):
     assert by_slug[DEFAULT_CONFIG_SLUG]["deletable"] is False
     assert by_slug[BS_CONFIG_SLUG]["deletable"] is True
     assert all("kind" not in doc for doc in docs)
+
+
+def test_documents_include_effective_file_fallback_injection(db, monkeypatch):
+    import importlib
+
+    from app.models.host_injection import HostInjection
+
+    directive = {"addVirtualHostAsOutbound": True}
+    templates = importlib.import_module("app.templates")
+    monkeypatch.setattr(templates, "render_template", lambda *a, **kw: json.dumps({"npvpn": directive}))
+    db.query(XrayTemplateVersion).delete()
+    db.commit()
+    svc.invalidate(db)
+    response = TypeAdapter(list[XrayTemplateDocument])
+    docs = response.dump_python(response.validate_python(svc.list_documents(db)), mode="json")
+    assert docs
+    for document in docs:
+        assert document["body"] == ""
+        assert document["effective_injection"] == HostInjection.model_validate(directive).model_dump(mode="json")
+        assert document["effective_injection_error"] is False
+
+
+@pytest.mark.parametrize("body,has_error", [("{}", False), ('{"npvpn":{"injectHosts":"invalid"}}', True)])
+def test_document_response_preserves_absent_or_invalid_injection(db, body, has_error):
+    template_id = _template_id(db, DEFAULT_CONFIG_SLUG)
+    _version(db, template_id, 100, body)
+    db.commit()
+    svc.invalidate(db)
+    response = TypeAdapter(list[XrayTemplateDocument])
+    documents = response.dump_python(response.validate_python(svc.list_documents(db)), mode="json")
+    document = next(item for item in documents if item["id"] == template_id)
+    assert document["effective_injection"] is None
+    assert document["effective_injection_error"] is has_error

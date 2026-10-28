@@ -318,3 +318,46 @@ def test_host_order_in_list_matters():
     a, b = {"remark": "a"}, {"remark": "b"}
     assert _same([a, b], [a, b]) is True
     assert _same([a, b], [b, a]) is False
+
+
+@pytest.mark.parametrize("network", ["tcp", "grpc", "ws"])
+def test_inbound_change_keeps_host_identity_and_clears_xhttp_extra(network):
+    """Смена транспорта меняет только inbound и очищает несовместимый Extra."""
+    host = {
+        "host_id": 12,
+        "inbound_tag": "OLD",
+        "order": 7,
+        "remark": "Austria",
+        "port": 443,
+        "sni": "edge.example",
+        "node_ids": [3],
+        "bot_usernames": ["a"],
+        "rented_bot_usernames": ["a"],
+        "xhttp_extra": '{"headers":{"X-Test":"value"}}',
+    }
+    result = _run({"op": "changeInbound", "host": host, "tag": "NEW", "network": network})
+    assert result["host"] == {**host, "inbound_tag": "NEW", "xhttp_extra": ""}
+    assert result["original"] == host
+
+
+@pytest.mark.parametrize("network", ["xhttp", "splithttp"])
+def test_inbound_change_between_xhttp_inbounds_keeps_extra(network):
+    """XHTTP-совместимые inbound сохраняют Extra без скрытого сброса."""
+    host = {"inbound_tag": "OLD", "xhttp_extra": '{"mode":"auto"}'}
+    result = _run({"op": "changeInbound", "host": host, "tag": "NEW", "network": network})
+    assert result["host"] == {**host, "inbound_tag": "NEW"}
+
+
+def test_returning_to_xhttp_does_not_restore_cleared_extra():
+    """Переход обратно не восстанавливает Extra из скрытого старого черновика."""
+    host = {"host_id": 12, "inbound_tag": "XHTTP", "xhttp_extra": '{"mode":"auto"}'}
+    moved = _run({"op": "changeInbound", "host": host, "tag": "TCP", "network": "tcp"})["host"]
+    restored = _run({"op": "changeInbound", "host": moved, "tag": "XHTTP", "network": "xhttp"})["host"]
+    assert restored == {"host_id": 12, "inbound_tag": "XHTTP", "xhttp_extra": ""}
+
+
+def test_changed_inbound_stays_visible_under_original_filter():
+    """Селект не убирает редактируемую строку из-под курсора при активном фильтре."""
+    assert _visible(
+        ([_host(inbound="OLD")], {"inboundFilter": "OLD"}), ([_host(inbound="NEW")], {"inboundFilter": "OLD"})
+    ) == [[0], [0]]
