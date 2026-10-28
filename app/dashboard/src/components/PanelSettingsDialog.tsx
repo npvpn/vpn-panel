@@ -24,7 +24,6 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
-  SimpleGrid,
   Tab,
   Table,
   Tbody,
@@ -37,9 +36,9 @@ import {
   TabPanels,
   Tabs,
   Text,
-  Textarea,
   Tooltip,
   VStack,
+  useBreakpointValue,
   useDisclosure,
   useToast,
 } from "@chakra-ui/react";
@@ -52,11 +51,13 @@ import {
   SubscriptionMessageServerField,
 } from "types/PanelSettings";
 import { DeleteIcon } from "./DeleteUserModal";
+import { FIELD_SCENARIO, HappPreviewScenario } from "./happPreview/happPreview";
 import {
-  FIELD_SCENARIO,
-  HappPreviewScenario,
-} from "./happPreview/happPreview";
-import { HappSubscriptionPreview } from "./happPreview/HappSubscriptionPreview";
+  HappScenarioSelect,
+  HappSubscriptionPreview,
+} from "./happPreview/HappSubscriptionPreview";
+import { AutoResizeTextarea } from "./AutoResizeTextarea";
+import { EyeIcon } from "@heroicons/react/24/outline";
 import { XrayTemplatesPanel } from "./XrayTemplatesPanel";
 
 const GB_IN_BYTES = 1073741824;
@@ -135,7 +136,6 @@ const mergeSettings = (
 // Индекс вкладки v2ray-json: у XrayTemplatesPanel своё сохранение,
 // общий футер модалки к нему отношения не имеет.
 const V2RAY_TAB_INDEX = 2;
-const MESSAGES_TAB_INDEX = 1;
 
 const SUBSCRIPTION_FIELDS = [
   "sub_routing_happ",
@@ -251,6 +251,9 @@ export const PanelSettingsDialog: FC = () => {
   const [previewScenario, setPreviewScenario] =
     useState<HappPreviewScenario>("normal");
   const discardConfirm = useDisclosure();
+  // узкий экран: предпросмотр открывается поверх по кнопке, а не стоит под полями
+  const previewOverlay = useDisclosure();
+  const isWide = useBreakpointValue({ base: false, xl: true });
   const cancelResetRef = useRef<HTMLButtonElement>(null);
   const cancelDiscardRef = useRef<HTMLButtonElement>(null);
 
@@ -382,10 +385,10 @@ export const PanelSettingsDialog: FC = () => {
     updateSettings({ [field]: toList(value) });
   };
 
-  const focusPreviewField = (field: string) => {
-    const scenario = FIELD_SCENARIO[field];
-    if (scenario) setPreviewScenario(scenario);
-  };
+  // видны только тексты выбранного сценария; скрытые поля остаются в форме,
+  // несохранённые правки в них не теряются
+  const fieldDisplay = (field: string) =>
+    FIELD_SCENARIO[field] === previewScenario ? undefined : "none";
 
   const buildResetDiff = (target: PanelSettings): ResetDiffRow[] => {
     const empty = t("panelSettings.emptyValue");
@@ -418,8 +421,14 @@ export const PanelSettingsDialog: FC = () => {
       });
     };
     addMessageText("sub_client_note", "botSettings.subClientNote");
-    addMessageText("sub_revoked_announce_text", "botSettings.subRevokedAnnounceText");
-    addMessageText("sub_expired_announce_text", "botSettings.subExpiredAnnounceText");
+    addMessageText(
+      "sub_revoked_announce_text",
+      "botSettings.subRevokedAnnounceText"
+    );
+    addMessageText(
+      "sub_expired_announce_text",
+      "botSettings.subExpiredAnnounceText"
+    );
     addMessageText(
       "sub_device_limit_announce_text",
       "botSettings.subDeviceLimitAnnounceText"
@@ -428,7 +437,10 @@ export const PanelSettingsDialog: FC = () => {
       "sub_unsupported_client_announce_text",
       "botSettings.subUnsupportedClientAnnounceText"
     );
-    addMessageText("sub_bs_limit_announce_text", "botSettings.subBsLimitAnnounceText");
+    addMessageText(
+      "sub_bs_limit_announce_text",
+      "botSettings.subBsLimitAnnounceText"
+    );
     const addMessageList = (
       field: SubscriptionMessageServerField,
       labelKey: string
@@ -441,8 +453,14 @@ export const PanelSettingsDialog: FC = () => {
         to: [preview(toText(target[field]), empty)],
       });
     };
-    addMessageList("sub_revoked_server_text", "botSettings.subRevokedServerText");
-    addMessageList("sub_expired_server_text", "botSettings.subExpiredServerText");
+    addMessageList(
+      "sub_revoked_server_text",
+      "botSettings.subRevokedServerText"
+    );
+    addMessageList(
+      "sub_expired_server_text",
+      "botSettings.subExpiredServerText"
+    );
     addMessageList(
       "sub_device_limit_server_text",
       "botSettings.subDeviceLimitServerText"
@@ -451,7 +469,10 @@ export const PanelSettingsDialog: FC = () => {
       "sub_unsupported_client_server_text",
       "botSettings.subUnsupportedClientServerText"
     );
-    addMessageList("sub_bs_limit_server_text", "botSettings.subBsLimitServerText");
+    addMessageList(
+      "sub_bs_limit_server_text",
+      "botSettings.subBsLimitServerText"
+    );
     if (settings.bs_monthly_limit !== target.bs_monthly_limit) {
       rows.push({
         tab: "subscription",
@@ -530,7 +551,9 @@ export const PanelSettingsDialog: FC = () => {
           isClosable: true,
           position: "top",
         });
-        onEditingPanelSettings(false);
+        // NPVPN-2235: окно не закрываем — админ остаётся на той же вкладке и том же
+        // превью (например, «Подписка отозвана»). Раньше после сохранения окно
+        // закрывалось и при следующем открытии сбрасывалось на первую вкладку
       })
       .catch((err) => showValidationErrorToast(err))
       .finally(() => setSaving(false));
@@ -554,21 +577,49 @@ export const PanelSettingsDialog: FC = () => {
       <Modal
         isOpen={isEditingPanelSettings}
         onClose={requestClose}
-        size={tabIndex === MESSAGES_TAB_INDEX ? "6xl" : "4xl"}
+        // одна ширина на всех вкладках — окно не прыгает при переключении;
+        // широкая из-за предпросмотра HAPP на «Сообщениях». На мобилке — на весь
+        // экран, как окно настроек хоста
+        size={{ base: "full", md: "6xl" }}
         scrollBehavior="inside"
       >
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>{t("panelSettings.title")}</ModalHeader>
+          {/* на телефоне поля уже, чтобы все четыре вкладки помещались */}
+          <ModalHeader px={{ base: 4, md: 6 }}>
+            {t("panelSettings.title")}
+          </ModalHeader>
           <ModalCloseButton />
-          <ModalBody sx={thinScrollbarSx}>
+          <ModalBody px={{ base: 4, md: 6 }} sx={thinScrollbarSx}>
             <Tabs
               variant="enclosed"
               colorScheme="primary"
               index={tabIndex}
               onChange={setTabIndex}
             >
-              <TabList overflowX="auto" overflowY="hidden" whiteSpace="nowrap">
+              {/* вкладки закреплены под заголовком: на длинных «Сообщениях» не
+                  нужно листать вверх, чтобы переключиться. Фон — как у окна */}
+              <TabList
+                overflowX="auto"
+                overflowY="hidden"
+                whiteSpace="nowrap"
+                position="sticky"
+                // у тела окна отступ сверху 0.5rem: без сдвига в щель над
+                // вкладками просвечивал уезжающий контент
+                top="-0.5rem"
+                mt="-0.5rem"
+                pt="0.5rem"
+                zIndex={2}
+                bg="white"
+                _dark={{ bg: "gray.700" }}
+                // на телефоне все четыре вкладки помещаются без прокрутки
+                sx={{
+                  "& > button": {
+                    px: { base: 1.5, md: 4 },
+                    fontSize: { base: "13px", md: "md" },
+                  },
+                }}
+              >
                 <Tab>
                   {t("panelSettings.tabSubscription")}
                   {subscriptionDirty && dirtyDot}
@@ -614,7 +665,7 @@ export const PanelSettingsDialog: FC = () => {
                       <FormLabel>
                         {t("panelSettings.subCustomHeaders")}
                       </FormLabel>
-                      <Textarea
+                      <AutoResizeTextarea
                         value={settings.sub_custom_headers}
                         placeholder={"routing-enable: 0"}
                         onChange={(e) =>
@@ -660,6 +711,12 @@ export const PanelSettingsDialog: FC = () => {
                     gap={6}
                   >
                     <VStack spacing={4} align="stretch" flex="1" minW={0}>
+                      <Box maxW={{ md: "320px" }}>
+                        <HappScenarioSelect
+                          value={previewScenario}
+                          onChange={setPreviewScenario}
+                        />
+                      </Box>
                       <Box
                         border="1px solid"
                         borderColor="inherit"
@@ -676,16 +733,15 @@ export const PanelSettingsDialog: FC = () => {
                           >
                             {t("botSettings.announceMessages")}
                           </Text>
-                          <FormControl>
+                          <FormControl
+                            display={fieldDisplay("sub_client_note")}
+                          >
                             <FormLabel>
                               {t("botSettings.subClientNote")}
                             </FormLabel>
-                            <Textarea
+                            <AutoResizeTextarea
                               value={settings.sub_client_note}
                               minH="90px"
-                              onFocus={() =>
-                                focusPreviewField("sub_client_note")
-                              }
                               onChange={(e) =>
                                 updateSettings({
                                   sub_client_note: e.target.value,
@@ -693,97 +749,88 @@ export const PanelSettingsDialog: FC = () => {
                               }
                             />
                           </FormControl>
-                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                            <FormControl>
-                              <FormLabel>
-                                {t("botSettings.subRevokedAnnounceText")}
-                              </FormLabel>
-                              <Textarea
-                                value={settings.sub_revoked_announce_text}
-                                minH="90px"
-                                onFocus={() =>
-                                  focusPreviewField("sub_revoked_announce_text")
-                                }
-                                onChange={(e) =>
-                                  updateSettings({
-                                    sub_revoked_announce_text: e.target.value,
-                                  })
-                                }
-                              />
-                            </FormControl>
-                            <FormControl>
-                              <FormLabel>
-                                {t("botSettings.subExpiredAnnounceText")}
-                              </FormLabel>
-                              <Textarea
-                                value={settings.sub_expired_announce_text}
-                                minH="90px"
-                                onFocus={() =>
-                                  focusPreviewField("sub_expired_announce_text")
-                                }
-                                onChange={(e) =>
-                                  updateSettings({
-                                    sub_expired_announce_text: e.target.value,
-                                  })
-                                }
-                              />
-                            </FormControl>
-                          </SimpleGrid>
-                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                            <FormControl>
-                              <FormLabel>
-                                {t(
-                                  "botSettings.subUnsupportedClientAnnounceText"
-                                )}
-                              </FormLabel>
-                              <Textarea
-                                value={
-                                  settings.sub_unsupported_client_announce_text
-                                }
-                                minH="90px"
-                                onFocus={() =>
-                                  focusPreviewField(
-                                    "sub_unsupported_client_announce_text"
-                                  )
-                                }
-                                onChange={(e) =>
-                                  updateSettings({
-                                    sub_unsupported_client_announce_text:
-                                      e.target.value,
-                                  })
-                                }
-                              />
-                            </FormControl>
-                            <FormControl>
-                              <FormLabel>
-                                {t("botSettings.subDeviceLimitAnnounceText")}
-                              </FormLabel>
-                              <Textarea
-                                value={settings.sub_device_limit_announce_text}
-                                minH="90px"
-                                onFocus={() =>
-                                  focusPreviewField(
-                                    "sub_device_limit_announce_text"
-                                  )
-                                }
-                                onChange={(e) =>
-                                  updateSettings({
-                                    sub_device_limit_announce_text:
-                                      e.target.value,
-                                  })
-                                }
-                              />
-                            </FormControl>
-                          </SimpleGrid>
-                          <FormControl>
+                          <FormControl
+                            display={fieldDisplay("sub_revoked_announce_text")}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subRevokedAnnounceText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={settings.sub_revoked_announce_text}
+                              minH="90px"
+                              onChange={(e) =>
+                                updateSettings({
+                                  sub_revoked_announce_text: e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay("sub_expired_announce_text")}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subExpiredAnnounceText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={settings.sub_expired_announce_text}
+                              minH="90px"
+                              onChange={(e) =>
+                                updateSettings({
+                                  sub_expired_announce_text: e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay(
+                              "sub_unsupported_client_announce_text"
+                            )}
+                          >
+                            <FormLabel>
+                              {t(
+                                "botSettings.subUnsupportedClientAnnounceText"
+                              )}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={
+                                settings.sub_unsupported_client_announce_text
+                              }
+                              minH="90px"
+                              onChange={(e) =>
+                                updateSettings({
+                                  sub_unsupported_client_announce_text:
+                                    e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay(
+                              "sub_device_limit_announce_text"
+                            )}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subDeviceLimitAnnounceText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={settings.sub_device_limit_announce_text}
+                              minH="90px"
+                              onChange={(e) =>
+                                updateSettings({
+                                  sub_device_limit_announce_text:
+                                    e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay("sub_bs_limit_announce_text")}
+                          >
                             <FormLabel>
                               {t("botSettings.subBsLimitAnnounceText")}
                             </FormLabel>
-                            <Textarea
+                            <AutoResizeTextarea
                               value={settings.sub_bs_limit_announce_text}
-                              onFocus={() =>
-                                focusPreviewField("sub_bs_limit_announce_text")
-                              }
                               onChange={(e) =>
                                 updateSettings({
                                   sub_bs_limit_announce_text: e.target.value,
@@ -794,6 +841,9 @@ export const PanelSettingsDialog: FC = () => {
                         </VStack>
                       </Box>
                       <Box
+                        display={
+                          previewScenario === "normal" ? "none" : undefined
+                        }
                         border="1px solid"
                         borderColor="inherit"
                         borderRadius="md"
@@ -809,109 +859,98 @@ export const PanelSettingsDialog: FC = () => {
                           >
                             {t("botSettings.serverResponses")}
                           </Text>
-                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                            <FormControl>
-                              <FormLabel>
-                                {t("botSettings.subRevokedServerText")}
-                              </FormLabel>
-                              <Textarea
-                                value={listFieldTexts.sub_revoked_server_text}
-                                onFocus={() =>
-                                  focusPreviewField("sub_revoked_server_text")
-                                }
-                                onChange={(e) =>
-                                  updateListField(
-                                    "sub_revoked_server_text",
-                                    e.target.value
-                                  )
-                                }
-                              />
-                              <FormHelperText>
-                                {t("botSettings.serverTextHint")}
-                              </FormHelperText>
-                            </FormControl>
-                            <FormControl>
-                              <FormLabel>
-                                {t("botSettings.subExpiredServerText")}
-                              </FormLabel>
-                              <Textarea
-                                value={listFieldTexts.sub_expired_server_text}
-                                onFocus={() =>
-                                  focusPreviewField("sub_expired_server_text")
-                                }
-                                onChange={(e) =>
-                                  updateListField(
-                                    "sub_expired_server_text",
-                                    e.target.value
-                                  )
-                                }
-                              />
-                              <FormHelperText>
-                                {t("botSettings.serverTextHint")}
-                              </FormHelperText>
-                            </FormControl>
-                          </SimpleGrid>
-                          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                            <FormControl>
-                              <FormLabel>
-                                {t("botSettings.subDeviceLimitServerText")}
-                              </FormLabel>
-                              <Textarea
-                                value={
-                                  listFieldTexts.sub_device_limit_server_text
-                                }
-                                onFocus={() =>
-                                  focusPreviewField(
-                                    "sub_device_limit_server_text"
-                                  )
-                                }
-                                onChange={(e) =>
-                                  updateListField(
-                                    "sub_device_limit_server_text",
-                                    e.target.value
-                                  )
-                                }
-                              />
-                              <FormHelperText>
-                                {t("botSettings.serverTextHint")}
-                              </FormHelperText>
-                            </FormControl>
-                            <FormControl>
-                              <FormLabel>
-                                {t(
-                                  "botSettings.subUnsupportedClientServerText"
-                                )}
-                              </FormLabel>
-                              <Textarea
-                                value={
-                                  listFieldTexts.sub_unsupported_client_server_text
-                                }
-                                onFocus={() =>
-                                  focusPreviewField(
-                                    "sub_unsupported_client_server_text"
-                                  )
-                                }
-                                onChange={(e) =>
-                                  updateListField(
-                                    "sub_unsupported_client_server_text",
-                                    e.target.value
-                                  )
-                                }
-                              />
-                              <FormHelperText>
-                                {t("botSettings.serverTextHint")}
-                              </FormHelperText>
-                            </FormControl>
-                          </SimpleGrid>
-                          <FormControl>
+                          <FormControl
+                            display={fieldDisplay("sub_revoked_server_text")}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subRevokedServerText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={listFieldTexts.sub_revoked_server_text}
+                              onChange={(e) =>
+                                updateListField(
+                                  "sub_revoked_server_text",
+                                  e.target.value
+                                )
+                              }
+                            />
+                            <FormHelperText>
+                              {t("botSettings.serverTextHint")}
+                            </FormHelperText>
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay("sub_expired_server_text")}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subExpiredServerText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={listFieldTexts.sub_expired_server_text}
+                              onChange={(e) =>
+                                updateListField(
+                                  "sub_expired_server_text",
+                                  e.target.value
+                                )
+                              }
+                            />
+                            <FormHelperText>
+                              {t("botSettings.serverTextHint")}
+                            </FormHelperText>
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay(
+                              "sub_device_limit_server_text"
+                            )}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subDeviceLimitServerText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={
+                                listFieldTexts.sub_device_limit_server_text
+                              }
+                              onChange={(e) =>
+                                updateListField(
+                                  "sub_device_limit_server_text",
+                                  e.target.value
+                                )
+                              }
+                            />
+                            <FormHelperText>
+                              {t("botSettings.serverTextHint")}
+                            </FormHelperText>
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay(
+                              "sub_unsupported_client_server_text"
+                            )}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subUnsupportedClientServerText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={
+                                listFieldTexts.sub_unsupported_client_server_text
+                              }
+                              onChange={(e) =>
+                                updateListField(
+                                  "sub_unsupported_client_server_text",
+                                  e.target.value
+                                )
+                              }
+                            />
+                            <FormHelperText>
+                              {t("botSettings.serverTextHint")}
+                            </FormHelperText>
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay("sub_bs_limit_server_text")}
+                          >
                             <FormLabel>
                               {t("botSettings.subBsLimitServerText")}
                             </FormLabel>
-                            <Textarea
+                            <AutoResizeTextarea
                               value={listFieldTexts.sub_bs_limit_server_text}
-                              onFocus={() =>
-                                focusPreviewField("sub_bs_limit_server_text")
-                              }
                               onChange={(e) =>
                                 updateListField(
                                   "sub_bs_limit_server_text",
@@ -926,13 +965,41 @@ export const PanelSettingsDialog: FC = () => {
                         </VStack>
                       </Box>
                     </VStack>
-                    <Box flex={{ base: "1", xl: "0 0 430px" }} w="full">
+                    {/* на широком экране предпросмотр справа и остаётся на виду,
+                        пока листаешь тексты слева; на узком он под полями */}
+                    <Box
+                      display={{ base: "none", xl: "block" }}
+                      flex={{ base: "1", xl: "0 0 430px" }}
+                      w="full"
+                      position={{ xl: "sticky" }}
+                      // ниже закреплённых вкладок, чтобы не заезжать под них
+                      top={{ xl: "56px" }}
+                    >
                       <HappSubscriptionPreview
                         settings={settings}
                         scenario={previewScenario}
-                        onScenarioChange={setPreviewScenario}
                       />
                     </Box>
+                  </Flex>
+                  {/* узкий экран: кнопка всегда видна внизу, пока листаешь тексты */}
+                  <Flex
+                    display={{ base: "flex", xl: "none" }}
+                    position="sticky"
+                    bottom={0}
+                    justify="flex-end"
+                    pt={3}
+                    pointerEvents="none"
+                  >
+                    <Button
+                      pointerEvents="auto"
+                      size="sm"
+                      colorScheme="primary"
+                      shadow="md"
+                      leftIcon={<EyeIcon width="16px" />}
+                      onClick={previewOverlay.onOpen}
+                    >
+                      {t("panelSettings.happPreview")}
+                    </Button>
                   </Flex>
                 </TabPanel>
                 <TabPanel px={0}>
@@ -1002,7 +1069,7 @@ export const PanelSettingsDialog: FC = () => {
             </Tabs>
           </ModalBody>
           {tabIndex !== V2RAY_TAB_INDEX && (
-            <ModalFooter justifyContent="space-between">
+            <ModalFooter px={{ base: 4, md: 6 }} justifyContent="space-between">
               <Button
                 variant="ghost"
                 colorScheme="red"
@@ -1029,6 +1096,26 @@ export const PanelSettingsDialog: FC = () => {
               </HStack>
             </ModalFooter>
           )}
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        // окно расширили до десктопа — превью уже стоит справа, оверлей не нужен
+        isOpen={previewOverlay.isOpen && !isWide}
+        onClose={previewOverlay.onClose}
+        size="full"
+        scrollBehavior="inside"
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalCloseButton />
+          <ModalBody pt={3}>
+            <HappSubscriptionPreview
+              settings={settings}
+              scenario={previewScenario}
+              onScenarioChange={setPreviewScenario}
+            />
+          </ModalBody>
         </ModalContent>
       </Modal>
 
