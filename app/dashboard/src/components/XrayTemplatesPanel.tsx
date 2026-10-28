@@ -141,8 +141,10 @@ const ConfigPill: FC<
           </Text>
           {!doc.deletable && (
             <Badge
-              colorScheme={isChecked ? "whiteAlpha" : "primary"}
+              colorScheme="primary"
               fontSize="0.65rem"
+              // на выбранной синей кнопке полупрозрачный бейдж сливался с фоном
+              {...(isChecked && { bg: "white", color: "primary.600" })}
             >
               {t("panelSettings.xrayTemplates.defaultBadge")}
             </Badge>
