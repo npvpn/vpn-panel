@@ -10,7 +10,7 @@ export function durationSeconds(value: string): number {
 const duration = (min: number, inclusive = false) => z.string().refine(value => {
   const seconds = durationSeconds(value);
   return Number.isFinite(seconds) && seconds <= 9223372036.854775807 && (inclusive ? seconds >= min : seconds > min);
-}, { message: min === 10 ? "Use a duration of at least 10s" : "Use a valid duration (e.g. 200ms, 15s)" });
+}, { message: min === 10 ? "hostsDialog.balancing.errors.minDuration" : "hostsDialog.balancing.errors.invalidDuration" });
 const url = z.string().url().refine(v => /^https?:\/\//i.test(v), "Use an HTTP(S) URL");
 const integer = z.number().int().max(2147483647);
 const pingProbe = z.object({ url, interval: duration(0), enableConcurrency: z.boolean() }).strict();

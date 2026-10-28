@@ -16,6 +16,7 @@ import {
   HostAdvancedOptions,
   HostAdvancedOptionsProps,
 } from "./HostAdvancedOptions";
+import { thinScrollbarSx } from "utils/thinScrollbar";
 import { isSameHostValues } from "./hostValues";
 import { hostItemSchema, hostsFormSchema } from "./schema";
 import { UnsavedChangesDialog, UnsavedChangesNote } from "./UnsavedChanges";
@@ -47,7 +48,7 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
   remark,
   ...advancedOptionsProps
 }) => {
-  const { t, hideRemarkAddress, index } = advancedOptionsProps;
+  const { t, index } = advancedOptionsProps;
   const form = useFormContext<HostsForm>();
 
   const [snapshot, setSnapshot] = useState<HostValues | null>(null);
@@ -135,7 +136,9 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
         <ModalContent maxH="90vh">
           <ModalHeader pr={12}>
             {t("hostsDialog.advancedOptions")}
-            {hideRemarkAddress && remark && (
+            {/* какой хост открыт — видно всегда, и на «Подключении» Remark
+                можно не искать (NPVPN-2302) */}
+            {remark && (
               <Text
                 as="span"
                 display="block"
@@ -150,7 +153,10 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
             )}
           </ModalHeader>
           <ModalCloseButton />
-          <ModalBody pb={2} sx={{ overscrollBehavior: "contain" }}>
+          <ModalBody
+            pb={2}
+            sx={{ overscrollBehavior: "contain", ...thinScrollbarSx }}
+          >
             <HostAdvancedOptions {...advancedOptionsProps} />
           </ModalBody>
           <ModalFooter gap={2}>
