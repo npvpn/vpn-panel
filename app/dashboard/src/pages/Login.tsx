@@ -21,6 +21,7 @@ import { Footer } from "components/Footer";
 import { Input } from "components/Input";
 import { fetch } from "service/http";
 import { removeAuthToken, setAuthToken } from "utils/authStorage";
+import { rememberLoginReturn, takeLoginReturn } from "utils/loginReturn";
 import { ReactComponent as Logo } from "assets/logo.svg";
 import { useTranslation } from "react-i18next";
 import { Language } from "components/Language";
@@ -62,6 +63,7 @@ export const Login: FC = () => {
   useEffect(() => {
     removeAuthToken();
     if (location.pathname !== "/login") {
+      rememberLoginReturn(location.search, sessionStorage);
       navigate("/login", { replace: true });
     }
   }, []);
@@ -75,7 +77,8 @@ export const Login: FC = () => {
     fetch("/admin/token", { method: "post", body: formData })
       .then(({ access_token: token }) => {
         setAuthToken(token);
-        navigate("/");
+        const search = takeLoginReturn(sessionStorage);
+        navigate(search ? { pathname: "/", search } : "/");
       })
       .catch((err) => {
         setError(err.response._data.detail);

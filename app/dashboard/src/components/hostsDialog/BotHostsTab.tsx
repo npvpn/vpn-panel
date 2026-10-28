@@ -24,6 +24,7 @@ import ReactSelect from "react-select";
 import { FieldArrayWithId, useFormContext, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Bot } from "types/Bot";
+import { resolveBotTabSelection } from "utils/hostDeepLink";
 import { z } from "zod";
 import { filterFieldProps, hostsTableSx } from "./constants";
 import { hostsFormSchema } from "./schema";
@@ -71,6 +72,8 @@ type Props = {
   nodes: NodeType[];
   inboundMap: Map<string, any>;
   filters: BotTabFilters;
+  /** Ссылка на неизвестного бота: пустой фильтр не подменять первым ботом. */
+  keepEmptyBot?: boolean;
   onFiltersChange: (update: Partial<BotTabFilters>) => void;
   // editedIndex — см. saveAndContinue в HostsDialog.
   onSaveAndContinue: (editedIndex?: number) => Promise<boolean>;
@@ -125,6 +128,7 @@ export const BotHostsTab: FC<Props> = ({
   nodes,
   inboundMap,
   filters,
+  keepEmptyBot = false,
   onFiltersChange,
   onSaveAndContinue,
 }) => {
@@ -139,10 +143,13 @@ export const BotHostsTab: FC<Props> = ({
     onFiltersChange({ activeOnly });
 
   useEffect(() => {
-    if (!bots.some((bot) => bot.username === selectedBot)) {
-      setSelectedBot(bots[0]?.username ?? "");
-    }
-  }, [bots, selectedBot]);
+    const next = resolveBotTabSelection(
+      selectedBot,
+      bots.map((bot) => bot.username),
+      keepEmptyBot
+    );
+    if (next !== selectedBot) setSelectedBot(next);
+  }, [bots, selectedBot, keepEmptyBot]);
 
   const botSelectStyles = useBotSelectStyles({ size: "sm" });
 
@@ -272,8 +279,11 @@ export const BotHostsTab: FC<Props> = ({
   const canEnableAll = rows.some((row) => !row.isAvailable);
   const canDisableAll = rows.some((row) => row.isAvailable);
 
+  const bindingsLocked = selectedBot === "";
+
   const toggleHost = useCallback(
     (index: number, enable: boolean) => {
+      if (!selectedBot) return;
       const current: string[] =
         form.getValues(`hosts.${index}.bot_usernames`) || [];
 
@@ -304,6 +314,7 @@ export const BotHostsTab: FC<Props> = ({
   // попадает только отмеченный арендованным хост.
   const toggleRented = useCallback(
     (index: number, enable: boolean) => {
+      if (!selectedBot) return;
       const current: string[] =
         form.getValues(`hosts.${index}.rented_bot_usernames`) || [];
       const next = enable
@@ -427,7 +438,7 @@ export const BotHostsTab: FC<Props> = ({
               size="sm"
               flex={{ base: 1, md: "none" }}
               variant="outline"
-              isDisabled={!canEnableAll}
+              isDisabled={bindingsLocked || !canEnableAll}
               onClick={() => toggleAllVisible(true)}
             >
               {t("hostsDialog.botTab.enableAll")}
@@ -436,7 +447,7 @@ export const BotHostsTab: FC<Props> = ({
               size="sm"
               flex={{ base: 1, md: "none" }}
               variant="outline"
-              isDisabled={!canDisableAll}
+              isDisabled={bindingsLocked || !canDisableAll}
               onClick={() => toggleAllVisible(false)}
             >
               {t("hostsDialog.botTab.disableAll")}
@@ -604,6 +615,7 @@ export const BotHostsTab: FC<Props> = ({
                           t("hostsDialog.botTab.columnAvailable") ?? undefined
                         }
                         isChecked={row.isAvailable}
+                        isDisabled={bindingsLocked}
                         onChange={(e) =>
                           toggleHost(row.index, e.target.checked)
                         }
@@ -625,7 +637,7 @@ export const BotHostsTab: FC<Props> = ({
                             t("hostsDialog.botTab.columnRented") ?? undefined
                           }
                           isChecked={row.isRented}
-                          isDisabled={!row.isAvailable}
+                          isDisabled={bindingsLocked || !row.isAvailable}
                           onChange={(e) =>
                             toggleRented(row.index, e.target.checked)
                           }
