@@ -26,6 +26,7 @@ import {
   TabPanel,
   TabPanels,
   Tabs,
+  useDisclosure,
 } from "@chakra-ui/react";
 import {
   ChevronDownIcon,
@@ -113,6 +114,13 @@ const HOST_TABS: { labelKey: string; fields: string[] }[] = [
   },
 ];
 
+// Поля в отключённом fieldset: стиль Chakra не видит такого отключения,
+// поэтому приглушаем подписи, поля и стрелки сами
+const DISABLED_FIELDSET_SX = {
+  "& label, & input, & [role=button], & .chakra-checkbox": { opacity: 0.5 },
+  "& input": { cursor: "not-allowed" },
+};
+
 export type HostAdvancedOptionsProps = {
   hostKey: string;
   index: number;
@@ -158,6 +166,15 @@ export const HostAdvancedOptions = memo(
     const composite = !!effectiveInjection?.enabled;
     const [templatesLoaded, setTemplatesLoaded] = useState(false);
     const [tabIndex, setTabIndex] = useState(0);
+    // выпадающие списки ботов и нод: при смене вкладки закрываем, иначе
+    // открытый список теряет кнопку (её панель скрыта) и прыгает по экрану
+    const botsList = useDisclosure();
+    const nodesList = useDisclosure();
+    useEffect(() => {
+      botsList.onClose();
+      nodesList.onClose();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tabIndex]);
     // ошибки берём из формы, а не из пропса: при сохранении счётчик отправок
     // и ошибки приходят в одном обновлении
     const { errors, submitCount } = useFormState({ control });
@@ -226,6 +243,16 @@ export const HostAdvancedOptions = memo(
             overflowX="auto"
             overflowY="hidden"
             whiteSpace="nowrap"
+            // закреплены при прокрутке: на длинной «Сборке» не листать назад.
+            // У тела окна отступ сверху 0.5rem — сдвиг, чтобы над вкладками
+            // не просвечивал уезжающий контент; фон — как у окна
+            position="sticky"
+            top="-0.5rem"
+            mt="-0.5rem"
+            pt="0.5rem"
+            zIndex={2}
+            bg="white"
+            _dark={{ bg: "gray.700" }}
             // на телефоне компактнее: все четыре вкладки ближе к ширине экрана,
             // остальное прокручивается вбок
             sx={{
@@ -495,8 +522,10 @@ export const HostAdvancedOptions = memo(
                       </Portal>
                     </Popover>
                   }
+                  // своей строкой: ALPN и Fingerprint ниже уточняют шифрование
                   formControlProps={{
                     height: "66px",
+                    gridColumn: { md: "1 / -1" },
                   }}
                   selectProps={{
                     size: "sm",
@@ -524,7 +553,8 @@ export const HostAdvancedOptions = memo(
                   {proxyALPN.map((s) => {
                     return (
                       <option key={s.value} value={s.value}>
-                        {s.title}
+                        {/* пустой ALPN в подписку не передаётся — решает клиент */}
+                        {s.title || t("hostsDialog.alpn.default")}
                       </option>
                     );
                   })}
@@ -535,7 +565,6 @@ export const HostAdvancedOptions = memo(
                   registerProps={register(`${hostKey}.${index}.fingerprint`)}
                   formControlProps={{
                     height: "66px",
-                    gridColumn: { md: "1 / -1" },
                   }}
                   selectProps={{
                     size: "sm",
@@ -544,7 +573,8 @@ export const HostAdvancedOptions = memo(
                   {proxyFingerprint.map((s) => {
                     return (
                       <option key={s.value} value={s.value}>
-                        {s.title}
+                        {/* пустой fingerprint подписка берёт из inbound */}
+                        {s.title || t("hostsDialog.fingerprint.default")}
                       </option>
                     );
                   })}
@@ -778,8 +808,14 @@ export const HostAdvancedOptions = memo(
 
                         return (
                           <Popover
+                            isLazy
                             placement="bottom-start"
-                            onClose={() => setBotSearch("")}
+                            isOpen={botsList.isOpen}
+                            onOpen={botsList.onOpen}
+                            onClose={() => {
+                              botsList.onClose();
+                              setBotSearch("");
+                            }}
                           >
                             <PopoverTrigger>
                               <Button
@@ -804,7 +840,7 @@ export const HostAdvancedOptions = memo(
                               </Button>
                             </PopoverTrigger>
                             <Portal>
-                              <PopoverContent w="280px" zIndex={1500}>
+                              <PopoverContent w="280px" zIndex="modal">
                                 <PopoverArrow />
                                 <PopoverBody>
                                   <VStack align="start" spacing={2}>
@@ -956,7 +992,12 @@ export const HostAdvancedOptions = memo(
                           <Popover
                             isLazy
                             placement="bottom-start"
-                            onClose={() => setNodeSearch("")}
+                            isOpen={nodesList.isOpen}
+                            onOpen={nodesList.onOpen}
+                            onClose={() => {
+                              nodesList.onClose();
+                              setNodeSearch("");
+                            }}
                           >
                             <PopoverTrigger>
                               <Button
@@ -976,7 +1017,7 @@ export const HostAdvancedOptions = memo(
                               </Button>
                             </PopoverTrigger>
                             <Portal>
-                              <PopoverContent w="280px" zIndex={1500}>
+                              <PopoverContent w="280px" zIndex="modal">
                                 <PopoverArrow />
                                 <PopoverBody>
                                   <VStack align="start" spacing={2}>
@@ -1070,7 +1111,13 @@ export const HostAdvancedOptions = memo(
                 )}
                 {/* почему поля ниже неактивны — до них, а не после */}
                 {composite && <Text gridColumn="1 / -1" fontSize="xs">{t("hostsDialog.injection.pinsHint")}</Text>}
-                <Box as="fieldset" disabled={composite} display="contents">
+                <Box
+                  as="fieldset"
+                  disabled={composite}
+                  display="contents"
+                  // стиль Chakra не видит отключения через fieldset — приглушаем сами
+                  sx={composite ? DISABLED_FIELDSET_SX : undefined}
+                >
                 {/* NPVPN-2072: сужение адресов — свойство ХОСТА: у локаций разное число нод,
                     и одна настройка на всего бота этого не выражала. */}
                 <RHFCheckbox
@@ -1088,16 +1135,10 @@ export const HostAdvancedOptions = memo(
                   as="fieldset"
                   disabled={!currentHost.address_subset_enabled}
                   display="contents"
-                  // стиль Chakra не видит отключения через fieldset — приглушаем сами
                   sx={
                     currentHost.address_subset_enabled
                       ? undefined
-                      : {
-                          "& label, & input, & [role=button]": {
-                            opacity: 0.5,
-                          },
-                          "& input": { cursor: "not-allowed" },
-                        }
+                      : DISABLED_FIELDSET_SX
                   }
                 >
                 <RHFInput

@@ -27,7 +27,6 @@ import { InjectionDiagnostics } from "./InjectionDiagnostics";
 import { InfoHint } from "./InfoHint";
 import { DeleteIcon } from "components/DeleteUserModal";
 import { PlusIcon } from "@heroicons/react/24/outline";
-import { thinScrollbarSx } from "utils/thinScrollbar";
 import { CollapsibleSection } from "./CollapsibleSection";
 
 function messages(error: any): string[] {
@@ -276,12 +275,9 @@ export function HostInjectionOptions({
                   {group.selector.type === "ids" ? (
                     <>
                       <Text fontSize="xs">{tr("persistedOnly")}</Text>
-                      <VStack
-                        align="stretch"
-                        maxH="180px"
-                        overflowY="auto"
-                        sx={thinScrollbarSx}
-                      >
+                      {/* список во всю высоту: окно и так прокручивается, вторая
+                          прокрутка внутри него неудобна (NPVPN-2302) */}
+                      <VStack align="stretch">
                         {Array.from(available.values()).map((host) => {
                           const ids =
                             group.selector.type === "ids"

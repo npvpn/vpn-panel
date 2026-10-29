@@ -44,6 +44,8 @@
   "header.nodesUsageTotal": "مجموع: {{value}}",
   "hostsDialog.addHost": "افزودن هاست",
   "hostsDialog.advancedOptions": "تنظیمات پیشرفته",
+  "hostsDialog.alpn.default": "تنظیم نشده (کلاینت تعیین می‌کند)",
+  "hostsDialog.fingerprint.default": "مانند inbound",
   "hostsDialog.remark": "نام",
   "hostsDialog.address": "آدرس",
   "hostsDialog.errors.remarkRequired": "نام الزامی است",
