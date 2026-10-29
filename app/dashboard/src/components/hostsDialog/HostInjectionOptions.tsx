@@ -121,6 +121,7 @@ export function HostInjectionOptions({
       : tr("status.off");
   return (
     <CollapsibleSection
+      alwaysOpen
       title={tr("title")}
       status={status}
       defaultOpen={!!effective?.enabled}
@@ -274,7 +275,9 @@ export function HostInjectionOptions({
                   {group.selector.type === "ids" ? (
                     <>
                       <Text fontSize="xs">{tr("persistedOnly")}</Text>
-                      <VStack align="stretch" maxH="180px" overflowY="auto">
+                      {/* список во всю высоту: окно и так прокручивается, вторая
+                          прокрутка внутри него неудобна (NPVPN-2302) */}
+                      <VStack align="stretch">
                         {Array.from(available.values()).map((host) => {
                           const ids =
                             group.selector.type === "ids"

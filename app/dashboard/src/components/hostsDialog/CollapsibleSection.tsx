@@ -12,6 +12,7 @@ export const CollapsibleSection = ({
   defaultOpen,
   hasErrors,
   nested = false,
+  alwaysOpen = false,
   children,
 }: {
   title: string;
@@ -20,6 +21,9 @@ export const CollapsibleSection = ({
   hasErrors: boolean;
   // блок внутри другого блока — без линии сверху и с заголовком мельче
   nested?: boolean;
+  // NPVPN-2302: блок на своей вкладке окна — листать мимо него не нужно,
+  // поэтому он всегда раскрыт и без стрелки
+  alwaysOpen?: boolean;
   children: ReactNode;
 }) => {
   const [open, setOpen] = useState(defaultOpen || hasErrors);
@@ -27,6 +31,30 @@ export const CollapsibleSection = ({
   useEffect(() => {
     if (hasErrors) setOpen(true);
   }, [hasErrors]);
+
+  if (alwaysOpen) {
+    return (
+      <Box
+        gridColumn="1 / -1"
+        borderTopWidth={nested ? 0 : "1px"}
+        pt={nested ? 0 : 3}
+      >
+        <HStack spacing={2}>
+          <Text
+            fontWeight={nested ? "medium" : "semibold"}
+            fontSize={nested ? "sm" : undefined}
+            flexShrink={0}
+          >
+            {title}
+          </Text>
+          <Text fontSize="sm" color="gray.500" flex={1} noOfLines={1}>
+            {status}
+          </Text>
+        </HStack>
+        <Box pt={2}>{children}</Box>
+      </Box>
+    );
+  }
 
   return (
     <Box

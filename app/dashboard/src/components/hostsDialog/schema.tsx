@@ -15,7 +15,7 @@ export const hostItemSchema = z
     host_id: z.number().optional(),
     inbound_tag: z.string().min(1),
     order: z.number().int(),
-    remark: z.string().min(1, "Remark is required"),
+    remark: z.string().min(1, "hostsDialog.errors.remarkRequired"),
     address: z.string(),
     port: z
       .string()
@@ -58,7 +58,7 @@ export const hostItemSchema = z
             return false;
           }
         },
-        { message: "Must be a valid JSON object" }
+        { message: "hostsDialog.errors.invalidJson" }
       ),
     bot_usernames: z.array(z.string()).default([]),
     // NPVPN-2044: боты, которым хост отмечен арендованным. Подмножество
@@ -66,7 +66,7 @@ export const hostItemSchema = z
     rented_bot_usernames: z.array(z.string()).default([]),
     node_ids: z.array(z.number()).default([]),
     host_injection: injectionSchema.nullable().default(null),
-    group_tag: z.string().max(128).default(""),
+    group_tag: z.string().max(128, "hostsDialog.errors.groupTagTooLong").default(""),
     is_hidden: z.boolean().default(false),
     template_injection: injectionSchema.nullable().default(null),
     balancing: balancingSchema.nullable().default(null),
@@ -101,13 +101,13 @@ export const hostItemSchema = z
     const effective = data.host_injection ?? data.template_injection;
     if (effective?.enabled && !effective.addVirtualHostAsOutbound) return;
     if (data.balancer_nodes_source === "selected" && !data.balancer_node_ids.length && !data.host_id) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["balancer_node_ids"], message: "Select at least one entry node" });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["balancer_node_ids"], message: "hostsDialog.errors.entryNodeRequired" });
     }
     if (data.balancer_nodes_source === "host" && !data.address && (!data.node_ids || data.node_ids.length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["address"],
-        message: "Address or linked nodes required",
+        message: "hostsDialog.errors.addressOrNodes",
       });
     }
   });
