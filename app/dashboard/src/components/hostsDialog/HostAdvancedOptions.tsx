@@ -183,6 +183,11 @@ export const HostAdvancedOptions = memo(
       tab.fields.some((field) => !!hostErrors?.[field])
     );
 
+    // Название и адрес скрыты там, где их правят в карточке или строке
+    // (hideRemarkAddress). Второе поле с тем же именем в окне разошлось бы с
+    // карточкой, поэтому при ошибке в них только говорим, где её исправить
+    const remarkAddressInvalid = !!hostErrors?.remark || !!hostErrors?.address;
+
     // Сохранение с ошибками открывает вкладку с первой из них, если на
     // текущей ошибок нет. Только по попытке сохранить: пока правишь поля,
     // вкладки сами не переключаются
@@ -274,6 +279,8 @@ export const HostAdvancedOptions = memo(
                     borderRadius="full"
                     bg="red.500"
                     display="inline-block"
+                    // у span без роли подпись скринридеры могут не озвучить
+                    role="img"
                     aria-label={t("hostsDialog.tabs.hasErrors")}
                   />
                 )}
@@ -292,6 +299,11 @@ export const HostAdvancedOptions = memo(
                 >
                 {/* Remark и Address — в начале «Подключения»; какой хост открыт,
                     видно в заголовке окна */}
+                {hideRemarkAddress && remarkAddressInvalid && (
+                  <Text gridColumn="1 / -1" fontSize="sm" color="red.500">
+                    {t("hostsDialog.errors.fixRemarkAddressInList")}
+                  </Text>
+                )}
                 {!hideRemarkAddress && (
                   <>
                     <RHFInput

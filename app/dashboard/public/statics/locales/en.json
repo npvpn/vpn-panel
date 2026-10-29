@@ -41,6 +41,7 @@
   "header.nodesUsageTotal": "Total: {{value}}",
   "hostsDialog.addHost": "Add host",
   "hostsDialog.advancedOptions": "Settings",
+  "hostsDialog.errors.fixRemarkAddressInList": "Error in the remark or address — fix it in the hosts list.",
   "hostsDialog.alpn.default": "Not set (client decides)",
   "hostsDialog.fingerprint.default": "Same as inbound",
   "hostsDialog.remark": "Remark",

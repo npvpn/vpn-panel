@@ -41,6 +41,7 @@
   "header.nodesUsageTotal": "Всего: {{value}}",
   "hostsDialog.addHost": "Добавить хост",
   "hostsDialog.advancedOptions": "Настройки",
+  "hostsDialog.errors.fixRemarkAddressInList": "Ошибка в названии или адресе — исправьте её в списке хостов.",
   "hostsDialog.alpn.default": "Не задан (решает клиент)",
   "hostsDialog.fingerprint.default": "Как в inbound",
   "hostsDialog.remark": "Название",

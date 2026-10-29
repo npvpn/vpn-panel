@@ -44,6 +44,7 @@
   "header.nodesUsageTotal": "مجموع: {{value}}",
   "hostsDialog.addHost": "افزودن هاست",
   "hostsDialog.advancedOptions": "تنظیمات پیشرفته",
+  "hostsDialog.errors.fixRemarkAddressInList": "خطا در نام یا آدرس — آن را در فهرست هاست‌ها اصلاح کنید.",
   "hostsDialog.alpn.default": "تنظیم نشده (کلاینت تعیین می‌کند)",
   "hostsDialog.fingerprint.default": "مانند inbound",
   "hostsDialog.remark": "نام",
