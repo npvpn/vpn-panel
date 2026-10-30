@@ -147,22 +147,37 @@
 
     // Шторка (мобилка, оба способа): появляется анимацией, уходит переходом (is-closing),
     // скрываем, когда уехала; пока открыта, страница под ней не прокручивается.
+    // Модальная: фокус — на крестик, Tab не уходит из шторки, после закрытия — обратно.
     var sheet = list.classList.contains('support-menu__list--sheet');
     var SHEET_CLOSE_MS = 300;
     var closeTimer = null;
+    var focusBack = null;
+
+    // уезжает — для повторного нажатия на значок она уже закрыта
+    function isClosed() {
+      return list.hidden || list.classList.contains('is-closing');
+    }
 
     function setOpen(open) {
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (!sheet) { list.hidden = !open; return; }
+      var wasClosed = isClosed();
       clearTimeout(closeTimer);
       list.classList.remove('is-closing');
       if (open) {
         list.hidden = false;
         document.body.classList.add('support-sheet-open');
+        if (wasClosed) {
+          focusBack = document.activeElement;
+          var close = list.querySelector('[data-support-close]');
+          if (close) { close.focus(); }
+        }
         return;
       }
       if (list.hidden) { return; }
       document.body.classList.remove('support-sheet-open');
+      if (focusBack && list.contains(document.activeElement)) { focusBack.focus(); }
+      focusBack = null;
       list.classList.add('is-closing');
       closeTimer = setTimeout(function () {
         list.hidden = true;
@@ -203,6 +218,22 @@
     list.addEventListener('click', function (event) { if (event.target === list) { leaveMenu(); } });
     var closeBtn = root.querySelector('[data-support-close]');
     if (closeBtn) { closeBtn.addEventListener('click', leaveMenu); }
+    if (sheet) {
+      list.addEventListener('keydown', function (event) {
+        if (event.key !== 'Tab') { return; }
+        var items = list.querySelectorAll('button:not([disabled]), a[href]');
+        if (!items.length) { return; }
+        var first = items[0];
+        var last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    }
     // шторка — только мобилка: расширили окно до десктопа — закрываем, иначе страница
     // так и осталась бы без прокрутки (сама шторка там скрыта CSS)
     if (sheet && window.matchMedia) {
@@ -261,7 +292,7 @@
     if (direct) {
       toggle.addEventListener('click', function () { runChat(toggle); });
     } else {
-      toggle.addEventListener('click', function () { if (list.hidden) { setOpen(true); } else { leaveMenu(); } });
+      toggle.addEventListener('click', function () { if (isClosed()) { setOpen(true); } else { leaveMenu(); } });
       if (chatBtn && cfg.chat) {
         chatBtn.addEventListener('click', function () { runChat(chatBtn); });
       }

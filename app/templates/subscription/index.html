@@ -437,11 +437,13 @@ get alternativeApps() {
               </a>
             {% endif %}
           {% endset %}
-          {# Мобилка: справа в шапке — кабинет и значок поддержки (NPVPN-2314). #}
+          {# Мобилка: справа в шапке — кабинет и значок поддержки (NPVPN-2314); на «Устройствах» —
+             только поддержка: в кабинет ведут «Настройки». #}
+          {% set support_header %}{% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}{% endset %}
           {% set header_actions %}
             <div class="page-header__actions">
               {{ account_btn }}
-              {% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}
+              {{ support_header }}
             </div>
           {% endset %}
           <div x-show="currentPage === 'settings'" class="page-header">
@@ -456,10 +458,18 @@ get alternativeApps() {
               {{ header_actions }}
             </div>
           </div>
+          {# Без устройств на десктопе контент по центру без заголовка; на мобилке шапка нужна —
+             в ней вход в поддержку (NPVPN-2314). #}
+          <div x-show="currentPage === 'devices' && deviceCount === 0" class="page-header page-header--mobile-only">
+            <div class="page-header__top">
+              <h2 class="page-title">Мои устройства</h2>
+              <div class="page-header__actions">{{ support_header }}</div>
+            </div>
+          </div>
           <div x-show="currentPage === 'devices' && deviceCount > 0" class="page-header">
             <div class="page-header__top">
               <h2 class="page-title">Мои устройства</h2>
-              {{ header_actions }}
+              <div class="page-header__actions">{{ support_header }}</div>
             </div>
             <p class="device-count">
                Подключено <span x-text="deviceCount"></span>
