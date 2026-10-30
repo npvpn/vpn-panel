@@ -24,6 +24,15 @@
     /* BORDERS */
     --border: #ebebeb;
 
+    /* CONTROLS: Button / Primary и Secondary из макета (как в веб-кабинете) */
+    --control-primary-bg: #141413;
+    --control-primary-hover-bg: #252525;
+    --control-primary-pressed-bg: #343434;
+    --control-primary-content: #ffffff;
+    --control-secondary-bg: #f6f6f6;
+    --control-secondary-hover-bg: #ebebeb;
+    --control-secondary-pressed-bg: #dbdbdb;
+
     /* FONTS */
     --font-family: 'Open Sans', sans-serif;
     --second-family: 'Inter', sans-serif;
@@ -45,6 +54,14 @@
     --surface-2: #343434;
 
     --border: #3a3a3a;
+
+    --control-primary-bg: #ffffff;
+    --control-primary-hover-bg: #ebebeb;
+    --control-primary-pressed-bg: #dbdbdb;
+    --control-primary-content: #141413;
+    --control-secondary-bg: #343434;
+    --control-secondary-hover-bg: #7b7b7b;
+    --control-secondary-pressed-bg: #232323;
 
     --gray-2: #dbdbdb;
     --gray-3: #b8b8b8;
