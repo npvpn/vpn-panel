@@ -61,7 +61,7 @@ class FakeEl {
 
 // Корень меню как его рисует _support_menu.html: конфиг, кнопка-вход, список, статус, пункт чата.
 function makeRoot({ mode, tgUrl = '', visible = true }) {
-  const root = new FakeEl({ attrs: { 'data-support-menu': '', 'data-support-inline': '' }, visible });
+  const root = new FakeEl({ attrs: { 'data-support-menu': '' }, visible });
   const cfg = new FakeEl();
   cfg.textContent = JSON.stringify({
     mode,

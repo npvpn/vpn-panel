@@ -1,74 +1,70 @@
-/* NPVPN-2224: вид — как кнопка «Помощь» и SupportMenu в веб-кабинете. */
-.support-menu { position: fixed; right: 24px; bottom: 24px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.support-menu__button { display: flex; align-items: center; justify-content: center; gap: 8px; height: 52px; padding: 0 20px; border-radius: 100px; border: 0; background: #007aff; color: #fff; font-family: 'Open Sans Condensed', 'Open Sans', sans-serif; font-size: 16px; font-weight: 700; cursor: pointer; text-decoration: none; transition: opacity .15s; }
-.support-menu__button:hover { opacity: .5; }
-.support-menu__list { order: -1; display: flex; flex-direction: column; gap: 4px; min-width: 240px; padding: 8px; border: 1px solid #ebebeb; border-radius: 24px; background: #fff; }
-.support-menu__list[hidden] { display: none; }
-.support-menu__item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; border: 0; border-radius: 16px; background: none; color: #141413; font: inherit; font-weight: 500; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color .15s; }
-.support-menu__item:hover { background: #f6f6f6; }
-.support-menu__item:disabled { opacity: .5; cursor: default; }
-.support-menu__item:disabled:hover { background: none; }
-.support-menu__item .support-menu__icon { color: #7b7b7b; }
+/* NPVPN-2224, NPVPN-2314: вид — как поддержка в веб-кабинете (макет): на мобилке значок в шапке
+   и шторка снизу, на десктопе плавающая кнопка Primary с выбором над ней. */
+.support-menu { position: relative; }
 .support-menu__icon { flex-shrink: 0; }
-/* NPVPN-2256: пока грузится чат — спиннер на месте иконки пункта «Чат на сайте», как в вебе;
-   синий, как на странице «Пожалуйста, подождите». На кнопке «Помощь» лоадера нет. */
+
+/* Десктоп: плавающая кнопка справа внизу. Прижата к правому краю контейнера .wrapper
+   (max-width 1280px), а не окна — справа такой же отступ, как слева у сайдбара (16px). */
+.support-menu--floating { position: fixed; right: max(24px, calc((100vw - 1280px) / 2 + 16px)); bottom: 24px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.support-menu__button { display: flex; align-items: center; justify-content: center; gap: 8px; height: 52px; padding: 0 20px; border: 0; border-radius: 20px; background: var(--control-primary-bg); color: var(--control-primary-content); font-family: var(--font-family); font-size: 16px; font-weight: 500; cursor: pointer; text-decoration: none; transition: background-color .15s; }
+.support-menu__button:hover { background: var(--control-primary-hover-bg); }
+.support-menu__button:active { background: var(--control-primary-pressed-bg); }
+/* Чат ↔ крестик: одна иконка гаснет с поворотом, другая проявляется. */
+.support-menu__swap { position: relative; width: 20px; height: 20px; }
+.support-menu__swap .support-menu__icon { position: absolute; inset: 0; transition: opacity .2s, transform .2s; }
+.support-menu__swap .support-menu__icon--close { opacity: 0; transform: rotate(-90deg) scale(.5); }
+[aria-expanded="true"] > .support-menu__swap .support-menu__icon:not(.support-menu__icon--close) { opacity: 0; transform: rotate(90deg) scale(.5); }
+[aria-expanded="true"] > .support-menu__swap .support-menu__icon--close { opacity: 1; transform: none; }
+
+/* Выпадающий выбор: подложка --surface-2, скругление 24, поля 16, между пунктами 8. */
+.support-menu__list { order: -1; display: flex; flex-direction: column; gap: 8px; min-width: 240px; box-sizing: border-box; padding: 16px; border-radius: 24px; background: var(--surface-2); }
+.support-menu__list[hidden] { display: none; }
+.support-menu__item { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 12px 16px; border: 0; border-radius: 20px; background: var(--surface); color: var(--text-primary); font-family: var(--font-family); font-size: 14px; font-weight: 600; line-height: 20px; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color .15s; }
+.support-menu__item:hover { background: var(--border); }
+.support-menu__item:disabled { opacity: .5; cursor: default; }
+/* NPVPN-2256: пока грузится чат — спиннер на месте иконки «Написать в чат», как в вебе;
+   синий, как на странице «Пожалуйста, подождите». */
 .is-loading > .support-menu__icon { display: none; }
-.is-loading > .support-menu__spinner { display: flex; flex-shrink: 0; color: #007aff; animation: support-menu-spin 1s linear infinite; }
+.is-loading > .support-menu__spinner { display: flex; flex-shrink: 0; color: var(--blue); animation: support-menu-spin 1s linear infinite; }
 @keyframes support-menu-spin { to { transform: rotate(360deg); } }
-.support-menu__status { margin: 0; padding: 4px 16px 8px; font-size: 13px; font-weight: 400; color: #7b7b7b; }
-/* Под «Чат на сайте» (как в вебе). width 0 + min-width 100%: подпись не расширяет меню,
+.support-menu__status { margin: 0; font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+/* Под «Написать в чат». width 0 + min-width 100%: подпись не расширяет меню,
    а переносится по его ширине — иначе меню прыгало при ошибке. */
 .support-menu__item-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.support-menu__item .support-menu__status { width: 0; min-width: 100%; padding: 0; white-space: normal; }
-/* Десктоп: прижимаем к правому краю контейнера .wrapper (max-width 1280px), а не окна —
-   справа такой же отступ, как слева у сайдбара (16px). На узких экранах — 24px от края. */
-@media (min-width: 1024px) { .support-menu { right: max(24px, calc((100vw - 1280px) / 2 + 16px)); } }
-/* Кнопка в шапке (истекла / лимит / отозвана) — как «Помощь» в шапке Настроек веба.
-   Контент этих страниц — компактная колонка, плавающая кнопка в углу от неё оторвана:
-   на них «Помощь» всегда в строке заголовка, плавающей нет. */
-.support-menu.support-menu--header { position: relative; right: auto; bottom: auto; display: block; flex-shrink: 0; }
-body:has(.support-menu--header) .support-menu:not(.support-menu--header) { display: none; }
-/* По базовой линии текста, а не по центру: у Open Sans Condensed заголовка несимметричные
-   отступы в строке, и по центру кнопка выглядит сдвинутой. */
-.page-header__top:has(.support-menu--header) { align-items: baseline; }
-.support-menu__chip { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 0; border-radius: 24px; background: rgba(59, 130, 246, .1); color: #007aff; font: inherit; font-weight: 500; white-space: nowrap; text-decoration: none; cursor: pointer; transition: background-color .15s; }
-.support-menu__chip:hover { background: #f6f6f6; }
-.support-menu__chip:disabled { opacity: .5; cursor: default; }
-.support-menu--header .support-menu__list { position: absolute; top: calc(100% + 8px); right: 0; z-index: 50; }
-/* Десктоп: шапка шириной по своему содержимому (обычно — подзаголовок), а не по широкой
-   колонке: «Помощь» у правого края контента (.page-header__top — space-between), не над
-   пустотой и не вплотную к заголовку. */
+.support-menu__item .support-menu__status { width: 0; min-width: 100%; white-space: normal; }
+
+/* Мобилка: значок 24px в шапке страницы. */
+.support-menu__icon-btn { display: flex; padding: 0; border: 0; background: none; color: var(--text-primary); cursor: pointer; transition: opacity .15s; }
+.support-menu__icon-btn:hover { opacity: .7; }
+.support-menu__icon-btn:disabled { opacity: .5; cursor: default; }
+/* Только чат: ошибка — под значком. */
+.support-menu--header .support-menu__list:not(.support-menu__list--sheet) { position: absolute; top: calc(100% + 8px); right: 0; z-index: 50; }
+.page-header__actions { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
+
+/* Шторка «Как хотите связаться»: затемнение — чёрный 20%, выезжает снизу, уезжает обратно (is-closing).
+   Выше нижнего меню (.floating-nav, z-index 100), ниже модалок (.modal-overlay, 999). */
+.support-menu__list--sheet { position: fixed; inset: 0; z-index: 200; justify-content: flex-end; min-width: 0; padding: 0; border-radius: 0; background: rgba(0, 0, 0, .2); animation: support-menu-fade-in .3s ease-out; transition: opacity .3s; }
+.support-menu__sheet { box-sizing: border-box; width: 100%; padding: 24px 16px max(42px, env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; background: var(--surface); animation: support-menu-sheet-in .3s ease-out; transition: transform .3s ease-out; }
+.support-menu__list--sheet.is-closing { opacity: 0; pointer-events: none; }
+.support-menu__list--sheet.is-closing .support-menu__sheet { transform: translateY(100%); }
+@keyframes support-menu-fade-in { from { opacity: 0; } }
+@keyframes support-menu-sheet-in { from { transform: translateY(100%); } }
+.support-menu__sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.support-menu__sheet-title { margin: 0; font-family: var(--font-family); font-size: 20px; font-weight: 600; line-height: 1.2; letter-spacing: -0.04em; color: var(--text-primary); }
+/* -4px: поле для пальца не увеличивает строку заголовка (высота шторки — по макету). */
+.support-menu__close { display: flex; margin: -4px; padding: 4px; border: 0; background: none; color: var(--text-secondary); cursor: pointer; transition: opacity .15s; }
+.support-menu__close:hover { opacity: .7; }
+.support-menu__options { display: flex; flex-direction: column; gap: 8px; }
+/* Пункты шторки — Button / Secondary, высота 60. */
+.support-menu__sheet .support-menu__item { min-height: 60px; padding: 20px 16px; background: var(--control-secondary-bg); }
+.support-menu__sheet .support-menu__item:hover { background: var(--control-secondary-hover-bg); }
+.support-menu__sheet .support-menu__item:active { background: var(--control-secondary-pressed-bg); }
+/* Пока открыта шторка, страница под ней не прокручивается. */
+body.support-sheet-open { overflow: hidden; }
+
 @media (min-width: 1024px) {
-  .page-header:has(.support-menu--header) { width: fit-content; max-width: 100%; }
-  .page-header__top:has(.support-menu--header) { gap: 48px; }
+  .support-menu--header { display: none; }
 }
 @media (max-width: 1023px) {
-  /* В одной строке с заголовком. Не влезает — support-menu.js уменьшает «Помощь», потом
-     заголовок на пару px; крайний случай (уже 360px) — перенос заголовка (--wrap). */
-  .page-header__top:has(.support-menu--header) { gap: 8px; }
-  .support-menu--header .support-menu__chip { gap: 4px; padding: 6px 8px; font-size: 14px; }
-  .support-menu--header .support-menu__icon { width: 14px; height: 14px; }
-  .page-header__top:has(.support-menu--header) .page-title { white-space: nowrap; }
-  .page-header__top:has(.support-menu--header) .page-title.page-title--wrap { white-space: normal; }
-}
-/* Пункт сайдбара «Связаться с нами в TG» (только Telegram, index.html) — как в вебе. */
-.sidebar-nav__item--support { background: rgba(59, 130, 246, .1); color: #007aff; white-space: nowrap; }
-.sidebar-nav__item--support:hover { background: #f6f6f6; }
-/* На десктопе пункт сайдбара заменяет плавающую кнопку (на мобилке её прячет пункт нижнего меню)
-   и стоит внизу сайдбара: сайдбар — на высоту экрана за вычетом отступов .wrapper (40px * 2). */
-@media (min-width: 1024px) {
-  body:has(.sidebar-nav__item--support) .support-menu:not(.support-menu--nav) { display: none; }
-  .sidebar:has(.sidebar-nav__item--support) { display: flex; flex-direction: column; top: 40px; height: calc(100vh - 80px); }
-  .sidebar:has(.sidebar-nav__item--support) .sidebar-nav { flex: 1; }
-  .sidebar-nav__item--support { margin-top: auto; }
-}
-/* Пункт нижнего меню (мобилка, index.html): элемент самой .floating-nav, меню — над панелью, как в вебе. */
-.support-menu--nav { display: contents; }
-.support-menu--nav .support-menu__list { position: absolute; right: 0; bottom: calc(100% + 8px); }
-.floating-nav:has(.support-menu--nav) .floating-nav__item { flex: 1 1 auto; padding: 2px 10px; }
-/* Мобильные: реальный отступ считает support-menu.js над .floating-nav и .button-wrapper_revoke (вместе с .hint); 240px — запас до/без JS. */
-@media (max-width: 1023px) {
-  .support-menu { bottom: 240px; }
-  /* Есть пункт в нижнем меню — плавающая кнопка не нужна. */
-  body:has(.support-menu--nav) .support-menu:not(.support-menu--nav) { display: none; }
+  .support-menu--floating { display: none; }
 }

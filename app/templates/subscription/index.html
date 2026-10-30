@@ -420,8 +420,6 @@ get alternativeApps() {
                 <span>Личный кабинет</span>
               </a>
             {% endif %}
-
-            {% with support_variant = "sidebar" %}{% include "_support_menu.html" %}{% endwith %}
           </nav>
         </aside>
         <div class="page-content" :class="{ 'page-content--centered': currentPage === 'devices' && deviceCount === 0 }">
@@ -439,22 +437,29 @@ get alternativeApps() {
               </a>
             {% endif %}
           {% endset %}
+          {# Мобилка: справа в шапке — кабинет и значок поддержки (NPVPN-2314). #}
+          {% set header_actions %}
+            <div class="page-header__actions">
+              {{ account_btn }}
+              {% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}
+            </div>
+          {% endset %}
           <div x-show="currentPage === 'settings'" class="page-header">
             <div class="page-header__top">
               <h2 class="page-title">Настройка VPN</h2>
-              {{ account_btn }}
+              {{ header_actions }}
             </div>
           </div>
           <div x-show="currentPage === 'tariff'" class="page-header">
             <div class="page-header__top">
               <h2 class="page-title">Текущий тариф</h2>
-              {{ account_btn }}
+              {{ header_actions }}
             </div>
           </div>
           <div x-show="currentPage === 'devices' && deviceCount > 0" class="page-header">
             <div class="page-header__top">
               <h2 class="page-title">Мои устройства</h2>
-              {{ account_btn }}
+              {{ header_actions }}
             </div>
             <p class="device-count">
                Подключено <span x-text="deviceCount"></span>
@@ -961,8 +966,6 @@ get alternativeApps() {
               </svg>
               <span class="floating-nav__name">Устройства</span>
           </button>
-
-          {% with support_variant = "nav" %}{% include "_support_menu.html" %}{% endwith %}
         </nav>
       </footer>
     </div>
