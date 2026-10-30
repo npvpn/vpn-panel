@@ -203,6 +203,14 @@
     list.addEventListener('click', function (event) { if (event.target === list) { leaveMenu(); } });
     var closeBtn = root.querySelector('[data-support-close]');
     if (closeBtn) { closeBtn.addEventListener('click', leaveMenu); }
+    // шторка — только мобилка: расширили окно до десктопа — закрываем, иначе страница
+    // так и осталась бы без прокрутки (сама шторка там скрыта CSS)
+    if (sheet && window.matchMedia) {
+      var desktop = window.matchMedia('(min-width: 1024px)');
+      var onDesktop = function (event) { if (event.matches) { leaveMenu(); } };
+      if (desktop.addEventListener) { desktop.addEventListener('change', onDesktop); }
+      else if (desktop.addListener) { desktop.addListener(onDesktop); }
+    }
 
     // Только чат (без Telegram) — вилка не нужна: кнопка сразу открывает чат,
     // а список остаётся только под статус загрузки/ошибки.
