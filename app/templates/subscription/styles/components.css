@@ -895,11 +895,13 @@
     gap: 8px;
 }
 
-/* Экран минус отступы .wrapper (24px * 2) и padding-bottom .page-content (110px), иначе пустой экран скроллится. */
+/* Экран минус отступы .wrapper (24px * 2), padding-bottom .page-content (110px) и шапка
+   с поддержкой (32px + отступ 24px, NPVPN-2314), иначе пустой экран скроллится.
+   На десктопе шапки нет — там своё значение ниже. */
 .main--centered {
     display: flex;
-    min-height: calc(100vh - 158px);
-    min-height: calc(100dvh - 158px);
+    min-height: calc(100vh - 214px);
+    min-height: calc(100dvh - 214px);
 }
 
 .empty-devices {
@@ -1266,6 +1268,10 @@
     }
 
     .header-account-btn {
+        display: none;
+    }
+
+    .page-header--mobile-only {
         display: none;
     }
 

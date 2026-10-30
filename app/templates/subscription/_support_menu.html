@@ -1,51 +1,69 @@
-{# NPVPN-2224: вход в поддержку. Логика — scripts/support-menu.js, вид — как «Помощь» в веб-кабинете.
-   support_variant: "nav" — пункт нижнего меню на мобилке (index.html), "header" — кнопка в шапке
-   на мобилке (истекла / лимит / отозвана), "sidebar" — пункт сайдбара (только Telegram).
-   Скрипт подключает основной include в конце body (плавающая кнопка).
+{# NPVPN-2224, NPVPN-2314: вход в поддержку. Логика — scripts/support-menu.js, вид — как в веб-кабинете.
+   support_variant: "header" — значок в шапке страницы на мобилке (оба способа — шторка снизу
+   «Как хотите связаться»); без него — плавающая кнопка Primary на десктопе (оба способа — выбор над ней).
+   Скрипт подключает плавающая кнопка (include в конце body).
    autoescape выключен: конфиг — только через tojson, ссылки — только через |e. #}
 {% macro chat_icon() %}<svg class="support-menu__icon" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 17.4999C14.1421 17.4999 17.5 14.1421 17.5 9.99994C17.5 5.8578 14.1421 2.49994 10 2.49994C5.85786 2.49994 2.5 5.8578 2.5 9.99994C2.5 11.2396 2.80078 12.4091 3.33333 13.4393L2.5 17.4999L6.56066 16.6666C7.59086 17.1992 8.76031 17.4999 10 17.4999Z" stroke="currentColor" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endmacro %}
-{% macro tg_icon() %}<svg class="support-menu__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10.3078 13.6923L15.1539 8.84619M20.1113 5.88867L16.0207 19.1833C15.6541 20.3747 15.4706 20.9707 15.1544 21.1683C14.8802 21.3396 14.5406 21.3683 14.2419 21.2443C13.8975 21.1014 13.618 20.5433 13.0603 19.428L10.4694 14.2461C10.3809 14.0691 10.3366 13.981 10.2775 13.9043C10.225 13.8363 10.1645 13.7749 10.0965 13.7225C10.0215 13.6647 9.93486 13.6214 9.76577 13.5369L4.57192 10.9399C3.45662 10.3823 2.89892 10.1032 2.75601 9.75879C2.63207 9.4601 2.66033 9.12023 2.83169 8.84597C3.02928 8.52974 3.62523 8.34603 4.81704 7.97932L18.1116 3.88867C19.0486 3.60038 19.5173 3.45635 19.8337 3.57253C20.1094 3.67373 20.3267 3.89084 20.4279 4.16651C20.544 4.48283 20.3999 4.95126 20.1119 5.88729L20.1113 5.88867Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endmacro %}
-{# Крутится вместо иконки пункта «Чат на сайте», пока грузится чат (класс is-loading) — как в вебе.
+{% macro tg_icon(size=20) %}<svg class="support-menu__icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10.3078 13.6923L15.1539 8.84619M20.1113 5.88867L16.0207 19.1833C15.6541 20.3747 15.4706 20.9707 15.1544 21.1683C14.8802 21.3396 14.5406 21.3683 14.2419 21.2443C13.8975 21.1014 13.618 20.5433 13.0603 19.428L10.4694 14.2461C10.3809 14.0691 10.3366 13.981 10.2775 13.9043C10.225 13.8363 10.1645 13.7749 10.0965 13.7225C10.0215 13.6647 9.93486 13.6214 9.76577 13.5369L4.57192 10.9399C3.45662 10.3823 2.89892 10.1032 2.75601 9.75879C2.63207 9.4601 2.66033 9.12023 2.83169 8.84597C3.02928 8.52974 3.62523 8.34603 4.81704 7.97932L18.1116 3.88867C19.0486 3.60038 19.5173 3.45635 19.8337 3.57253C20.1094 3.67373 20.3267 3.89084 20.4279 4.16651C20.544 4.48283 20.3999 4.95126 20.1119 5.88729L20.1113 5.88867Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endmacro %}
+{# Значок чата в шапке — 24px, своя форма из макета. #}
+{% macro header_chat_icon() %}<svg class="support-menu__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 11.9999C21 16.9705 16.9706 20.9999 12 20.9999C10.5124 20.9999 9.10904 20.639 7.8728 19.9999L3 20.9999L4 16.1271C3.36093 14.8909 3 13.4876 3 11.9999C3 7.02938 7.02944 2.99994 12 2.99994C16.9706 2.99994 21 7.02938 21 11.9999Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endmacro %}
+{% macro close_icon(size=20, cls="support-menu__icon") %}<svg class="{{ cls }}" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6L18 18M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endmacro %}
+{# Крутится вместо иконки пункта «Написать в чат», пока грузится чат (класс is-loading) — как в вебе.
    hidden в разметке, а не только в CSS: статика без версии в адресе, и со старым CSS из кэша
    спиннер стоял бы рядом с иконкой. #}
 {% macro spinner() %}<span class="support-menu__spinner" hidden><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M19 10C19 14.9706 14.9706 19 10 19C5.02944 19 1 14.9706 1 10C1 5.02944 5.02944 1 10 1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{% endmacro %}
-{% set nav = support_variant == "nav" %}
-{% set chip = support_variant == "header" %}
-{% set trigger = "floating-nav__item" if nav else ("support-menu__chip" if chip else "support-menu__button") %}
-{% if support_variant == "sidebar" %}
-{# Сайдбар десктопа: как в вебе без Chatwoot — пункт «Связаться с нами в TG» внизу сайдбара вместо плавающей кнопки. #}
-{% if support and support.mode == "telegram" %}
-<a class="sidebar-nav__item sidebar-nav__item--link sidebar-nav__item--support" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">
-  {{ tg_icon() }}<span>Связаться с нами в TG</span>
-</a>
-{% endif %}
-{% elif support and support.mode != "none" %}
-{# Стили — с первым на странице include: шапка стоит выше плавающей кнопки, иначе мигнёт без стилей. #}
-{% if not nav %}<link rel="stylesheet" href="{{ sub_statics }}styles/support-menu.css">{% endif %}
-<div class="support-menu{{ ' support-menu--nav' if nav }}{{ ' support-menu--header' if chip }}" data-support-menu{{ ' data-support-inline' if nav or chip }}>
+{# Пункты выбора — общие для шторки и выпадающего списка. Ошибка чата — под «Написать в чат». #}
+{% macro options() %}
+  <button type="button" class="support-menu__item" data-support-chat>{{ chat_icon() }}{{ spinner() }}<span class="support-menu__item-text"><span>Написать в чат</span><span class="support-menu__status" data-support-status hidden></span></span></button>
+  <a class="support-menu__item" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">{{ tg_icon() }}<span>Telegram</span></a>
+{% endmacro %}
+{% set header = support_variant == "header" %}
+{% if support and support.mode != "none" %}
+<link rel="stylesheet" href="{{ sub_statics }}styles/support-menu.css">
+<div class="support-menu{{ ' support-menu--header' if header else ' support-menu--floating' }}" data-support-menu>
   <script type="application/json" data-support-config>{{ support | tojson }}</script>
   {% if support.mode == "telegram" %}
-    {# В шапке и нижнем меню мало места — «Помощь», куда ведёт, говорит иконка Telegram. #}
-    <a class="{{ trigger }}" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer"{{ ' aria-label="Связаться с нами в TG"' if chip }}>
-      {{ tg_icon() }}<span{{ ' class="floating-nav__name"' if nav }}>{{ "Помощь" if nav or chip else "Связаться с нами в TG" }}</span>
-    </a>
+    {% if header %}
+      <a class="support-menu__icon-btn" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer" aria-label="Telegram">{{ tg_icon(24) }}</a>
+    {% else %}
+      <a class="support-menu__button" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">{{ tg_icon() }}<span>Telegram</span></a>
+    {% endif %}
+  {% elif header %}
+    <button type="button" class="support-menu__icon-btn" data-support-toggle aria-expanded="false" aria-label="Поддержка">{{ header_chat_icon() }}</button>
+    {% if support.mode == "menu" %}
+      {# Шторка снизу: затемнение — сам список (клик по нему закрывает), содержимое — .support-menu__sheet.
+         Без id: на index.html шапок три, и шторка в каждой. #}
+      <div class="support-menu__list support-menu__list--sheet" data-support-list hidden>
+        <div class="support-menu__sheet" role="dialog" aria-modal="true" aria-label="Как хотите связаться">
+          <div class="support-menu__sheet-head">
+            <h2 class="support-menu__sheet-title">Как хотите связаться</h2>
+            <button type="button" class="support-menu__close" data-support-close aria-label="Закрыть">{{ close_icon(24, "") }}</button>
+          </div>
+          <div class="support-menu__options">{{ options() }}</div>
+        </div>
+      </div>
+    {% else %}
+      {# Только чат — значок открывает его сразу, список нужен лишь под статус ошибки. #}
+      <div class="support-menu__list" data-support-list hidden><p class="support-menu__status" data-support-status hidden></p></div>
+    {% endif %}
   {% else %}
-    <button type="button" class="{{ trigger }}" data-support-toggle aria-expanded="false"{{ ' aria-label="Помощь"' if chip }}>
-      {{ chat_icon() }}<span{{ ' class="floating-nav__name"' if nav }}>Помощь</span>
+    <button type="button" class="support-menu__button" data-support-toggle aria-expanded="false">
+      {% if support.mode == "menu" %}
+        {# Открыт выбор — вместо чата крестик: плавно, по aria-expanded. #}
+        <span class="support-menu__swap">{{ chat_icon() }}{{ close_icon(20, "support-menu__icon support-menu__icon--close") }}</span>
+      {% else %}
+        {{ chat_icon() }}
+      {% endif %}
+      <span>Чат</span>
     </button>
     <div class="support-menu__list" data-support-list hidden>
-      {# Только чат — «Помощь» открывает его сразу, список нужен лишь под статус. #}
-      {# Ошибка чата — прямо под «Чат на сайте», как в вебе; без пункта (только чат) — отдельной строкой. #}
       {% if support.mode == "menu" %}
-        <button type="button" class="support-menu__item" data-support-chat>{{ chat_icon() }}{{ spinner() }}<span class="support-menu__item-text"><span>Чат на сайте</span><span class="support-menu__status" data-support-status hidden></span></span></button>
+        {{ options() }}
       {% else %}
         <p class="support-menu__status" data-support-status hidden></p>
-      {% endif %}
-      {% if support.tg_url %}
-        <a class="support-menu__item" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">{{ tg_icon() }}<span>Написать в Telegram</span></a>
       {% endif %}
     </div>
   {% endif %}
 </div>
-{% if not nav and not chip %}<script defer src="{{ sub_statics }}scripts/support-menu.js"></script>{% endif %}
+{% if not header %}<script defer src="{{ sub_statics }}scripts/support-menu.js"></script>{% endif %}
 {% endif %}

@@ -1,4 +1,4 @@
-// NPVPN-2224: «Помощь» на странице подписки — Chatwoot-чат с identity от бота или Telegram.
+// NPVPN-2224, NPVPN-2314: поддержка на странице подписки — Chatwoot-чат с identity от бота или Telegram.
 (function () {
   'use strict';
 
@@ -136,77 +136,57 @@
     status.hidden = !text;
   }
 
-  // На мобильных поднимаем меню над фиксированными элементами снизу (высота .hint зависит от текста).
-  function placeAboveFixedBottom(root) {
-    var top = null;
-    var mobile = window.matchMedia('(max-width: 1023px)').matches;
-    if (mobile) {
-      document.querySelectorAll('.floating-nav, .button-wrapper_revoke').forEach(function (el) {
-        var rect = el.getBoundingClientRect();
-        if (!rect.width || !rect.height || window.getComputedStyle(el).position !== 'fixed') { return; }
-        if (top === null || rect.top < top) { top = rect.top; }
-      });
-    }
-    if (top !== null) { root.style.bottom = (window.innerHeight - top + 12) + 'px'; }
-    else { root.style.bottom = mobile ? '24px' : ''; }
-  }
-
-  // Кнопка в шапке стоит в одной строке с заголовком. Не влезает — сначала уменьшаем
-  // «Помощь» (до HELP_MIN_PX), потом заголовок (до TITLE_MIN_PX, на 1–3px от исходного);
-  // не влезает и так (экраны уже 360px) — разрешаем заголовку перенос. Заголовок nowrap,
-  // поэтому нехватка места видна как переполнение строки.
-  var HELP_MIN_PX = 12;
-  var TITLE_MIN_PX = 21;
-
-  function fitHeaderTitle(root) {
-    var row = root.closest('.page-header__top');
-    var title = row && row.querySelector('.page-title');
-    var chip = root.querySelector('.support-menu__chip');
-    if (!title || !chip) { return; }
-    title.style.fontSize = '';
-    chip.style.fontSize = '';
-    title.classList.remove('page-title--wrap');
-    if (!root.getClientRects().length) { return; }  // кнопка скрыта — подгонять не к чему
-    var overflows = function () { return row.scrollWidth > row.clientWidth; };
-    var help = parseFloat(window.getComputedStyle(chip).fontSize);
-    while (overflows() && help > HELP_MIN_PX) { help -= 1; chip.style.fontSize = help + 'px'; }
-    var size = parseFloat(window.getComputedStyle(title).fontSize);
-    while (overflows() && size > TITLE_MIN_PX) { size -= 1; title.style.fontSize = size + 'px'; }
-    if (overflows()) { title.classList.add('page-title--wrap'); }
-  }
-
   function init(root) {
     var cfgNode = root.querySelector('script[data-support-config]');
     if (!cfgNode) { return; }
     var cfg = JSON.parse(cfgNode.textContent);
-    // Пункт нижнего меню стоит внутри .floating-nav — поднимать нужно только плавающую кнопку.
-    if (!root.hasAttribute('data-support-inline')) {
-      placeAboveFixedBottom(root);
-      var replace = function () { placeAboveFixedBottom(root); };
-      window.addEventListener('resize', replace);
-      window.addEventListener('load', replace);
-      if (document.fonts && document.fonts.ready) { document.fonts.ready.then(replace); }
-    }
-    if (root.classList.contains('support-menu--header')) {
-      var refit = function () { fitHeaderTitle(root); };
-      refit();
-      window.addEventListener('resize', refit);
-      window.addEventListener('load', refit);
-      // ширина заголовка зависит от шрифта — пересчитываем, когда он догрузится
-      if (document.fonts && document.fonts.ready) { document.fonts.ready.then(refit); }
-    }
     var toggle = root.querySelector('[data-support-toggle]');
     var list = root.querySelector('[data-support-list]');
     var chatBtn = root.querySelector('[data-support-chat]');
     if (!toggle || !list) { return; }
 
-    function setOpen(open) {
-      list.hidden = !open;
-      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // Шторка (мобилка, оба способа): появляется анимацией, уходит переходом (is-closing),
+    // скрываем, когда уехала; пока открыта, страница под ней не прокручивается.
+    // Модальная: фокус — на крестик, Tab не уходит из шторки, после закрытия — обратно.
+    var sheet = list.classList.contains('support-menu__list--sheet');
+    var SHEET_CLOSE_MS = 300;
+    var closeTimer = null;
+    var focusBack = null;
+
+    // уезжает — для повторного нажатия на значок она уже закрыта
+    function isClosed() {
+      return list.hidden || list.classList.contains('is-closing');
     }
 
-    // Текущая попытка открыть чат. Пока грузится — спиннер на месте иконки «Чат на сайте»
-    // (как в вебе; на «Помощь» лоадера нет); ушли из меню, не дождавшись, — чат потом сам
+    function setOpen(open) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (!sheet) { list.hidden = !open; return; }
+      var wasClosed = isClosed();
+      clearTimeout(closeTimer);
+      list.classList.remove('is-closing');
+      if (open) {
+        list.hidden = false;
+        document.body.classList.add('support-sheet-open');
+        if (wasClosed) {
+          focusBack = document.activeElement;
+          var close = list.querySelector('[data-support-close]');
+          if (close) { close.focus(); }
+        }
+        return;
+      }
+      if (list.hidden) { return; }
+      document.body.classList.remove('support-sheet-open');
+      if (focusBack && list.contains(document.activeElement)) { focusBack.focus(); }
+      focusBack = null;
+      list.classList.add('is-closing');
+      closeTimer = setTimeout(function () {
+        list.hidden = true;
+        list.classList.remove('is-closing');
+      }, SHEET_CLOSE_MS);
+    }
+
+    // Текущая попытка открыть чат. Пока грузится — спиннер на месте иконки «Написать в чат»
+    // (как в вебе; на самой кнопке лоадера нет); ушли из меню, не дождавшись, — чат потом сам
     // не всплывает.
     var waiting = null;
 
@@ -234,8 +214,36 @@
     document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { leaveMenu(); } });
     var tgLink = root.querySelector('a.support-menu__item');
     if (tgLink) { tgLink.addEventListener('click', leaveMenu); }
+    // шторка: затемнение — сам список, клик мимо неё закрывает; и крестик
+    list.addEventListener('click', function (event) { if (event.target === list) { leaveMenu(); } });
+    var closeBtn = root.querySelector('[data-support-close]');
+    if (closeBtn) { closeBtn.addEventListener('click', leaveMenu); }
+    if (sheet) {
+      list.addEventListener('keydown', function (event) {
+        if (event.key !== 'Tab') { return; }
+        var items = list.querySelectorAll('button:not([disabled]), a[href]');
+        if (!items.length) { return; }
+        var first = items[0];
+        var last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    }
+    // шторка — только мобилка: расширили окно до десктопа — закрываем, иначе страница
+    // так и осталась бы без прокрутки (сама шторка там скрыта CSS)
+    if (sheet && window.matchMedia) {
+      var desktop = window.matchMedia('(min-width: 1024px)');
+      var onDesktop = function (event) { if (event.matches) { leaveMenu(); } };
+      if (desktop.addEventListener) { desktop.addEventListener('change', onDesktop); }
+      else if (desktop.addListener) { desktop.addListener(onDesktop); }
+    }
 
-    // Только чат (без Telegram) — вилка не нужна: «Помощь» сразу открывает чат,
+    // Только чат (без Telegram) — вилка не нужна: кнопка сразу открывает чат,
     // а список остаётся только под статус загрузки/ошибки.
     var direct = cfg.mode === 'chat';
 
@@ -284,14 +292,14 @@
     if (direct) {
       toggle.addEventListener('click', function () { runChat(toggle); });
     } else {
-      toggle.addEventListener('click', function () { if (list.hidden) { setOpen(true); } else { leaveMenu(); } });
+      toggle.addEventListener('click', function () { if (isClosed()) { setOpen(true); } else { leaveMenu(); } });
       if (chatBtn && cfg.chat) {
         chatBtn.addEventListener('click', function () { runChat(chatBtn); });
       }
     }
 
     // ?support=open — пришли из VPN-приложения. Реагирует только видимая кнопка: на странице
-    // их две (плавающая и пункт нижнего меню), иначе identity запросили бы дважды.
+    // их несколько (плавающая и значки в шапках), иначе identity запросили бы дважды.
     if (new URLSearchParams(window.location.search).get('support') === 'open' && toggle.getClientRects().length) {
       if (direct) { runChat(toggle); } else { setOpen(true); }
     }

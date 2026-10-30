@@ -1,4 +1,4 @@
-"""Кнопка «Помощь» на страницах подписки (NPVPN-2224)."""
+"""Поддержка на страницах подписки (NPVPN-2224, NPVPN-2314)."""
 
 from __future__ import annotations
 
@@ -48,12 +48,22 @@ def _config(html: str) -> dict:
     return json.loads(match.group(1))
 
 
+HEADER_TOP = r'<div class="page-header__top">(.*?)</div>\s*</div>'
+TG_PATH, HEADER_CHAT_PATH = 'd="M10.3078', 'd="M21 11.9999'
+
+
+def _floating(html: str) -> str:
+    match = re.search(r'<div class="support-menu support-menu--floating"(.*?)</div>\s*<script defer', html, re.S)
+    assert match, "нет плавающей кнопки"
+    return match.group(1)
+
+
 @pytest.mark.parametrize("template", ["index.html", "expired.html", "limited.html"])
 def test_menu_with_chat_and_telegram(template):
     html = _render(template, build_support_context({**CHAT, **TG}, 7, "TOKEN"))
     assert "data-support-menu" in html
-    assert "Чат на сайте" in html
-    assert "Написать в Telegram" in html
+    assert "Написать в чат" in html
+    assert ">Telegram<" in html
     assert 'src="/statics/subscription/scripts/support-menu.js"' in html
     cfg = _config(html)
     assert cfg["chat"]["bot_id"] == 7
@@ -62,14 +72,16 @@ def test_menu_with_chat_and_telegram(template):
 
 def test_revoked_page_offers_only_telegram():
     html = _render("revoked.html", build_support_context({**CHAT, **TG}, 7, "TOKEN", allow_chat=False))
-    assert "Связаться с нами в TG" in html
-    assert "Чат на сайте" not in html
+    assert ">Telegram<" in html
+    assert "Написать в чат" not in html
+    assert "data-support-toggle" not in html
 
 
 def test_no_support_renders_nothing():
     html = _render("index.html", build_support_context({}, 7, "TOKEN"))
     assert "data-support-menu" not in html
     assert "support-menu.js" not in html
+    assert "support-menu.css" not in html
 
 
 def test_config_json_cannot_break_out_of_script():
@@ -87,68 +99,81 @@ def test_telegram_href_is_escaped():
 
 
 @pytest.mark.parametrize("template", ["index.html", "expired.html", "limited.html", "revoked.html"])
-def test_include_once_right_before_body_end(template):
+def test_floating_button_once_with_script_right_before_body_end(template):
     html = _render(template, build_support_context({**CHAT, **TG}, 7, "TOKEN"))
-    assert html.count("data-support-menu>") == 1
+    assert html.count("support-menu--floating") == 1
+    assert html.count("support-menu.js") == 1
     assert re.search(r"support-menu\.js\"></script>\s*</body>", html)
 
 
-@pytest.mark.parametrize("support_ctx", [{**CHAT, **TG}, TG])
-def test_index_has_nav_item_and_assets_once(support_ctx):
-    html = _render("index.html", build_support_context(support_ctx, 7, "TOKEN"))
-    nav = re.search(r'<nav class="floating-nav">(.*?)</nav>', html, re.S)
-    assert nav and "data-support-inline" in nav.group(1)
-    assert html.count("data-support-inline") == 1
-    assert html.count("support-menu.js") == 1
-    assert html.count("styles/support-menu.css") == 1
-
-
-@pytest.mark.parametrize("template", ["expired.html", "limited.html", "revoked.html"])
-def test_pages_without_bottom_nav_have_header_button(template):
-    # Нижнего меню нет — на мобилке «Помощь» в шапке рядом с заголовком.
+@pytest.mark.parametrize("template", ["index.html", "expired.html", "limited.html", "revoked.html"])
+def test_header_has_support_icon(template):
+    # Мобилка: значок поддержки в шапке (на index.html — рядом с «Личным кабинетом»).
     html = _render(template, build_support_context({**CHAT, **TG}, 7, "TOKEN"))
-    assert "support-menu--nav" not in html
-    header = re.search(r'<div class="page-header__top">(.*?)</div>\s*</div>', html, re.S)
-    assert header and "support-menu--header" in header.group(1)
-    assert html.count("support-menu.js") == 1
+    headers = re.findall(HEADER_TOP, html, re.S)
+    assert headers and all("support-menu--header" in h for h in headers)
 
 
-@pytest.mark.parametrize("template", ["expired.html", "limited.html", "revoked.html"])
-def test_header_button_says_help_icon_by_mode(template):
-    # В шапке всегда «Помощь»; куда ведёт — по иконке: Telegram или чат.
-    tg_path, chat_path = 'd="M10.3078', 'd="M10 17.4999'
-    pattern = r'<div class="page-header__top">(.*?)</div>\s*</div>'
-    tg_header = re.search(pattern, _render(template, build_support_context(TG, 7, "TOKEN")), re.S).group(1)
-    assert ">Помощь<" in tg_header and tg_path in tg_header and chat_path not in tg_header
-    chat_header = re.search(pattern, _render(template, build_support_context(CHAT, 7, "TOKEN")), re.S).group(1)
-    assert ">Помощь<" in chat_header and chat_path in chat_header
+def test_index_has_no_support_in_bottom_nav_or_sidebar():
+    # NPVPN-2314: «Помощь» из нижнего меню и пункт сайдбара убраны — их заменили шапка и плавающая кнопка.
+    for ctx in ({**CHAT, **TG}, TG):
+        html = _render("index.html", build_support_context(ctx, 7, "TOKEN"))
+        nav = re.search(r'<nav class="floating-nav">(.*?)</nav>', html, re.S)
+        sidebar = re.search(r'<nav class="sidebar-nav">(.*?)</nav>', html, re.S)
+        assert nav and "data-support-menu" not in nav.group(1)
+        assert sidebar and "data-support-menu" not in sidebar.group(1)
+        assert "Помощь" not in html
 
 
-def test_index_has_no_header_button():
-    html = _render("index.html", build_support_context({**CHAT, **TG}, 7, "TOKEN"))
-    assert "support-menu--header" not in html
+@pytest.mark.parametrize("template", ["index.html", "expired.html", "limited.html"])
+def test_both_channels_header_opens_sheet(template):
+    html = _render(template, build_support_context({**CHAT, **TG}, 7, "TOKEN"))
+    header = re.search(HEADER_TOP, html, re.S).group(1)
+    assert HEADER_CHAT_PATH in header and "data-support-toggle" in header
+    assert "support-menu__list--sheet" in header
+    assert "Как хотите связаться" in header and "data-support-close" in header
+    assert "Написать в чат" in header and TG["sub_support_url"] in header
+    # на index.html шапок три — у шторки нет id, иначе они бы повторялись
+    assert 'id="support-sheet' not in html
 
 
-def test_telegram_only_has_sidebar_item_like_web():
-    html = _render("index.html", build_support_context(TG, 7, "TOKEN"))
-    sidebar = re.search(r'<nav class="sidebar-nav">(.*?)</nav>', html, re.S)
-    assert sidebar and "sidebar-nav__item--support" in sidebar.group(1)
-    assert "Связаться с нами в TG" in sidebar.group(1)
-    assert TG["sub_support_url"] in sidebar.group(1)
+@pytest.mark.parametrize("template", ["index.html", "expired.html", "limited.html", "revoked.html"])
+def test_telegram_only_header_icon_is_link(template):
+    html = _render(template, build_support_context(TG, 7, "TOKEN"))
+    header = re.search(HEADER_TOP, html, re.S).group(1)
+    assert 'aria-label="Telegram"' in header and TG["sub_support_url"] in header
+    assert TG_PATH in header and "data-support-toggle" not in header
 
 
-def test_chat_has_no_sidebar_item():
-    html = _render("index.html", build_support_context({**CHAT, **TG}, 7, "TOKEN"))
-    assert "sidebar-nav__item--support" not in html
+@pytest.mark.parametrize("template", ["index.html", "expired.html", "limited.html"])
+def test_chat_only_header_icon_opens_chat_without_sheet(template):
+    html = _render(template, build_support_context(CHAT, 7, "TOKEN"))
+    header = re.search(HEADER_TOP, html, re.S).group(1)
+    assert HEADER_CHAT_PATH in header and "data-support-toggle" in header
+    assert "support-menu__list--sheet" not in header
+    assert "data-support-status" in header
+
+
+def test_floating_both_channels_is_chat_with_close_swap():
+    floating = _floating(_render("index.html", build_support_context({**CHAT, **TG}, 7, "TOKEN")))
+    assert ">Чат<" in floating
+    assert "support-menu__swap" in floating and "support-menu__icon--close" in floating
+    assert "Написать в чат" in floating and ">Telegram<" in floating
+
+
+def test_floating_telegram_only_is_link():
+    floating = _floating(_render("index.html", build_support_context(TG, 7, "TOKEN")))
+    assert ">Telegram<" in floating and TG["sub_support_url"] in floating
+    assert "data-support-toggle" not in floating
 
 
 def test_chat_mode_without_telegram_has_no_fork():
-    # Один вариант — без вилки: «Помощь» сразу открывает чат, пунктов меню нет.
+    # Один вариант — без вилки: кнопка сразу открывает чат, пунктов меню нет.
     html = _render("index.html", build_support_context(CHAT, 7, "TOKEN"))
-    assert "Написать в Telegram" not in html
-    assert "Чат на сайте" not in html
+    assert "Telegram" not in html
+    assert "Написать в чат" not in html
     assert "data-support-chat" not in html
-    assert "Помощь" in html
+    assert ">Чат<" in _floating(html)
     cfg = _config(html)
     assert cfg["mode"] == "chat"
     assert cfg["tg_url"] == ""

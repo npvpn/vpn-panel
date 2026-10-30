@@ -185,7 +185,7 @@ def test_spinner_gone_after_chat_opens():
     assert out["roots"][0]["listOpen"] is False
 
 
-# На кнопке «Помощь» лоадера нет — ни в вебе, ни в панели.
+# На самой кнопке поддержки лоадера нет — ни в вебе, ни в панели.
 def test_chat_mode_no_spinner_on_help_button():
     out = _run(roots=_two("chat", ""), clicks=[(0, "toggle")], ready_delay=500)
     assert out["roots"][0]["toggleLoading"] is False
