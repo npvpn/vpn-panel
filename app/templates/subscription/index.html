@@ -166,8 +166,9 @@
               const response = await fetch(`/{{ sub_path }}/{{ token }}/devices/${deviceId}/revoke`);
               if (!response.ok) throw new Error(`revoke failed: ${response.status}`);
               this.devices = this.devices.filter((device) => device.id !== deviceId);
-              // лимит: освободили место — сервер покажет обычную страницу (как было в limited.html)
-              if (this.pageState === 'limited' && this.deviceLimit > 0 && this.devices.length <= this.deviceLimit) {
+              // лимит: освободили место — сервер покажет обычную страницу. Строго меньше лимита, как
+              // «cleared» в status-poll.js: сервер считает лимит достигнутым при устройств ≥ лимита
+              if (this.pageState === 'limited' && this.deviceLimit > 0 && this.devices.length < this.deviceLimit) {
                 window.location.reload();
               }
             } catch {
