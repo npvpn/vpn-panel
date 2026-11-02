@@ -41,9 +41,9 @@
 .support-menu--header .support-menu__list:not(.support-menu__list--sheet) { position: absolute; top: calc(100% + 8px); right: 0; z-index: 50; }
 .page-header__actions { display: flex; align-items: center; gap: 20px; flex-shrink: 0; }
 
-/* Шторка «Как хотите связаться»: затемнение — чёрный 20%, выезжает снизу, уезжает обратно (is-closing).
+/* Шторка «Как хотите связаться»: затемнение — --overlay-scrim (светлая тема — чёрный 20%), выезжает снизу, уезжает обратно (is-closing).
    Выше нижнего меню (.floating-nav, z-index 100), ниже модалок (.modal-overlay, 999). */
-.support-menu__list--sheet { position: fixed; inset: 0; z-index: 200; justify-content: flex-end; min-width: 0; padding: 0; border-radius: 0; background: rgba(0, 0, 0, .2); animation: support-menu-fade-in .3s ease-out; transition: opacity .3s; }
+.support-menu__list--sheet { position: fixed; inset: 0; z-index: 200; justify-content: flex-end; min-width: 0; padding: 0; border-radius: 0; background: var(--overlay-scrim); animation: support-menu-fade-in .3s ease-out; transition: opacity .3s; }
 .support-menu__sheet { box-sizing: border-box; width: 100%; padding: 24px 16px max(42px, env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; background: var(--surface); animation: support-menu-sheet-in .3s ease-out; transition: transform .3s ease-out; }
 .support-menu__list--sheet.is-closing { opacity: 0; pointer-events: none; }
 .support-menu__list--sheet.is-closing .support-menu__sheet { transform: translateY(100%); }

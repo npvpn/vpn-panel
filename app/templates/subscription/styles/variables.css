@@ -32,6 +32,8 @@
     --control-secondary-bg: #f6f6f6;
     --control-secondary-hover-bg: #ebebeb;
     --control-secondary-pressed-bg: #dbdbdb;
+    /* затемнение под шторкой (Overlay / scrim): в тёмной теме плотнее — 20% там не видно */
+    --overlay-scrim: rgba(0, 0, 0, 0.2);
 
     /* FONTS */
     --font-family: 'Open Sans', sans-serif;
@@ -61,7 +63,8 @@
     --control-primary-content: #141413;
     --control-secondary-bg: #343434;
     --control-secondary-hover-bg: #7b7b7b;
-    --control-secondary-pressed-bg: #232323;
+    --control-secondary-pressed-bg: #252525;
+    --overlay-scrim: rgba(0, 0, 0, 0.5);
 
     --gray-2: #dbdbdb;
     --gray-3: #b8b8b8;
