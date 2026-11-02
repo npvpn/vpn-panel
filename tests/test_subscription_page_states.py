@@ -143,6 +143,8 @@ def test_limited_shows_limit_and_hides_add_device():
     assert "Добавить устройства" not in html
     assert "Чтобы подключить больше устройств" in html
     assert html.count('class="state-card"') == 1
+    # перезагрузка после удаления — только когда устройств стало меньше лимита (как «cleared» опроса)
+    assert "this.devices.length < this.deviceLimit" in html
 
 
 @pytest.mark.parametrize(
