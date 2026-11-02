@@ -6,6 +6,10 @@ on:
     branches: [master]
   workflow_dispatch:
 
+concurrency:
+  group: openapi-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   export:
     runs-on: ubuntu-latest
@@ -15,6 +19,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --all-groups
+      - name: Install Xray
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl unzip ca-certificates
+          version="$(sed -n 's/^ARG XRAY_VERSION=//p' Dockerfile | head -n 1)"
+          test -n "$version"
+          curl -fsSL https://github.com/npvpn/Marzban-scripts/raw/master/install_latest_xray.sh | sudo bash -s -- "$version"
+          xray version
       - name: Export OpenAPI schema
         run: uv run python scripts/export_openapi.py openapi.json
       - uses: actions/upload-artifact@v4
@@ -36,16 +48,46 @@ jobs:
       - name: Publish schema on the openapi release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          notes="Актуальная схема API ветки master. Файл обновляется при каждом push в master."
-          if gh release view openapi >/dev/null 2>&1; then
-            gh release upload openapi openapi.json --clobber
-          else
-            gh release create openapi \
-              --target "$GITHUB_SHA" \
-              --title "OpenAPI" \
-              --notes "$notes" \
-              --prerelease \
-              --latest=false \
-              openapi.json
+          set -euo pipefail
+
+          head_sha="$(gh api "repos/${GH_REPO}/commits/master" --jq .sha)"
+          if [ "$GITHUB_SHA" != "$head_sha" ]; then
+            echo "Skip publish: ${GITHUB_SHA} is not master HEAD ${head_sha}."
+            exit 0
           fi
+
+          view_log="$(mktemp)"
+          set +e
+          gh release view openapi >"$view_log" 2>&1
+          view_status=$?
+          set -e
+          if [ "$view_status" -eq 0 ]; then
+            gh release upload openapi openapi.json --clobber
+            exit 0
+          fi
+          if ! grep -q "release not found" "$view_log"; then
+            cat "$view_log" >&2
+            exit "$view_status"
+          fi
+
+          tag_log="$(mktemp)"
+          set +e
+          gh api "repos/${GH_REPO}/git/ref/tags/openapi" -i --silent >"$tag_log" 2>&1
+          set -e
+          tag_http="$(awk 'toupper($1) ~ /^HTTP/ { code=$2 } END { print code }' "$tag_log")"
+          if [ "$tag_http" != "404" ]; then
+            echo "Refusing to create release openapi (tag check HTTP ${tag_http:-none})." >&2
+            cat "$tag_log" >&2
+            exit 1
+          fi
+
+          notes="Актуальная схема API ветки master. Файл обновляется при каждом push в master."
+          gh release create openapi \
+            --target "$GITHUB_SHA" \
+            --title "OpenAPI" \
+            --notes "$notes" \
+            --prerelease \
+            --latest=false \
+            openapi.json

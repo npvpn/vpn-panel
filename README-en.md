@@ -208,7 +208,7 @@ The current API schema of the `master` branch is published on every update of th
 
 [openapi.json](https://github.com/npvpn/vpn-panel/releases/download/openapi/openapi.json)
 
-On an installed panel the schema of that version is also available at `/openapi.json`. `/docs` and `/redoc` are enabled with `DOCS=true`.
+On an installed panel the schema of that version is available at `/openapi.json`. It matches the published file only with the default settings. With `MEMORY_PROFILING_ENABLED=true` the panel adds `/api/system/memory/*` routes, which are not in the published file. `/docs` and `/redoc` are enabled with `DOCS=true`.
 
 ---
 

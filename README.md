@@ -222,7 +222,7 @@ sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/mar
 
 [openapi.json](https://github.com/npvpn/vpn-panel/releases/download/openapi/openapi.json)
 
-На установленной панели та же схема этой версии доступна по адресу `/openapi.json`. Страницы `/docs` и `/redoc` включаются переменной `DOCS=true`.
+На установленной панели схема этой версии доступна по адресу `/openapi.json`. Она совпадает с публикуемым файлом только при настройках по умолчанию. Если `MEMORY_PROFILING_ENABLED=true`, панель добавляет маршруты `/api/system/memory/*`, которых в публикуемом файле нет. Страницы `/docs` и `/redoc` включаются переменной `DOCS=true`.
 
 ---
 
