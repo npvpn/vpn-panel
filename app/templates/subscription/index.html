@@ -425,25 +425,26 @@ get alternativeApps() {
         <div class="page-content" :class="{ 'page-content--centered': currentPage === 'devices' && deviceCount === 0 }">
           {% set account_btn %}
             {% if web_url or bot_url %}
+              {# Мобилка: иконкой, как значок поддержки рядом (NPVPN-2314). #}
               <a
                 href="{{ web_url or bot_url }}"
                 class="header-account-btn"
                 rel="noopener noreferrer"
+                aria-label="Личный кабинет"
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12.6666 14C12.6666 11.4227 10.5772 9.33333 7.99992 9.33333C5.42259 9.33333 3.33325 11.4227 3.33325 14M7.99992 7.33333C6.52716 7.33333 5.33325 6.13943 5.33325 4.66667C5.33325 3.19391 6.52716 2 7.99992 2C9.47268 2 10.6666 3.19391 10.6666 4.66667C10.6666 6.13943 9.47268 7.33333 7.99992 7.33333Z" stroke="#141413" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round" />
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M19 21C19 17.134 15.866 14 12 14C8.13401 14 5 17.134 5 21M12 11C9.79086 11 8 9.20914 8 7C8 4.79086 9.79086 3 12 3C14.2091 3 16 4.79086 16 7C16 9.20914 14.2091 11 12 11Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
-                <span>Личный кабинет</span>
               </a>
             {% endif %}
           {% endset %}
-          {# Мобилка: справа в шапке — кабинет и значок поддержки (NPVPN-2314); на «Устройствах» —
+          {# Мобилка: справа в шапке — значок поддержки и кабинет (NPVPN-2314); на «Устройствах» —
              только поддержка: в кабинет ведут «Настройки». #}
           {% set support_header %}{% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}{% endset %}
           {% set header_actions %}
             <div class="page-header__actions">
-              {{ account_btn }}
               {{ support_header }}
+              {{ account_btn }}
             </div>
           {% endset %}
           <div x-show="currentPage === 'settings'" class="page-header">
