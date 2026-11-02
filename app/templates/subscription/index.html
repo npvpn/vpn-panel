@@ -1,3 +1,6 @@
+{# NPVPN-2315: одна страница на все состояния подписки. expired/limited/revoked.html задают
+   page_state и включают этот шаблон; без него — обычная страница. #}
+{% set page_state = page_state | default("") %}
 <!DOCTYPE html>
 <html lang="ru">
   <head>
@@ -6,17 +9,23 @@
     <title>Информация о подписке</title>
     <link rel="stylesheet" href="/statics/main.css">
     <link rel="stylesheet" href="{{ sub_statics }}styles/index.css">
-    <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');</style>
     <link rel="icon" href="data:,">
     <script defer src="/statics/vendor/js/alpinejs.js"></script>
     <script defer src="/statics/vendor/js/qrcode.min.js"></script>
     <script defer src="{{ sub_statics }}scripts/cabinet-link.js"></script>
+    {# Опрос статуса — по состоянию, как было на отдельных страницах: обычная перезагружается при
+       достижении лимита и отзыве токена, «лимит» — когда устройство освободилось, «истекла» — при
+       смене статуса. «Устарел» не опрашиваем: /info отвечает 404, и страница перезагружалась бы вечно. #}
+    {% if page_state != "revoked" %}
     <script defer src="{{ sub_statics }}scripts/status-poll.js"
       data-info-url="/{{ sub_path }}/{{ token }}/info"
       data-initial-status="{{ user.status.value }}"
-      data-device-limit-mode="reached"
+      {% if page_state == "limited" %}data-device-limit-mode="cleared"
+      {% elif not page_state %}data-device-limit-mode="reached"
       data-reload-on-gone="true"
-      data-interval-ms="30000"></script>
+      {% endif %}data-interval-ms="30000"></script>
+    {% endif %}
     <script id="devices-data" type="application/json">{{ devices_json | safe }}</script>
     <script>
       const initialDevices = JSON.parse(
@@ -61,7 +70,9 @@
         Alpine.data('subscriptionManager', () => ({
           user: userData,
           selectedOs: 'QR',
-          currentPage: 'settings',
+          pageState: '{{ page_state }}',
+          // вкладка по макету: истекла/устарел — «Тариф», лимит — «Устройства»
+          currentPage: '{{ "tariff" if page_state in ("expired", "revoked") else ("devices" if page_state == "limited" else "settings") }}',
           // clientApps: {{ client_apps | tojson }},
           clientApps: JSON.parse('{{ client_apps | tojson | safe }}'),
 
@@ -155,6 +166,10 @@
               const response = await fetch(`/{{ sub_path }}/{{ token }}/devices/${deviceId}/revoke`);
               if (!response.ok) throw new Error(`revoke failed: ${response.status}`);
               this.devices = this.devices.filter((device) => device.id !== deviceId);
+              // лимит: освободили место — сервер покажет обычную страницу (как было в limited.html)
+              if (this.pageState === 'limited' && this.deviceLimit > 0 && this.devices.length <= this.deviceLimit) {
+                window.location.reload();
+              }
             } catch {
               alert('Не удалось удалить устройство. Попробуйте ещё раз.');
             } finally {
@@ -279,27 +294,40 @@ get alternativeApps() {
             const statuses = {
               active: "Активен",
               limited: "Ограничен",
-              expired: "Просрочен",
+              expired: "Подписка истекла",
               disabled: "Отключен"
             };
             return statuses[this.user.status.value] || "Неизвестен";
           },
-          get statusClass() {
-            const classes = {
-              active: 'text-green-500',
-              limited: 'text-yellow-500',
-              expired: 'text-red-500',
-              disabled: 'text-gray-500'
+          get statusColor() {
+            const colors = {
+              active: 'var(--green)',
+              limited: '#eeba00',
+              expired: 'var(--red)',
+              disabled: 'var(--text-secondary)'
             };
-            return classes[this.user.status.value] || 'text-gray-500';
+            return colors[this.user.status.value] || 'var(--text-secondary)';
           },
+          // строка белого списка: есть лимит или уже есть расход — без лимита «расход/Безлимит»;
+          // у кого белого списка нет совсем (ни лимита, ни расхода), строки нет
           get isBsActive() {
-            return this.user.bs_monthly_limit_total > 0;
+            return this.user.bs_monthly_limit_total > 0 || this.user.bs_monthly_used > 0;
           },
           get bsTrafficText() {
             const used = bytesFormat(this.user.bs_monthly_used);
-            const limit = bytesFormat(this.user.bs_monthly_limit_total);
+            const limit = +this.user.bs_monthly_limit_total ? bytesFormat(this.user.bs_monthly_limit_total) : 'Безлимит';
             return `${used}/${limit}`;
+          },
+          // «2 дня • 23.05.26»; истекла / ключ устарел — только дата
+          get termText() {
+            if (this.user.expire == 0) return 'Бессрочно';
+            const date = new Date(this.user.expire * 1000).toLocaleDateString('ru-RU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: '2-digit'
+            });
+            const ended = this.pageState === 'expired' || this.pageState === 'revoked' || this.user.expire * 1000 < Date.now();
+            return ended ? date : `${this.remainingDays} • ${date}`;
           },
           get expirationText() {
             if (this.user.expire == 0) return 'Никогда';
@@ -439,21 +467,75 @@ get alternativeApps() {
             {% endif %}
           {% endset %}
           {# Мобилка: справа в шапке — значок поддержки и кабинет (NPVPN-2314). #}
+          {% set support_header %}{% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}{% endset %}
           {% set header_actions %}
             <div class="page-header__actions">
-              {% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}
+              {{ support_header }}
               {{ account_btn }}
             </div>
           {% endset %}
-          <div x-show="currentPage === 'settings'" class="page-header">
-            <div class="page-header__top">
-              <h2 class="page-title">Настройка VPN</h2>
-              {{ header_actions }}
+          {# Инфокарточка (NPVPN-2315): что случилось и что делать. kind: revoked — «вставьте новый ключ»
+             («Тариф» и вместо «Настроек»: старый ключ не работает), expired — «оплатите» («Тариф»),
+             devices — «войдите в кабинет, чтобы подключить больше» («Устройства» на лимите). #}
+          {# Основная кнопка состояния: истекла и есть оплата — «Оплатить» (ссылку собирает бэк,
+             resolve_pay_url: только http(s)), иначе «Войти в личный кабинет», если он есть.
+             Одна на инфоблок и заглушку «Настроек», чтобы не разошлись. #}
+          {% macro main_action(kind) %}
+            {%- if kind == "expired" and pay_url -%}
+              <a href="{{ pay_url }}/{{ token }}" class="primary-btn" rel="noreferrer">Оплатить</a>
+            {%- elif web_url or bot_url -%}
+              <a href="{{ web_url or bot_url }}" class="primary-btn" data-cabinet-link>Войти в личный кабинет</a>
+            {%- endif -%}
+          {% endmacro %}
+          {% macro info_card(kind) %}
+            <div class="state-card">
+              <svg class="state-card__icon" width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="28" cy="27.9999" r="21" fill="#F99E0B" />
+                <rect x="28" y="18.6666" width="0.0233333" height="0.0233333" stroke="white" stroke-width="7" stroke-linejoin="round" />
+                <path d="M28 28V37.3333" stroke-width="4.66667" stroke-linecap="round" stroke-linejoin="round" stroke="white" />
+              </svg>
+              <p class="state-card__text">
+                {%- if kind == "revoked" -%}
+                  Чтобы продолжить пользоваться сервисом, вставьте новый ключ в&nbsp;приложение&nbsp;— для этого войдите в&nbsp;личный кабинет
+                {%- elif kind == "expired" -%}
+                  Подписка истекла&nbsp;— оплатите её, чтобы продолжить пользоваться сервисом
+                {%- else -%}
+                  Чтобы подключить больше устройств&nbsp;— войдите в&nbsp;личный кабинет
+                {%- endif -%}
+              </p>
+              {% set pay = kind == "expired" and pay_url %}
+              {% if pay or web_url or bot_url %}
+                <div class="state-card__actions{{ ' state-card__actions--pay' if pay }}">
+                  {{ main_action(kind) }}
+                  {% if pay and (web_url or bot_url) %}
+                    <a href="{{ web_url or bot_url }}" class="text-btn" data-cabinet-link>Войти в личный кабинет</a>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+          {% endmacro %}
+          {% set state_card %}{% if page_state %}{{ info_card("devices" if page_state == "limited" else page_state) }}{% endif %}{% endset %}
+          {# В состояниях на «Настройках» заглушка сама говорит, что случилось: заголовка нет (макет),
+             на мобилке остаются значки поддержки и кабинета, на ПК шапки нет совсем. #}
+          <div x-show="currentPage === 'settings'" class="page-header{{ ' page-header--mobile-only' if page_state }}">
+            <div class="page-header__top{{ ' page-header__top--actions-only' if page_state }}">
+              {% if not page_state %}
+                <h2 class="page-title">Как настроить VPN</h2>
+                {{ header_actions }}
+              {% elif page_state == "expired" and pay_url %}
+                {# в заглушке «Оплатить» — вход в кабинет остаётся в шапке #}
+                {{ header_actions }}
+              {% else %}
+                {# в заглушке уже «Войти в личный кабинет» — без дубля в шапке #}
+                <div class="page-header__actions">{{ support_header }}</div>
+              {% endif %}
             </div>
           </div>
           <div x-show="currentPage === 'tariff'" class="page-header">
             <div class="page-header__top">
-              <h2 class="page-title">Текущий тариф</h2>
+              <h2 class="page-title">
+                {%- if page_state == "expired" %}Подписка истекла{% elif page_state == "revoked" %}Ключ доступа устарел{% else %}Тариф{% endif -%}
+              </h2>
               {{ header_actions }}
             </div>
           </div>
@@ -473,11 +555,39 @@ get alternativeApps() {
             <p class="device-count">
                Подключено <span x-text="deviceCount"></span>
               <span x-show="deviceLimit > 0">
-                из <span x-text="deviceLimit"></span>
-              </span>
+                из <span x-text="deviceLimit"></span></span>
+              {%- if page_state == "limited" %}&nbsp;— лимит устройств достигнут{% endif %}
             </p>
           </div>
     
+          {% if page_state %}
+          {# Заглушка «Настроек» в состояниях: QR и инструкции тут не сработают (ключ устарел, подписка
+             истекла, лимит) — говорим, что сделать. Вид — как «Нет активной подписки» в вебе. #}
+          <main x-show="currentPage === 'settings'" class="state-fallback-main">
+            <div class="state-fallback">
+              <div class="state-fallback__icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                  <rect x="2" y="17" width="20" height="3" rx="1" stroke-width="2"/>
+                  <rect x="3" y="5" width="18" height="12" rx="1" stroke-width="2"/>
+                  <path d="M14 6L10 6" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <h3 class="state-fallback__title">
+                {%- if page_state == "revoked" %}Ключ доступа устарел{% elif page_state == "expired" %}Подписка истекла{% else %}Лимит устройств достигнут{% endif -%}
+              </h3>
+              <p class="state-fallback__text">
+                {%- if page_state == "revoked" -%}
+                  Войдите в&nbsp;личный кабинет, чтобы получить новый ключ
+                {%- elif page_state == "expired" -%}
+                  Оплатите подписку, чтобы подключить устройство
+                {%- else -%}
+                  Удалите устройство или увеличьте лимит в&nbsp;личном кабинете
+                {%- endif -%}
+              </p>
+              {{ main_action(page_state) }}
+            </div>
+          </main>
+          {% else %}
           <main x-show="currentPage === 'settings'" class="space-y-4">
             <div class="platforms-list">
               <template x-for="os in osOptions" :key="os.id">
@@ -759,7 +869,7 @@ get alternativeApps() {
                       <a
                         :href="`${selectedApp.scheme}://add/${user.subscription_url}`"
                         class="add-key-button"
-                        style="font-family: var(--third-family);"
+                       
                         x-text="`Добавить ключ в ${selectedApp.name}`"
                       ></a>
                     </template>
@@ -768,38 +878,27 @@ get alternativeApps() {
               </div>
             </div>
           </main>
+          {% endif %}
     
-          <main x-show="currentPage === 'tariff'" style="max-width: 680px;">
-            <div class="flex items-center space-x-4">
-              <div class="space-y-2 flex-1">
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">ID</span>
-                  <span class="tariff-info" x-text="user.username"></span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Статус</span>
-                  <span class="tariff-info" :class="statusClass" x-text="statusText"></span>
-                </div>
-                <div class="flex justify-between items-center" x-show="isBsActive">
-                  <span class="text-[#7b7b7b] tariff-info">Трафик (белый список)</span>
-                  <span class="tariff-info" x-text="bsTrafficText"></span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Действует до</span>
-                  <span class="tariff-info" x-text="expirationText"></span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Осталось</span>
-                  <span class="tariff-info" x-text="remainingDays"></span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Кол-во устройств</span>
-                  <span class="tariff-info">
-                    {% if user.device_limit %}{{ devices|length }} из {{ user.device_limit }}{% else %}{{ devices|length }}{% endif %}
-                  </span>
-                </div>
-              </div>
+          <main x-show="currentPage === 'tariff'" class="tariff-stack">
+            <div class="tariff-card">
+              {# заголовок карточки — только когда у страницы другой («Подписка истекла» / «Ключ доступа устарел»),
+                 иначе дубль «Тариф» под «Тарифом» #}
+              {% if page_state in ("expired", "revoked") %}<h3 class="tariff-card__title">Тариф</h3>{% endif %}
+              <dl class="tariff-card__rows">
+                <dt>ID</dt>
+                <dd x-text="user.username"></dd>
+                <dt>Статус</dt>
+                <dd :style="{ color: statusColor }" x-text="statusText"></dd>
+                <dt x-show="isBsActive">Трафик (белый список)</dt>
+                <dd x-show="isBsActive" x-text="bsTrafficText"></dd>
+                <dt>Срок действия</dt>
+                <dd x-text="termText"></dd>
+                <dt>Устройства</dt>
+                <dd>{% if user.device_limit %}{{ devices|length }} из {{ user.device_limit }}{% else %}{{ devices|length }}{% endif %}</dd>
+              </dl>
             </div>
+            {% if page_state in ("expired", "revoked") %}{{ state_card }}{% endif %}
           </main>
     
           <main x-show="currentPage === 'devices'" :class="{ 'main--centered': deviceCount === 0 }">
@@ -845,31 +944,15 @@ get alternativeApps() {
                     :disabled="revokingId === device.id"
                     @click="openRevokeModal(device)"
                   >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <g clip-path="url(#clip0_5280_1914)">
-                        <path d="M8 6.14239L8 4.4709C8 3.30611 8 2.72371 8.34942 2.36186C8.69883 2 9.26121 2 10.386 2L13.614 2C14.7388 2 15.3012 2 15.6506 2.36186C16 2.72371 16 3.30611 16 4.4709V6.14239" stroke="#141413" stroke-width="2" />
-                        <path d="M12 21.0002C10.6442 21.0002 9.70218 20.9992 8.97266 20.925C8.26177 20.8528 7.85572 20.7184 7.54492 20.5168C7.28461 20.348 7.05193 20.1398 6.85547 19.8997C6.62098 19.6129 6.44287 19.2241 6.29297 18.5256C6.13912 17.8086 6.03462 16.8716 5.88574 15.5237L4.88184 6.43091L19.1182 6.43091L18.1143 15.5237C17.9654 16.8716 17.8609 17.8086 17.707 18.5256C17.5571 19.2241 17.38 19.6129 17.1455 19.8997C16.949 20.14 16.7155 20.3479 16.4551 20.5168C16.1444 20.7184 15.7389 20.8527 15.0283 20.925C14.2987 20.9992 13.3561 21.0002 12 21.0002Z" stroke="#141413" stroke-width="2" />
-                        <path d="M3 6.12198H21" stroke="#141413" stroke-width="2" stroke-linecap="round" />
-                      </g>
-                      <defs>
-                        <clipPath id="clip0_5280_1914">
-                          <rect width="24" height="24" fill="white" />
-                        </clipPath>
-                      </defs>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M7 7L12 12M12 12L17 17M12 12L7 17M12 12L17 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="currentColor" />
                     </svg>
                   </button>
                 </div>
               </template>
 
-                <button class="btn-fourth add-device" style="border-radius: 100px;" @click="currentPage = 'settings'" rel="noopener noreferrer">
-                  <div class="device_button">
-                      <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M8.07107 1V8.07107M8.07107 8.07107V15.1421M8.07107 8.07107H1M8.07107 8.07107H15.1421" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                  </div>
-                  Добавить устройства
-                </button>
             </div>
+            {% if page_state == "limited" %}{{ state_card }}{% endif %}
     
             <div class="empty-devices" x-show="devices.length === 0">
               <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -898,7 +981,7 @@ get alternativeApps() {
                         Удалить устройство<br>
                         из списка?
                       </h3>
-                      <p>Оно исчезнет из списка ваших устройств. Вы сможете снова добавить его позже.</p>
+                      <p class="modal-text">Оно исчезнет из списка ваших устройств. Вы сможете снова добавить его позже.</p>
                     </div>
                     <button
                         class="modal-close"
@@ -929,10 +1012,11 @@ get alternativeApps() {
                         Оставить
                     </button>
                     <button
-                        class="btn-tertiary"
+                        class="btn-danger"
+                        :disabled="revokingId !== null"
                         @click="revokeDevice(selectedDevice.id)"
                     >
-                        Выйти с устройства
+                        Удалить
                     </button>
                 </div>
             </div>
