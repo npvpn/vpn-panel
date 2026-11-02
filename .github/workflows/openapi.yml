@@ -37,6 +37,8 @@ jobs:
 
   publish:
     needs: export
+    # Релиз openapi обновляется только с master. На pull_request job пропускается:
+    # PR не должен перезаписывать опубликованную схему.
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
