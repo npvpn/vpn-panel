@@ -408,7 +408,8 @@
 .qr-wrapper {
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    /* от заголовка до QR — 24 (макет NPVPN-2315) */
+    gap: 24px;
     align-items: center;
     justify-content: center;
 
@@ -426,11 +427,300 @@
     margin: 0 auto;
 }
 
+/* Уведомление «скопировано» (макет NPVPN-2315), как тост в вебе: вверху экрана поверх всего;
+   на мобилке во всю ширину с полями 16, на ПК — 360 по центру. Центр — через margin, не transform:
+   transform занят плавным появлением (выезжает сверху и проявляется). */
+.toast {
+    position: fixed;
+    top: calc(16px + env(safe-area-inset-top));
+    left: 16px;
+    right: 16px;
+    z-index: 1000;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+    padding: 16px;
+    border-radius: 16px;
+    background: var(--control-primary-bg);
+    color: var(--control-primary-content);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-12px);
+    transition: opacity .25s ease, transform .25s ease, visibility 0s linear .25s;
+}
+
+.toast--visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+    transition: opacity .25s ease, transform .25s ease, visibility 0s;
+}
+
+.toast__icon {
+    flex-shrink: 0;
+}
+
+.toast__text {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-family);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+}
+
+.toast__close {
+    display: flex;
+    flex-shrink: 0;
+    padding: 0;
+    color: #b8b8b8;
+}
+
+@media (min-width: 640px) {
+    .toast {
+        right: 0;
+        left: 0;
+        width: 360px;
+        margin: 0 auto;
+    }
+}
+
+@media (min-width: 1024px) {
+    .toast {
+        top: 36px;
+    }
+}
+
+/* Вкладки платформ (макет NPVPN-2315): карточки «Скачайте приложение» / «Добавьте ключ» и шаги TV. */
+.setup-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 624px;
+}
+
+.setup-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 24px;
+    border-radius: 24px;
+    background: var(--surface-2);
+    color: var(--text-primary);
+}
+
+.setup-card__title {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 120%;
+    letter-spacing: -0.04em;
+}
+
+.setup-card__group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+}
+
+/* «Также подойдут», «Установка через терминал…» */
+.setup-card__label {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+    color: var(--text-primary);
+}
+
+/* подзаголовок «Добавьте ключ…» — вплотную к заголовку (8), дальше обычный шаг 16 */
+.setup-card__text {
+    margin: -8px 0 0;
+    font-family: var(--font-family);
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+    color: var(--text-secondary);
+}
+
+.setup-card__body {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 143%;
+    letter-spacing: -0.04em;
+    color: var(--text-primary);
+}
+
+.setup-card__title + .setup-card__body {
+    margin-top: -8px;
+}
+
+/* кнопки-приложения: между ними 4 на мобилке, 8 на ПК */
+.app-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.app-chip {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    padding: 12px 16px;
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--text-primary);
+    font-family: var(--font-family);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 143%;
+    letter-spacing: -0.04em;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: opacity .15s;
+}
+
+.app-chip:hover {
+    opacity: .7;
+}
+
+.app-chip__icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    /* в самих svg углы прямые (у Happ и v2ray) — скругляем одинаково, как в макете */
+    border-radius: 4px;
+}
+
+.terminal-code {
+    box-sizing: border-box;
+    width: 100%;
+    /* 56 — две строки команды на ПК; на мобилке длинная ссылка переносится, блок растёт */
+    min-height: 56px;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 16px;
+    background: var(--surface);
+    font-family: var(--font-family);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 143%;
+    letter-spacing: -0.04em;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.terminal-code code {
+    font-family: inherit;
+}
+
+.small-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 32px;
+    padding: 6px 12px;
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text-primary);
+    font-family: var(--font-family);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.04em;
+}
+
+.small-copy-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* «Добавить ключ в …» и «Копировать ключ»: на мобилке друг под другом во всю ширину, между ними 4;
+   на ПК в ряд, между ними 8 */
+.setup-card__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    width: 100%;
+}
+
+.setup-card .primary-btn,
+.setup-card .text-btn {
+    height: 56px;
+    padding: 16px 20px;
+    border-radius: 16px;
+    font-size: 16px;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+}
+
+.copy-key-btn {
+    gap: 8px;
+}
+
+@media (min-width: 1024px) {
+    .app-chips {
+        gap: 8px;
+    }
+
+    .setup-card__actions {
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        width: auto;
+    }
+}
+
+/* QR 200×200 с логотипом «VPN» по центру. */
+.qr-code {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    flex-shrink: 0;
+}
+
+#qrcode-main img,
+#qrcode-main canvas {
+    display: block;
+    width: 200px;
+    height: 200px;
+}
+
+.qr-code__logo {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 56px;
+    height: 56px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
 .qr-title {
     font-family: var(--font-family);
-    font-weight: 700;
+    font-weight: 500;
+    font-size: 16px;
+    line-height: 150%;
+    letter-spacing: -0.04em;
     text-align: center;
-    font-size: 24px;
+    color: var(--text-primary);
 }
 
 .platforms-list {
@@ -466,37 +756,8 @@
     transition: background-color 0.2s ease;
 }
 
-.hasApp-btn {
-    border: none;
-    cursor: pointer;
-    border-radius: 100px;
-    padding: 8px 12px;
-    background: var(--light-gray);
-    font-family: var(--font-family);
-    font-size: 14px;
-    font-weight: 400;
-    line-height: 20px;
-    color: var(--text-primary);
-    transition: all 0.2s ease;
-
-}
-
-.hasApp-btn--active {
-    background: var(--black);
-    color: var(--white);
-}
-
 .platform-btn--active {
     background: var(--surface-2);
-}
-
-.hasApp-btn {
-    font-family: var(--font-family);
-    font-weight: 700;
-    font-size: 16px;
-    line-height: 150%;
-    letter-spacing: -0.02em;
-    text-align: center;
 }
 
 .app-select-wrapper {
@@ -741,40 +1002,6 @@
   justify-content: center;
 }
 
-.steps-text {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--black);
-    line-height: 143%;
-    letter-spacing: -0.04em;
-}
-
-.steps-title {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--black);
-    margin-bottom: 8px;
-    font-family: var(--font-family);
-}
-
-.config-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: #f6f6f6;
-    border-radius: 8px;
-    box-sizing: content-box;
-    /* width: 154px; */
-    padding: 8px 12px;
-}
-
-.clients-btn {
-    font-size: 16px;
-    font-family: var(--font-family);
-    font-weight: 700;
-    border-radius: 32px;
-}
-
 .page-content {
     width: 100%;
     max-width: 358px;
@@ -782,14 +1009,6 @@
     box-sizing: content-box;
     /* padding-bottom: 155px; */
     padding-bottom: 110px;
-}
-
-.custom-gap {
-    gap: 16px;
-}
-
-.custom-gap-steps {
-    gap: 8px;
 }
 
 /* Экран минус отступы .wrapper (24px * 2), padding-bottom .page-content (110px) и шапка
@@ -840,87 +1059,8 @@
     font-size: 16px;
 }
 
-.linux-code {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
-    background-color: #f6f6f6;
-    border-radius: 12px;
-    padding: 12px;
-}
-
-.button-row {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    width: 100%;
-}
-
-.add-key-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    padding: 16px 20px;
-    border-radius: 40px;
-    font-weight: 600;
-    font-size: 16px;
-    text-decoration: none;
-    transition: background-color 0.2s ease;
-    border: none;
-    cursor: pointer;
-    white-space: nowrap;
-    order: -1;
-}
-
-.copy-button {
-    background-color: #f6f6f6;
-    color: #141413;
-    padding: 16px;
-    border-radius: 40px;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-family: var(--font-family);
-    font-weight: 600;
-    font-size: 16px;
-}
-
-.copy-button:hover {
-    background-color: #e8e8e8;
-}
-
 .platform-btn:not(.platform-btn--active):hover {
     background-color: var(--surface-2);
-}
-
-.download-app-card {
-    transition: background-color 0.25s ease;
-}
-
-.download-app-card:hover {
-    background-color: #e8e8e8;
-}
-
-.clients-btn {
-    transition: background-color 0.25s ease;
-}
-
-.clients-btn:hover {
-    background-color: #e8e8e8;
-}
-
-.add-key-button {
-    background-color: #141413;
-    color: #ffffff;
-    gap: 0; 
-}
-
-.add-key-button:hover {
-    background-color: #1a1a1a;
 }
 
  /* .footer-ad-bar {
@@ -1020,124 +1160,6 @@
 
 .error-subtitle {
     font-size: 14px;
-}
-
-.primary-apps {
-    margin-bottom: 12px;
-}
-
-.download-app-card {
-  width: 100%;
-  min-height: 72px;
-  box-sizing: border-box;
-
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  padding: 12px 16px;
-
-  background: #f6f6f6;
-  border-radius: 16px;
-
-  color: #141413;
-  text-decoration: none;
-
-  transition: background-color 0.2s ease;
-}
-
-.download-app-card:hover {
-  background: #eeeeee;
-}
-
-.download-app-card__left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.download-app-card__icon {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.download-app-card__icon img {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 12px;
-}
-
-.download-app-card__icon-placeholder {
-  width: 48px;
-  height: 48px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 12px;
-  background: #e9e9e9;
-  color: #7b7b7b;
-}
-
-.download-app-card__info {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.download-app-card__name {
-  font-size: 16px;
-  line-height: 20px;
-  font-weight: 600;
-
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.download-app-card__description {
-  font-size: 14px;
-  line-height: 18px;
-  color: #7b7b7b;
-}
-
-.download-app-card__download {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  color: #141413;
-}
-
-.tv-step-title {
-  font-family: var(--font-family);
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.tv-step-text {
-    font-family: var(--font-family);
-    font-size: 14px;
-    font-weight: 400;
-    line-height: 20px;
-    line-height: 143%;
-    letter-spacing: -0.04em;
 }
 
 /* NPVPN-2315: вкладка «Тариф» и карточка состояния (истекла / ключ устарел / лимит). */
@@ -1418,14 +1440,6 @@
         padding: 16px 24px;
     }
 
-    .download-app-card {
-        max-width: 342px;
-    }
-
-    .primary-apps {
-        margin-bottom: 16px;
-    }
-
     .app-select-wrapper {
         margin-top: 16px;
     }
@@ -1480,26 +1494,6 @@
         gap: 24px;
     }
 
-    .button-row {
-        flex-direction: row;
-        gap: 8px;
-    }
-
-    .add-key-button {
-        width: auto;
-        flex-shrink: 0;
-        padding: 16px 20px;
-        order: 0;
-    }
-
-    .custom-gap {
-        gap: 24px;
-    }
-
-    .custom-gap-steps {
-        gap: 16px;
-    }
-
     .wrapper {
         min-height: 100vh;
         box-sizing: border-box;
@@ -1545,24 +1539,6 @@
         padding: 0 24px;
     }
 
-    .steps-text {
-        font-size: 16px;
-    }
-
-    p.key-step-text {
-        white-space: nowrap;
-        margin-bottom: 16px;
-    }
-
-    .steps-title {
-        font-size: 24px;
-        margin-bottom: 16px;
-    }
-
-    .clients-btn {
-        font-size: 16px;
-    }
-
     .page-title {
         font-size: 40px;
     }
@@ -1576,10 +1552,6 @@
         font-size: 20px;
     }
 
-
-    .hasApp-btn {
-        padding: 16px 20px;
-    }
     
 
     
@@ -1587,8 +1559,5 @@
         display: none;
     }
 
-    .config-btn {
-        padding: 16px 20px;
-    }
     
 }

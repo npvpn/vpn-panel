@@ -81,11 +81,13 @@
           revokingId: null,
           showRevokeModal: false,
           selectedDevice: null,
-          copiedKey: false,
+          // уведомление «скопировано» вверху экрана (NPVPN-2315), как тост в вебе
+          toast: '',
+          toastVisible: false,
+          toastTimer: null,
 
           selectedClient: null,
 
-          copiedTerminal: false,
 
           selectClient(app) {
               this.selectedClient = app.id;
@@ -109,15 +111,17 @@
             return value.includes('v2ray');
           },
 
+          // ?v= — статика без версии в адресе: иначе браузер покажет старую иконку из кэша
+          // (incy.svg и v2ray.svg были перепутаны). Меняя картинку, поднимать номер.
           getAppIcon(app) {
             if (this.isHappApp(app)) {
-              return '{{ sub_statics }}assets/Happ.png';
+              return '{{ sub_statics }}assets/happ.svg?v=2';
             }
             if (this.isIncyApp(app)) {
-              return '{{ sub_statics }}assets/incy.png';
+              return '{{ sub_statics }}assets/incy.svg?v=2';
             }
             if (this.isV2rayApp(app)) {
-              return '{{ sub_statics }}assets/v2ray.png';
+              return '{{ sub_statics }}assets/v2ray.svg?v=2';
             }
             return null;
           },
@@ -151,13 +155,20 @@
           },
 
           copyTerminalCommands() {
-            const text = document.getElementById('linux-commands').innerText;
-            navigator.clipboard.writeText(text).then(() => {
-                this.copiedTerminal = true;
-                setTimeout(() => {
-                    this.copiedTerminal = false;
-                }, 2000);
-            });
+            this.copyToClipboard(document.getElementById('linux-commands').innerText, 'Команда скопирована');
+          },
+
+          // текст остаётся, пока уведомление плавно уходит; прячет только toastVisible
+          showToast(text) {
+            clearTimeout(this.toastTimer);
+            this.toast = text;
+            this.toastVisible = true;
+            this.toastTimer = setTimeout(() => this.hideToast(), 3000);
+          },
+
+          hideToast() {
+            clearTimeout(this.toastTimer);
+            this.toastVisible = false;
           },
 
           async revokeDevice(deviceId) {
@@ -197,7 +208,8 @@
                   new QRCode(qrMainContainer, {
                     text: this.user.subscription_url,
                     width: 200,
-                    height: 200
+                    height: 200,
+                    correctLevel: QRCode.CorrectLevel.H
                   });
                 }
               });
@@ -224,11 +236,6 @@
                   if (apps.length > 0 && !this.selectedClient) {
                       this.selectedClient = apps[0].id;
                   }
-              });
-
-              this.$watch('selectedOs', () => {
-                this.copiedKey = false;
-                this.copiedTerminal = false;
               });
           },
           get deviceCount() {
@@ -382,13 +389,10 @@ get alternativeApps() {
               return app ? app.scheme : null;
           },
 
-          async copyToClipboard(text) {
+          async copyToClipboard(text, message = 'Ключ скопирован') {
             try {
               await navigator.clipboard.writeText(text);
-              this.copiedKey = true;
-              setTimeout(() => {
-                this.copiedKey = false;
-              }, 2000);
+              this.showToast(message);
             } catch (e) {
               console.error('Copy failed', e);
             }
@@ -399,6 +403,17 @@ get alternativeApps() {
   </head>
   <body>
     <div x-data="subscriptionManager" x-init="init()" x-cloak class="wrapper">
+      {# Уведомление «скопировано» (NPVPN-2315): вверху экрана поверх всего, само скрывается через 3 с #}
+      <div class="toast" role="status" :class="{ 'toast--visible': toastVisible }" :aria-hidden="!toastVisible">
+        <svg class="toast__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="11.9999" r="9" fill="#2FC26E" />
+          <path d="M15 10L11 14L9 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white" />
+        </svg>
+        <span class="toast__text" x-text="toast"></span>
+        <button type="button" class="toast__close" aria-label="Закрыть" @click="hideToast()">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 7L12 12M12 12L17 17M12 12L7 17M12 12L17 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
       <div class="app-container">
         <aside  side class="sidebar">
           <nav class="sidebar-nav">
@@ -604,279 +619,122 @@ get alternativeApps() {
     
             <div x-show="selectedOs === 'QR'" class="qr-wrapper">
                 <p class="qr-title">Отсканируйте для подключения другого устройства</p>
-                <div
-                  id="qrcode-main"
-                  class="w-[214px] h-[216px]" 
-                  @click="copyToClipboard(user.subscription_url)"
-                ></div>
-                <p class="text-center text-[#7b7b7b]" x-text="copiedKey ? 'Ключ скопирован!' : 'Нажмите на QR-код, чтобы скопировать ключ'"></p>
+                {# QR с логотипом «VPN» по центру — как реферальный QR бота (src/utils/ref_qr.py, та же
+                   картинка): уровень коррекции H восстанавливает закрытый логотипом центр (~8% площади; 56px — с запасом, 60+ на плотном коде уже не всегда читается) #}
+                <div class="qr-code">
+                  <div id="qrcode-main"></div>
+                  <img class="qr-code__logo" src="{{ sub_statics }}assets/qr-logo.png" alt="" width="56" height="56">
+                </div>
             </div>
     
-            <div x-show="selectedOs !== 'QR'" class="grid grid-cols-1 custom-gap">
-                <template x-if="selectedOs === 'QR'">
-                  <div class="flex flex-col items-center">
-                    <div
-                      id="qrcode-main"
-                      class="bg-white rounded-lg flex items-center justify-center"
-                      style="
-                        width:214px;
-                        height:216px;
-                        padding:8px;
-                      "
-                    ></div>
+            {# Вкладки платформ (макет NPVPN-2315): серые карточки «Скачайте приложение» и «Добавьте ключ»,
+               у TV — две карточки-шага. #}
+            <div x-show="selectedOs !== 'QR'" class="setup-steps">
+              <template x-if="selectedOs !== 'TV'">
+                <section class="setup-card">
+                  <h3 class="setup-card__title">Скачайте приложение</h3>
+
+                  <div class="app-chips" x-show="primaryApps.length">
+                    <template x-for="app in primaryApps" :key="app.id">
+                      <a
+                        :href="app.install?.[0]?.url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="app-chip"
+                        @click="selectedClient = app.id"
+                      >
+                        <template x-if="getAppIcon(app)">
+                          <img class="app-chip__icon" :src="getAppIcon(app)" alt="" width="16" height="16">
+                        </template>
+                        <span x-text="app.name"></span>
+                      </a>
+                    </template>
                   </div>
-                </template>
 
-                  <div>
-                    <template x-if="selectedOs !== 'TV'">
-                      <div>
-                        <p class="steps-title mb-4">
-                          Скачайте приложение
-                        </p>
+                  <template x-if="selectedOs === 'Linux'">
+                    <div class="setup-card__group">
+                      <p class="setup-card__label">
+                        Установка через терминал для <span x-text="primaryApp?.name || ''"></span>
+                      </p>
+                      <pre id="linux-commands" class="terminal-code"><code
+                        x-text="(() => {
+                          const url = primaryApp?.install?.[0]?.url;
+                          if (!url) return 'Ссылка на установщик недоступна';
+                          const fileName = url.split('/').pop();
+                          return `wget ${url}
+sudo apt install ./${fileName}`;
+                        })()"
+                      ></code></pre>
+                      <button type="button" class="small-copy-btn" @click="copyTerminalCommands()">
+                        <span>Скопировать</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 3H4V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </button>
+                    </div>
+                  </template>
 
-                        <template x-for="app in primaryApps" :key="app.id">
+                  <template x-if="alternativeApps.length && currentPlatform !== 'androidtv'">
+                    <div class="setup-card__group">
+                      <p class="setup-card__label">Также подойдут</p>
+                      <div class="app-chips">
+                        <template x-for="app in alternativeApps" :key="app.id">
                           <a
-                            :href="app.install?.[0]?.url"
+                            :href="app.install[0].url"
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="download-app-card"
+                            class="app-chip"
                             @click="selectedClient = app.id"
-                          >
-                            <div class="download-app-card__left">
-
-                              <template x-if="isHappApp(app) || isIncyApp(app) || isV2rayApp(app)">
-                                <div class="download-app-card__icon">
-                                  <img
-                                    :src="getAppIcon(app)"
-                                    :alt="app.name"
-                                  >
-                                </div>
-                              </template>
-
-                              <div class="download-app-card__info">
-                                <div
-                                  class="download-app-card__name"
-                                  x-text="app.name"
-                                ></div>
-
-                                <div class="download-app-card__description">
-                                  Основное приложение
-                                </div>
-                              </div>
-                            </div>
-
-                            <div class="download-app-card__download">
-                              <svg
-                                width="24"
-                                height="24"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <path
-                                  d="M6 21H18M12 3V17M7 12L12 17L17 12"
-                                  stroke="black"
-                                  stroke-width="2"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                />
-                              </svg>
-                            </div>
-                          </a>
-                        </template>
-
-                        <template x-if="alternativeApps.length && currentPlatform !== 'androidtv'">
-                          <div class="flex flex-col custom-gap-steps">
-                            <p class="steps-text mt-4">
-                              Также подойдут
-                            </p>
-
-                            <div class="flex gap-2">
-                              <template x-for="app in alternativeApps" :key="app.id">
-                                <a
-                                  :href="app.install[0].url"
-                                  target="_blank"
-                                  @click="selectedClient = app.id"
-                                  :class="['ios','macos'].includes(currentPlatform)
-                                    ? 'config-btn clients-btn'
-                                    : 'config-btn box-content flex items-center justify-center gap-2 bg-[#f6f6f6] font-semibold transition-colors clients-btn'"
-                                  :style="['ios','macos'].includes(currentPlatform) ? 'border-radius: 100px;' : ''"
-                                  x-text="app.name"
-                                ></a>
-                              </template>
-                            </div>
-                          </div>
+                            x-text="app.name"
+                          ></a>
                         </template>
                       </div>
-                    </template>
+                    </div>
+                  </template>
+                </section>
+              </template>
 
-                    <!-- TV -->
-                    <template x-if="selectedOs === 'TV'">
-                      <div>
-                        <p class="steps-title tv-step-title mb-2">
-                          Сначала установите приложение
-                          <template x-if="primaryApp?.name">
-                            <span>«<span x-text="primaryApp.name"></span>»</span>
-                          </template>
-                          на телефон iPhone или Android
-                        </p>
-                        <p class="steps-text tv-step-text">
-                          Настройте и убедитесь что VPN корректно работает на телефоне.
-                          После этого скачайте то же приложение на телевизор AndroidTV через Google Play,
-                          найдя его в поиске.
-                        </p>
-                      </div>
-                    </template>
-
-                    <template x-if="selectedOs === 'Linux'">
-                      <div class="flex flex-col steps-text mb-2 mt-4">
-                        <p class="steps-text">
-                          Установка через терминал для
-                          <span x-text="primaryApp?.name || ''"></span>
-                        </p>
-                      </div>
-                    </template>
-
-                    <template x-if="selectedOs === 'Linux'">
-                      <div class="flex flex-col custom-gap-steps">
-                        <div class="linux-code w-full p-3">
-                          <pre
-                            id="linux-commands"
-                            class="m-0 leading-[20px] whitespace-pre-wrap break-all overflow-hidden"
-                            style="font-family: var(--font-family);"
-                          ><code
-                            x-text="(() => {
-                              const url = primaryApp?.install?.[0]?.url;
-                              if (!url) return 'Ссылка на установщик недоступна';
-
-                              const fileName = url.split('/').pop();
-
-                              return `wget ${url}\nsudo apt install ./${fileName}`;
-                            })()"
-                          ></code></pre>
-                          <button @click="copyTerminalCommands()" class="mb-2 block">
-                            <template x-if="!copiedTerminal">
-                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M16 3H4V16" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                                <path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                              </svg>
-                            </template>
-
-                            <template x-if="copiedTerminal">
-                              <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="8" cy="7.99988" r="6" stroke="#2FC26E" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/>
-                                <path d="M10 6.66663L7.33333 9.33329L6 7.99996" stroke="#2FC26E" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/>
-                              </svg>
-                            </template>
-                          </button>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-    
-              <div>
-                <template x-if="selectedOs !== 'TV'">
-                  <p class="steps-title mb-2 lg:mb-4">
-                    Добавьте ключ
-                  </p>
-                </template>
-
-                <template x-if="selectedOs === 'TV'">
-                  <p class="steps-title tv-step-title mb-2">
-                    Запустите приложение на телевизоре
-                  </p>
-                </template>
-
-                <div x-show="selectedOs !== 'TV'">
-                  <p class="steps-text mb-2 key-step-text">
-                    Добавьте ключ в приложение, чтобы подключиться к VPN
-                  </p>
-                </div>
-
-                <div x-show="selectedOs === 'TV'">
-                  <p class="steps-text tv-step-text mb-4">
-                    На телевизоре появится QR-код. Отсканируйте его
-                    на мобильном телефоне. Выберите настройки подключения
-                    для телевизора.
-                  </p>
-                  <p class="steps-text tv-step-text mb-4">
-                    После добавления выберите страну
-                    и нажмите «Подключить»
-                  </p>
-                </div>
-
-                <template x-if="!['QR','TV'].includes(selectedOs)">
-                  <div class="button-row">
-                    <button
-                      @click="copyToClipboard(user.subscription_url)"
-                      class="copy-button"
-                    >
-                      <template x-if="!copiedKey">
-                        <svg
-                          width="24"
-                          height="24"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            d="M16 3H4V16"
-                            stroke="#141413"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                          <path
-                            d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z"
-                            stroke="#141413"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                        </svg>
-                      </template>
-
-                      <template x-if="copiedKey">
-                        <svg
-                          width="24"
-                          height="24"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <circle
-                            cx="12"
-                            cy="12"
-                            r="9"
-                            stroke="#2FC26E"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                          <path
-                            d="M15 10L11 14L9 12"
-                            stroke="#2FC26E"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                        </svg>
-                      </template>
-
-                      <span>Копировать ключ</span>
-                    </button>
-
+              <template x-if="selectedOs !== 'TV'">
+                <section class="setup-card">
+                  <h3 class="setup-card__title">Добавьте ключ</h3>
+                  <p class="setup-card__text">Добавьте ключ в приложение, чтобы подключиться к VPN</p>
+                  <div class="setup-card__actions">
                     <template x-if="selectedApp && selectedApp.scheme">
                       <a
                         :href="`${selectedApp.scheme}://add/${user.subscription_url}`"
-                        class="add-key-button"
-                       
+                        class="primary-btn"
                         x-text="`Добавить ключ в ${selectedApp.name}`"
                       ></a>
                     </template>
+                    <button type="button" class="text-btn copy-key-btn" @click="copyToClipboard(user.subscription_url)">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 3H4V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <span>Копировать ключ</span>
+                    </button>
                   </div>
-                </template>
-              </div>
+                </section>
+              </template>
+
+              <template x-if="selectedOs === 'TV'">
+                <section class="setup-card">
+                  <h3 class="setup-card__title">
+                    Сначала установите приложение<template x-if="primaryApp?.name"><span> «<span x-text="primaryApp.name"></span>»</span></template>
+                    на&nbsp;телефон iPhone или Android
+                  </h3>
+                  <p class="setup-card__body">
+                    Настройте и убедитесь что VPN корректно работает на телефоне. После этого скачайте то же
+                    приложение на телевизор AndroidTV через Google Play, найдя его в поиске.
+                  </p>
+                </section>
+              </template>
+
+              <template x-if="selectedOs === 'TV'">
+                <section class="setup-card">
+                  <h3 class="setup-card__title">Запустите приложение на телевизоре</h3>
+                  <p class="setup-card__body">
+                    На телевизоре появится QR-код. Отсканируйте его на мобильном телефоне. Выберите настройки
+                    подключения для телевизора.
+                  </p>
+                  <p class="setup-card__body">После добавления выберите страну и нажмите «Подключить»</p>
+                </section>
+              </template>
             </div>
           </main>
           {% endif %}
