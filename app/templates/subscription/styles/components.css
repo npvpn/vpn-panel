@@ -17,7 +17,7 @@
     justify-content: center;
     padding: 16px 24px;
     border-radius: var(--small-border);
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 800;
     font-size: 16px;
     line-height: 150%;
@@ -31,40 +31,53 @@
     width: 214px;
 }
 
-.btn-secondary {
-    font-family: var(--third-family);
+/* Кнопки модалки (макет NPVPN-2315): «Оставить» — Button / Secondary, подтверждение — красная. */
+.btn-secondary,
+.btn-danger {
+    box-sizing: border-box;
     height: 56px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 16px 24px;
-    border-radius: 40px;
-    font-weight: 800;
+    border: none;
+    border-radius: 16px;
+    font-family: var(--font-family);
+    font-weight: 600;
     font-size: 16px;
     line-height: 150%;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.04em;
     white-space: nowrap;
-    transition: all 0.2s ease;
-    background-color: #f6f6f6;
-    color: var(--text-primary);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
 }
 
-.btn-tertiary {
-    background-color: var(--black);
-    font-family: var(--third-family);
-    height: 56px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 16px 24px;
-    border-radius: 40px;
-    font-weight: 800;
-    font-size: 16px;
-    line-height: 150%;
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-    transition: all 0.2s ease;
+.btn-secondary {
+    background-color: var(--control-secondary-bg);
+    color: var(--control-secondary-content);
+}
+
+.btn-secondary:hover {
+    background-color: var(--control-secondary-hover-bg);
+}
+
+.btn-secondary:active {
+    background-color: var(--control-secondary-pressed-bg);
+}
+
+.btn-danger {
+    background-color: var(--red);
     color: var(--white);
+}
+
+.btn-danger:hover,
+.btn-danger:active {
+    background-color: #d9291f;
+}
+
+.btn-danger:disabled {
+    opacity: .5;
+    cursor: default;
 }
 
 /* SPACING */
@@ -82,36 +95,8 @@
 }
 
 /* Информационная карточка */
-.info-card {
-    /* max-width: 632px; */
-    max-width: 327px;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    text-align: left;
-}
 
 /* Строки информации */
-.info-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.page-content_limited .info-card {
-    display: grid;
-    grid-template-columns: 160px 1fr;
-    column-gap: 40px;
-}
-
-.page-content_limited .info-card > h2 {
-    grid-column: 1 / -1;
-}
-
-.page-content_limited .info-row {
-    display: contents;
-}
 
 /* Заголовок страницы */
 .page-header {
@@ -121,9 +106,29 @@
     margin-bottom: 24px;
 }
 
+/* от подзаголовка («Подключено N из M») до списка: 16 на мобилке, 24 на ПК (макет NPVPN-2315) */
+.page-header:has(.device-count) {
+    margin-bottom: 16px;
+}
+
+@media (max-width: 1023px) {
+    .platforms-list {
+        margin-left: -16px;
+        margin-right: -16px;
+        padding: 0 16px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .page-header:has(.device-count) {
+        margin-bottom: 24px;
+    }
+}
+
 .page-title {
-    font-family: var(--third-family);
-    font-size: 24px;
+    font-family: var(--font-family);
+    /* макет NPVPN-2315: 28 на мобилке, 40 на ПК */
+    font-size: 28px;
     font-weight: 700;
     line-height: 113%;
     letter-spacing: -0.04em;
@@ -138,6 +143,11 @@
     gap: 12px;
 }
 
+/* только значки справа (заглушка «Настроек» в состояниях) */
+.page-header__top--actions-only {
+    justify-content: flex-end;
+}
+
 .header-account-btn {
     display: flex;
     flex-shrink: 0;
@@ -149,8 +159,6 @@
 .header-account-btn:hover {
     opacity: .7;
 }
-
-
 
 /* Подзаголовок */
 .page-subtitle {
@@ -216,12 +224,6 @@
 
 /* Отозванная и истекшая подписка: реклама, в отличие от .footer на других страницах,
    не "прибита" полосой ни на одном размере экрана — прячется под скролл. */
-.footer_revoked {
-    position: static;
-    left: auto;
-    bottom: auto;
-    transform: none;
-}
 
 .footer_limited {
     width: 100%;
@@ -267,7 +269,7 @@
 }
 
 .account-block h3 {
-    font-family: var(--third-family);
+    font-family: var(--font-family);
 }
 
 .account-block p {
@@ -285,7 +287,7 @@
     padding: 16px 0;
     border: none;
     border-radius: 100px;
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 700;
     max-width: 342px;
     width: 100%;
@@ -307,67 +309,17 @@
 .device-card {
     width: 100%;
     background: var(--surface-2);
-    border-radius: 100px;
-    padding: 16px 20px;
+    border-radius: 24px;
+    padding: 12px 16px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     box-sizing: border-box;
-    height: 76px;
+    height: 68px;
     overflow: hidden;
 }
 
 /* Подсказка */
-.hint {
-    width: 100%;
-    background: var(--surface-2);
-    border-radius: 24px;
-    padding: 16px 20px;
-    display: flex;
-    flex-direction: row;
-    align-items: start;
-    justify-content: space-between;
-    gap: 12px;
-    box-sizing: border-box;
-    margin-bottom: 16px;
-}
-
-.hint.mb-0 {
-    margin-bottom: 0;
-}
-
-.hint-info {
-    display: flex;
-    flex-direction: row;
-    gap: 12px;
-    align-items: start;
-}
-
-.hint p {
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 143%;
-    letter-spacing: -0.04em;
-}
-
-.hint svg {
-    width: 24px;
-    height: 24px;
-    flex: 0 0 24px;
-}
-
-.hint-close {
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 24px;
-    cursor: pointer;
-}
 
 .device-card__left {
     display: flex;
@@ -379,11 +331,14 @@
 
 .device-card__icon {
     background: var(--surface);
-    padding: 10px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 100px;
+    border-radius: 16px;
     color: currentColor;
 }
 
@@ -450,14 +405,6 @@
     stroke: currentColor;
 }
 
-.add-device {
-    width: 100%;
-    border-radius: 100px;
-    font-family: var(--font-family);
-    padding: 16px 20px;
-    font-weight: 700;
-}
-
 .qr-wrapper {
     display: flex;
     flex-direction: column;
@@ -465,8 +412,13 @@
     align-items: center;
     justify-content: center;
 
-    /* min-height: 60vh; */
-    min-height: 50vh;
+    /* мобилка: QR по центру свободного места — экран минус шапка и отступы (как у пустых
+       «Устройств», 214px) и табы (40 + отступ 24). Блок кончается на 16 выше нижнего меню —
+       сдвиг на 8 ставит QR ровно посередине между табами и меню, не добавляя прокрутки.
+       На ПК — 50vh и свой сдвиг (ниже). */
+    min-height: calc(100vh - 278px);
+    min-height: calc(100dvh - 278px);
+    transform: translateY(8px);
 
     margin: 0 auto;
 
@@ -475,7 +427,7 @@
 }
 
 .qr-title {
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 700;
     text-align: center;
     font-size: 24px;
@@ -484,23 +436,34 @@
 .platforms-list {
     display: flex;
     gap: 4px;
-    font-weight: 400;
-    flex-wrap: wrap;
     margin-bottom: 24px;
+    /* NPVPN-2315: в одну строку; на мобилке не влезает — листается вбок до края экрана */
+    overflow-x: auto;
+    scrollbar-width: none;
 }
 
+.platforms-list::-webkit-scrollbar {
+    display: none;
+}
+
+/* Таб платформы (макет NPVPN-2315): неактивный без фона, активный — серый фон. */
 .platform-btn {
+    flex-shrink: 0;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 8px 16px;
     border: none;
+    border-radius: 16px;
+    background: transparent;
     cursor: pointer;
-    border-radius: 100px;
-    padding: 8px 12px;
-    background: var(--light-gray);
     font-family: var(--font-family);
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 20px;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+    white-space: nowrap;
     color: var(--text-primary);
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease;
 }
 
 .hasApp-btn {
@@ -518,15 +481,17 @@
 
 }
 
-.platform-btn--active,
-.hasApp-btn--active 
-{
+.hasApp-btn--active {
     background: var(--black);
     color: var(--white);
 }
 
+.platform-btn--active {
+    background: var(--surface-2);
+}
+
 .hasApp-btn {
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 700;
     font-size: 16px;
     line-height: 150%;
@@ -544,7 +509,7 @@
     border-radius: 100px;
     padding: 8px 12px;
     background: var(--surface-2);
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 600;
     font-size: 16px;
     color: var(--text-primary);
@@ -554,36 +519,6 @@
 .app-select-btn--active {
     background: var(--black);
     color: var(--white);
-}
-
-.btn-fourth {
-    background-color: transparent;
-    border: 1px dashed var(--gray-3);
-    border-radius: var(--small-border);
-    height: 76px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 16px 24px;
-    font-family: var(--third-family);
-    font-weight: 800;
-    font-size: 16px;
-    line-height: 150%;
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-    transition: all 0.2s ease;
-    cursor: pointer;
-    gap: 12px;
-}
-
-.device_button {
-    padding: 14px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: #f6f6f6;
-    border-radius: 100px;
 }
 
 .modal-overlay {
@@ -620,10 +555,22 @@
 
 .modal-title {
     margin: 0;
-    font-size: 24px;
+    font-family: var(--font-family);
+    font-size: 20px;
     font-weight: 600;
+    line-height: 120%;
+    letter-spacing: -0.04em;
     color: var(--text-primary);
-    font-family: var(--third-family);
+}
+
+.modal-text {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+    color: var(--text-primary);
 }
 
 .modal-close {
@@ -665,7 +612,8 @@
     max-width: 1280px;
     width: 100%;
     margin: 0 auto;
-    padding: 24px;
+    /* мобилка: поля 16 — контент 358 на 390 (макет NPVPN-2315); на ПК свои отступы ниже */
+    padding: 24px 16px;
 }
 
 /* Реклама у этих страниц не "прибита" fixed-полосой, а идёт в потоке
@@ -717,8 +665,11 @@
     cursor: pointer;
 
     font-family: var(--font-family);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
+    line-height: 133%;
+    letter-spacing: -0.04em;
+    text-align: center;
 
     transition: all 0.2s ease;
 }
@@ -736,41 +687,7 @@
 }
 
 .floating-nav__name{
-    font-size: 14px;
-}
-
-/* Кнопки «истекла» и «отозвана»: не закреплены — прокручиваются с контентом, но стоят
-   внизу экрана: страница — колонка на всю высоту, блок кнопок прижат вниз (margin-top: auto).
-   Минимум 40px от контента, если его много. Реклама — под скроллом (.footer_revoked). */
-@media (max-width: 1023px) {
-    .wrapper:has(.button-wrapper_revoke) {
-        display: flex;
-        flex-direction: column;
-        min-height: 100vh;
-        min-height: 100dvh;
-        box-sizing: border-box;
-    }
-
-    .wrapper:has(.button-wrapper_revoke) > .page-content_limited {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-    }
-}
-
-.button-wrapper_revoke{
-    position: static;
-    width: 100%;
-    max-width: 342px;
-    margin: auto auto 0;
-    padding-top: 40px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-
-    a {
-        text-decoration: none;
-    }
+    font-size: 12px;
 }
 
 .sidebar {
@@ -780,28 +697,31 @@
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 .sidebar-nav__item {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 16px;
-  border-radius: 100px;
+  box-sizing: border-box;
+  height: 56px;
+  padding: 16px 20px;
+  border-radius: 24px;
   border: none;
   background: transparent;
-  font-family: var(--font-family, -apple-system, sans-serif);
-  font-size: 15px;
-  font-weight: 500;
+  font-family: var(--font-family);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 143%;
+  letter-spacing: -0.04em;
   cursor: pointer;
   transition: all 0.2s ease;
   width: 100%;
 }
 
 .sidebar-nav__item svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   stroke: currentColor;
 }
@@ -834,7 +754,7 @@
     font-weight: 700;
     color: var(--black);
     margin-bottom: 8px;
-    font-family: var(--third-family);
+    font-family: var(--font-family);
 }
 
 .config-btn {
@@ -850,30 +770,18 @@
 
 .clients-btn {
     font-size: 16px;
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 700;
     border-radius: 32px;
 }
 
-.tariff-info {
-    font-size: 14px;
-}
-
 .page-content {
     width: 100%;
-    max-width: 342px;
+    max-width: 358px;
     margin: 0 auto;
     box-sizing: content-box;
     /* padding-bottom: 155px; */
     padding-bottom: 110px;
-}
-
-.page-content_limited {
-    width: 100%;
-    max-width: 342px;
-    /* padding-bottom: 125px; */
-    margin: 0 auto;
-    box-sizing: content-box;
 }
 
 .custom-gap {
@@ -885,12 +793,12 @@
 }
 
 /* Экран минус отступы .wrapper (24px * 2), padding-bottom .page-content (110px) и шапка
-   с поддержкой (строка заголовка 27px + отступ 24px, NPVPN-2314), иначе пустой экран скроллится.
+   с поддержкой (строка заголовка 28px * 113% ≈ 32px + отступ 24px), иначе пустой экран скроллится.
    На десктопе шапки нет — там своё значение ниже. */
 .main--centered {
     display: flex;
-    min-height: calc(100vh - 209px);
-    min-height: calc(100dvh - 209px);
+    min-height: calc(100vh - 214px);
+    min-height: calc(100dvh - 214px);
 }
 
 .empty-devices {
@@ -905,7 +813,7 @@
     box-sizing: border-box;
 
     p {
-        font-family: var(--third-family);
+        font-family: var(--font-family);
         font-size: 32px;
         font-weight: 700;
         text-align: center;
@@ -915,7 +823,7 @@
 .dark-btn {
     border-radius: 40px;
     font-size: 16px;
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     text-decoration: none;
     color: var(--white);
     padding: 16px 20px;
@@ -925,20 +833,6 @@
     justify-content: center;
     align-items: center;
     background-color: var(--black);
-}
-
-.light-btn {
-    border-radius: 40px;
-    font-family: var(--third-family);
-    color: var(--black);
-    padding: 16px 20px;
-    border: none;
-    font-weight: bold;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background-color: #f6f6f6;
-    text-decoration: none;
 }
 
 .device-count {
@@ -990,7 +884,7 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 600;
     font-size: 16px;
 }
@@ -999,12 +893,8 @@
     background-color: #e8e8e8;
 }
 
-.platform-btn {
-    transition: background-color 0.25s ease;
-}
-
 .platform-btn:not(.platform-btn--active):hover {
-    background-color: #e8e8e8;
+    background-color: var(--surface-2);
 }
 
 .download-app-card {
@@ -1087,7 +977,6 @@
     pointer-events: auto;
 }
 
-
 /* Страница 404 */
 .error-page {
     display: flex;
@@ -1110,7 +999,7 @@
     font-size: 120px;
     line-height: 113%;
     letter-spacing: -0.04em;
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 700;
     font-style: italic;
 }
@@ -1123,7 +1012,7 @@
 
 .error-title{
     font-size: 24px;
-    font-family: var(--third-family);
+    font-family: var(--font-family);
     font-weight: 700;
     line-height: 113%;
     letter-spacing: -0.04em;
@@ -1251,7 +1140,253 @@
     letter-spacing: -0.04em;
 }
 
+/* NPVPN-2315: вкладка «Тариф» и карточка состояния (истекла / ключ устарел / лимит). */
+.tariff-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    /* по самому широкому — карточке состояния */
+    max-width: 626px;
+}
+
+.tariff-card,
+.state-card {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 624px;
+    padding: 24px;
+    border-radius: 24px;
+    background: var(--surface-2);
+    color: var(--text-primary);
+}
+
+.tariff-card__title {
+    margin: 0 0 16px;
+    font-family: var(--font-family);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.04em;
+}
+
+.tariff-card__rows {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 8px 16px;
+    margin: 0;
+    font-family: var(--font-family);
+    font-weight: 500;
+    font-size: 14px;
+    line-height: 143%;
+    letter-spacing: -0.04em;
+}
+
+.tariff-card__rows dt,
+.tariff-card__rows dd {
+    margin: 0;
+}
+
+.state-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    /* макет: инфоблок до 626 (список устройств и тариф — до 624) */
+    max-width: 626px;
+}
+
+.devices-list + .state-card {
+    margin-top: 16px;
+}
+
 @media (min-width: 1024px) {
+    .devices-list + .state-card {
+        margin-top: 24px;
+    }
+}
+
+.state-card__icon {
+    flex-shrink: 0;
+}
+
+.state-card__text {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+}
+
+.state-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Мобилка с оплатой: «Оплатить» во всю ширину, кабинет — текстом под ней (макет). */
+.state-card__actions--pay {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+}
+
+/* Заглушка «Настроек» в состояниях (NPVPN-2315), как «Нет активной подписки» в вебе: на мобилке
+   по центру экрана, на ПК — серая карточка. Высота мобилки — как у пустых «Устройств» (.main--centered). */
+.state-fallback-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 214px);
+    min-height: calc(100dvh - 214px);
+}
+
+.state-fallback {
+    box-sizing: border-box;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-primary);
+}
+
+/* иконка: мобилка — 56, скругление 21, фон bg-lvl-2; ПК — 80, скругление 30, фон bg-lvl-1 (ниже) */
+.state-fallback__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 16px;
+    border-radius: 21px;
+    background: var(--surface-2);
+}
+
+.state-fallback__title {
+    margin: 0 0 8px;
+    font-family: var(--font-family);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 120%;
+    letter-spacing: -0.04em;
+}
+
+.state-fallback__text {
+    margin: 0 0 20px;
+    font-family: var(--font-family);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 143%;
+    letter-spacing: -0.04em;
+    color: var(--text-secondary);
+}
+
+/* кнопка заглушки — как на ПК и на мобилке (у остальных кнопок там 40 и 12) */
+.state-fallback .primary-btn {
+    height: 56px;
+    padding: 16px 20px;
+    border-radius: 16px;
+    font-size: 16px;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+}
+
+@media (min-width: 1024px) {
+    .state-fallback-main {
+        display: block;
+        min-height: 0;
+    }
+
+    .state-fallback {
+        max-width: 790px;
+        height: 324px;
+        padding: 48px 24px;
+        border-radius: 24px;
+        background: var(--surface-2);
+    }
+
+    .state-fallback__icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 30px;
+        background: var(--surface);
+    }
+
+    .state-fallback__icon svg {
+        width: 32px;
+        height: 32px;
+    }
+}
+
+/* Button / Primary (как плавающая кнопка поддержки). */
+.primary-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 16px;
+    background: var(--control-primary-bg);
+    color: var(--control-primary-content);
+    font-family: var(--font-family);
+    /* текст кнопок: 12 на мобилке, 16 на ПК (ниже) */
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color .15s;
+}
+
+.primary-btn:hover {
+    background: var(--control-primary-hover-bg);
+}
+
+.primary-btn:active {
+    background: var(--control-primary-pressed-bg);
+}
+
+.text-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 0 16px;
+    color: var(--text-primary);
+    font-family: var(--font-family);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: opacity .15s;
+}
+
+.text-btn:hover {
+    opacity: .7;
+}
+
+@media (min-width: 1024px) {
+    /* заголовок карточки — только на мобилке (макет ПК без него) */
+    .tariff-card__title {
+        display: none;
+    }
+
+    .primary-btn,
+    .text-btn {
+        height: 56px;
+        padding: 16px 20px;
+        font-size: 16px;
+    }
+
+    .state-card__actions--pay {
+        flex-direction: row;
+        align-items: center;
+        width: auto;
+    }
+
     .account-block__text {
         gap: 8px;
     }
@@ -1283,46 +1418,8 @@
         padding: 16px 24px;
     }
 
-    .button-wrapper_revoke {
-        position: static;
-        transform: none;
-        width: 100%;
-        max-width: none;
-        margin: 24px 0 0;
-        padding-top: 0;
-        align-items: flex-start;
-    }
-
-    .button-wrapper_revoke.expired-actions {
-        flex-direction: row-reverse;
-        justify-content: flex-end;
-        align-items: center;
-    }
-
-    .button-wrapper_revoke:has(.hint) {
-        gap: 24px;
-    }
-
-    .button-wrapper_revoke .hint {
-        width: 100%;
-        max-width: 456px;
-    }
-
-    .hint {
-        max-width: 468px;
-    }
-
-    .button-wrapper_revoke .dark-btn {
-        width: auto;
-    }
-
     .download-app-card {
         max-width: 342px;
-    }
-
-    .info-row {
-        max-width: 327px;
-        width: 100%;
     }
 
     .primary-apps {
@@ -1373,8 +1470,13 @@
         margin-bottom: 80px;
     }
 
+    /* по центру между табами и низом экрана: высота — экран минус поля .wrapper (40 * 2), нижний
+       отступ .page-content (80), шапка (≈45 + 24) и табы (40 + 24), без лишней прокрутки; блок
+       кончается на 80 выше края — сдвиг на 28 ставит QR посередине. Подпись о платформе — под прокруткой. */
     .qr-wrapper {
-        transform: translateX(-135px); 
+        min-height: calc(100vh - 293px);
+        min-height: calc(100dvh - 293px);
+        transform: translate(-135px, 28px);
         gap: 24px;
     }
 
@@ -1396,11 +1498,6 @@
 
     .custom-gap-steps {
         gap: 16px;
-    }
-
-    .device-card {
-        width: 310px;
-        flex: 0 0 310px;
     }
 
     .wrapper {
@@ -1429,7 +1526,8 @@
         display: block;
         position: sticky;
         top: 0;
-        width: 270px;
+        /* пункты меню — 296 (макет NPVPN-2315) + левый отступ 16 */
+        width: 312px;
         background: #fff;
         padding-left: 16px;
         flex-shrink: 0;
@@ -1443,13 +1541,6 @@
     .page-content {
         flex: 1;
         max-width: 954px;
-        width: 100%;
-        padding: 0 24px;
-    }
-
-    .page-content_limited {
-        flex: 1;
-        max-width: 952px;
         width: 100%;
         padding: 0 24px;
     }
@@ -1472,39 +1563,25 @@
         font-size: 16px;
     }
 
-    .tariff-info {
-        font-size: 16px;
-    }
-
     .page-title {
         font-size: 40px;
     }
 
+    /* NPVPN-2315: на ПК устройства в колонку шириной до 624, как в макете */
     .devices-list {
-        display: flex;
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: flex-start;
+        max-width: 624px;
     }
 
     .device-count {
         font-size: 20px;
     }
 
-    .platform-btn {
-        font-size: 20px;
-        padding: 16px 20px;
-        font-weight: 400;
-    }
 
     .hasApp-btn {
         padding: 16px 20px;
     }
     
-    .add-device {
-        width: 310px;
-    }
+
     
      footer.floating-nav {
         display: none;
