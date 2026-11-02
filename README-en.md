@@ -33,54 +33,35 @@ It is developed as a base for running VPN services and automated Telegram bots.
 
 ### Regular installation
 
-**SQLite** — no SSL, the panel listens on port 8000.
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install
-```
-
-The script asks two questions: the subscription title shown in the client and the Telegram bot username (you can leave both empty — press Enter). The script does not ask for a support link: until it is set, the support link in the subscription points to `https://t.me/` (an empty link). Set it later in `/opt/marzban/.env` (`SUB_SUPPORT_URL`) and run `marzban restart`.
-
-The installation always ends by streaming the panel logs unless `--no-logs` is passed. Press Ctrl+C — this does not stop the panel.
-
-After the installation, create an administrator:
-
-```bash
-marzban cli admin create
-```
-
-The command asks for a username, "Is sudo [y/N]" (answer `y` for the main administrator), a password with confirmation, and optional Telegram ID and Discord webhook.
-
-Log in at `http://<IP or domain>:8000/dashboard/#/login`.
-
-**MySQL / MariaDB** — automatic Let's Encrypt, certificate volumes in compose, HTTPS on port 8001. UFW, the panel administrator and the GitHub runner are not installed (that is `install-partner` only).
-
-Before you start: an A record of the domain pointing to the server IP, port 80 free (certbot standalone), Debian/Ubuntu.
-
-Interactive (the script asks for the domain and the Let's Encrypt email):
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mysql
-```
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mariadb
-```
-
-With parameters:
+This server needs a DNS A record for the panel domain. For MySQL and MariaDB the installer checks that the domain points at this server and issues a Let's Encrypt certificate. Port 80 must be free. Debian or Ubuntu.
 
 ```bash
 sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mysql \
   --domain panel.example.com \
   --cert-email admin@example.com \
+  --admin-username admin \
+  --admin-password 'change-me' \
   --non-interactive
 ```
 
-Optional: `--uvicorn-port 8001`, `--skip-dns-check`, `--skip-cert` (certificates are already in `/etc/letsencrypt/live/<domain>/`), `--no-logs`.
+- `--database` — `mysql`, `mariadb`, or `sqlite`. The domain check and the certificate run for `mysql` and `mariadb`. With `sqlite` the panel serves HTTP on port 8000; `--domain` and `--cert-email` cannot be used with it, and the installer exits with an error.
+- `--domain` — the panel domain, for example `panel.example.com`.
+- `--cert-email` — the email for Let's Encrypt.
+- `--admin-username` and `--admin-password` — create the main administrator (sudo) during installation. The password is printed at the end.
+- `--non-interactive` — do not ask for the domain, the email, or the admin password. Without this flag the script asks for the domain and the email itself, and asks for the admin password only when `--admin-username` is set without a password.
+- `--uvicorn-port` — the HTTPS port, 8001 by default.
+- `--skip-dns-check` — do not check the A record.
+- `--skip-cert` — do not issue a certificate; the files are already in `/etc/letsencrypt/live/<domain>/`.
 
-The installation always ends by streaming the panel logs unless `--no-logs` is passed; Ctrl+C returns control and does not stop the panel. With `--non-interactive` the subscription title, the bot link and the support link keep their default values; you can change them later in `/opt/marzban/.env` (`SUB_PROFILE_TITLE`, `BOT_URL`, `SUB_SUPPORT_URL`) and apply them with `marzban restart`.
+UFW, the GitHub runner, and the administrator from the bot admin are not installed by this command (that is `install-partner` only).
 
-After the installation, create an administrator:
+With `--non-interactive` the subscription title, the bot link and the support link keep their default values. Until the support link is set, the subscription points it at `https://t.me/`. Change them later in `/opt/marzban/.env` (`SUB_PROFILE_TITLE`, `BOT_URL`, `SUB_SUPPORT_URL`) and apply them with `marzban restart`.
+
+After installation the container logs are not shown. The script prints the login URL. If the administrator was created with the flags above, the username and password are printed there too. Read logs later with `marzban logs`.
+
+MySQL and MariaDB login URL: `https://<domain>:8001/dashboard/#/login`. SQLite: `http://<server IP>:8000/dashboard/#/login`.
+
+If you did not pass `--admin-username` and `--admin-password` during installation, create an administrator:
 
 ```bash
 marzban cli admin create
@@ -88,7 +69,7 @@ marzban cli admin create
 
 The command asks for a username, "Is sudo [y/N]" (answer `y` for the main administrator), a password with confirmation, and optional Telegram ID and Discord webhook.
 
-Log in at `https://<domain>:8001/dashboard/`.
+Node installation is in the "Node installation" section below.
 
 ---
 
@@ -163,6 +144,14 @@ Details: [Marzban-scripts/README.md](https://github.com/npvpn/Marzban-scripts/bl
 
 ### New installation
 
+The node installer asks for a certificate. Get it in the panel:
+
+1. Open "Node Settings".
+2. Click "Add New Marzban Node".
+3. The certificate is at the top of this form, before the node is saved. It is the panel client certificate. Copy the whole PEM: the eye icon ("Show certificate") or the "Download certificate" button. Clicking the certificate text selects it.
+4. On the same form fill in the node server address, port `62050` and API port `62051`. You can save the node before or after the server install: the certificate does not depend on that.
+5. Alternative: `GET /api/node/settings`, field `certificate`.
+
 On a separate server:
 
 ```bash
@@ -171,11 +160,11 @@ sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/mar
 
 The script asks interactively for:
 
-1. The panel's **Client Certificate** — paste the whole PEM (from `-----BEGIN CERTIFICATE-----` to `-----END CERTIFICATE-----`) and press Enter on an empty line. You can get the certificate in the panel dashboard: "Node Settings" → "Add New Marzban Node" → "Show certificate" (or "Download certificate"). Alternatively, use the API: `GET /api/node/settings` (field `certificate`). The script does not validate the certificate: if you paste it truncated, the node restarts endlessly.
+1. The panel's **Client Certificate** — paste the whole PEM (from `-----BEGIN CERTIFICATE-----` to `-----END CERTIFICATE-----`) and press Enter on an empty line. The script does not validate the certificate: if you paste it truncated, the node restarts endlessly.
 2. Whether to use the REST protocol (yes by default), `SERVICE_PORT` (62050 by default) and `XRAY_API_PORT` (62051 by default).
 3. The bot IPv4 address to restrict `:9100` to (see below; empty input leaves the port public).
 
-The node must be reachable from the panel on `SERVICE_PORT`. After the installation, add the node in the panel: "Node Settings" → "Add New Marzban Node" (server address, ports 62050 and 62051); the status should become `connected`. Until the node is added to the panel, a fresh node listens only on `SERVICE_PORT` (62050); `XRAY_API_PORT` (62051) appears after the xray core starts.
+The node must be reachable from the panel on `SERVICE_PORT`. After the node is saved in the panel, the status should become `connected`. Until the node is added to the panel, a fresh node listens only on `SERVICE_PORT` (62050); `XRAY_API_PORT` (62051) appears after the xray core starts.
 
 With a custom name:
 
@@ -210,6 +199,16 @@ sudo marzban-node core-update
 ## Versions and images
 
 Versions follow the release date: `vYYYY.MM.DD`, a hotfix on the same day is `vYYYY.MM.DD.N`. The image for a version is `npvpn/panel:YYYY.MM.DD` (Docker Hub) and `ghcr.io/npvpn/panel:YYYY.MM.DD`; `latest` points to the latest release. The changelog is in the [releases](https://github.com/npvpn/vpn-panel/releases).
+
+---
+
+## API
+
+The current API schema of the `master` branch is published on every update of that branch:
+
+[openapi.json](https://github.com/npvpn/vpn-panel/releases/download/openapi/openapi.json)
+
+On an installed panel the schema of that version is also available at `/openapi.json`. `/docs` and `/redoc` are enabled with `DOCS=true`.
 
 ---
 
