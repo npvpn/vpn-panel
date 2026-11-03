@@ -1,27 +1,39 @@
 {
   "log": {
-    "loglevel": "warning"
-  },
-  "routing": {
-    "rules": [
-      {
-        "ip": [
-          "geoip:private"
-        ],
-        "outboundTag": "BLOCK",
-        "type": "field"
-      }
-    ]
+    "loglevel": "none"
   },
   "inbounds": [
     {
-      "tag": "Shadowsocks TCP",
+      "tag": "VLESS TCP REALITY",
       "listen": "0.0.0.0",
-      "port": 1080,
-      "protocol": "shadowsocks",
+      "port": 443,
+      "protocol": "vless",
       "settings": {
         "clients": [],
-        "network": "tcp,udp"
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "target": "gstatic.com:443",
+          "serverNames": [
+            "gstatic.com"
+          ],
+          "privateKey": "mF3X1ndPnICLfRcsGZyDLcQzQjSsAIxbXW2FNCC6q1o",
+          "shortIds": [
+            "6ba85179e30d4fc2"
+          ]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
       }
     }
   ],
@@ -34,5 +46,27 @@
       "protocol": "blackhole",
       "tag": "BLOCK"
     }
-  ]
+  ],
+  "routing": {
+    "rules": [
+      {
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "BLOCK"
+      },
+      {
+        "domain": [
+          "geosite:private"
+        ],
+        "outboundTag": "BLOCK"
+      },
+      {
+        "protocol": [
+          "bittorrent"
+        ],
+        "outboundTag": "BLOCK"
+      }
+    ]
+  }
 }
