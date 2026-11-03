@@ -90,6 +90,17 @@ def test_hosts_storage_address_and_node_ids_share_the_same_host():
     assert [arg.id for arg in address.args if isinstance(arg, ast.Name)] == ["host"]
 
 
+def test_hosts_storage_dict_has_finalmask_key():
+    assert "finalmask" in _dict_keys(_host_dict_literal())
+
+
+def test_hosts_storage_finalmask_comes_from_the_host_column():
+    value = _value_for_key(_host_dict_literal(), "finalmask")
+
+    assert isinstance(value, ast.Attribute) and value.attr == "finalmask"
+    assert isinstance(value.value, ast.Name) and value.value.id == "host"
+
+
 def test_hosts_storage_dict_has_client_config_id_key():
     """В storage-словаре хоста есть ключ "client_config_id" — единственный источник
     профиля клиентского routing для рендера подписки (share.py читает его с хоста)."""

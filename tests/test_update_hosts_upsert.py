@@ -146,6 +146,21 @@ def test_duplicate_ids_are_rejected_without_changes(db, seeded):
     assert db.query(ProxyHost).one().remark == "Нидерланды"
 
 
+def test_update_hosts_stores_finalmask(db, seeded):
+    mask = {
+        "tcp": [
+            {
+                "type": "fragment",
+                "settings": {"packets": "tlshello", "length": "1-1", "delay": "0"},
+            }
+        ]
+    }
+    crud.update_hosts(db, TAG, [_payload(seeded, finalmask=mask)])
+
+    db.expire_all()
+    assert db.query(ProxyHost).one().finalmask == mask
+
+
 def test_id_from_other_inbound_is_rejected(db, seeded):
     other = ProxyInbound(tag="VMESS WS")
     db.add(other)

@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.host_balancing import HostBalancing
 from app.models.host_injection import HostInjection
@@ -23,6 +23,33 @@ FRAGMENT_PATTERN = re.compile(r"^((\d{1,4}-\d{1,4})|(\d{1,4})),((\d{1,3}-\d{1,3}
 NOISE_PATTERN = re.compile(
     r"^(rand:(\d{1,4}-\d{1,4}|\d{1,4})|str:.+|hex:.+|base64:.+)(,(\d{1,4}-\d{1,4}|\d{1,4}))?(&(rand:(\d{1,4}-\d{1,4}|\d{1,4})|str:.+|hex:.+|base64:.+)(,(\d{1,4}-\d{1,4}|\d{1,4}))?)*$"
 )
+
+_FINALMASK_ROOT_KEYS = frozenset({"tcp", "udp", "quicParams"})
+_FINALMASK_MAX_BYTES = 16384
+
+
+def _validate_finalmask_layer(layer: object, label: str) -> None:
+    if not isinstance(layer, list) or not layer:
+        raise ValueError(f"finalmask.{label} must be a non-empty array")
+    for item in layer:
+        if not isinstance(item, dict) or set(item) - {"type", "settings"}:
+            raise ValueError(f"finalmask.{label} items must be objects with type and settings")
+        mask_type = item.get("type")
+        settings = item.get("settings")
+        if not isinstance(mask_type, str) or not mask_type.strip():
+            raise ValueError(f"finalmask.{label} type must be a non-empty string")
+        if not isinstance(settings, dict):
+            raise ValueError(f"finalmask.{label} settings must be an object")
+        if mask_type != "fragment":
+            continue
+        if "interval" in settings:
+            raise ValueError("finalmask fragment uses delay or delays, not interval")
+        if "packets" not in settings:
+            raise ValueError("finalmask fragment requires packets")
+        if "length" not in settings and "lengths" not in settings:
+            raise ValueError("finalmask fragment requires length or lengths")
+        if "delay" not in settings and "delays" not in settings:
+            raise ValueError("finalmask fragment requires delay or delays")
 
 
 class ProxyTypes(str, Enum):
@@ -179,6 +206,7 @@ class ProxyHost(BaseModel):
     random_user_agent: bool | None = None
     use_sni_as_host: bool | None = None
     xhttp_extra: dict | None = None
+    finalmask: dict | None = None
     # NPVPN-2072: сужение адресов настраивается на хосте. size=None/0 — отдавать все
     # адреса; rotation_days=None — дефолт _DEFAULT_ROTATION_DAYS при чтении настроек.
     address_subset_enabled: bool = False
@@ -228,6 +256,29 @@ class ProxyHost(BaseModel):
         if v is not None and not isinstance(v, dict):
             raise ValueError("xhttp_extra must be a JSON object")
         return v
+
+    @model_validator(mode="after")
+    def validate_finalmask(self):
+        mask = self.finalmask
+        if mask is None:
+            return self
+        if not isinstance(mask, dict) or not mask:
+            raise ValueError("finalmask must be a non-empty JSON object")
+        if set(mask) - _FINALMASK_ROOT_KEYS:
+            raise ValueError("finalmask allows only tcp, udp and quicParams")
+        encoded = json.dumps(mask, separators=(",", ":"), ensure_ascii=False).encode()
+        if len(encoded) > _FINALMASK_MAX_BYTES:
+            raise ValueError("finalmask JSON must be at most 16384 bytes")
+        if "tcp" in mask:
+            _validate_finalmask_layer(mask["tcp"], "tcp")
+        if "udp" in mask:
+            _validate_finalmask_layer(mask["udp"], "udp")
+        quic = mask.get("quicParams")
+        if quic is not None and not isinstance(quic, dict):
+            raise ValueError("finalmask.quicParams must be an object")
+        if (self.fragment_setting or "").strip():
+            raise ValueError("fragment_setting and finalmask cannot both be set")
+        return self
 
 
 class ProxyInbound(BaseModel):

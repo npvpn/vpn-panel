@@ -399,6 +399,7 @@ def update_hosts(
         target.is_disabled = host.is_disabled
         target.fragment_setting = host.fragment_setting
         target.noise_setting = host.noise_setting
+        target.finalmask = host.finalmask
         # Эти три колонки NOT NULL с server_default, а в схеме они `bool | None`.
         # None значит «клиент не передал поле», а не «сбросить»: присваивание
         # None падало бы IntegrityError. False проходит и выключает флаг.

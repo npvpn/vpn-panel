@@ -80,6 +80,7 @@ function flattenHosts(hosts: HostsDict | null | undefined) {
       xhttp_extra: host.xhttp_extra
         ? JSON.stringify(host.xhttp_extra, null, 2)
         : "",
+      finalmask: host.finalmask ? JSON.stringify(host.finalmask, null, 2) : "",
     }))
   );
 
@@ -107,6 +108,7 @@ function groupHosts(
       ...(typeof host_id === "number" ? { id: host_id } : {}),
       order: index,
       xhttp_extra: rest.xhttp_extra ? JSON.parse(rest.xhttp_extra) : null,
+      finalmask: rest.finalmask ? JSON.parse(rest.finalmask) : null,
     });
   });
 
