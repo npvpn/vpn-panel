@@ -89,6 +89,7 @@
           selectedDevice: null,
           // уведомление «скопировано» вверху экрана (NPVPN-2315), как тост в вебе
           toast: '',
+          toastKind: 'success',
           toastVisible: false,
           toastTimer: null,
 
@@ -165,9 +166,10 @@
           },
 
           // текст остаётся, пока уведомление плавно уходит; прячет только toastVisible
-          showToast(text) {
+          showToast(text, kind = 'success') {
             clearTimeout(this.toastTimer);
             this.toast = text;
+            this.toastKind = kind;
             this.toastVisible = true;
             this.toastTimer = setTimeout(() => this.hideToast(), 3000);
           },
@@ -395,13 +397,40 @@ get alternativeApps() {
               return app ? app.scheme : null;
           },
 
+          // Буфер обмена браузер даёт не везде: только по https, а встроенные окна приложений
+          // (мессенджеры, VPN-клиенты) иногда его запрещают. Тогда — старый способ через выделение текста,
+          // не вышло и так — уведомление об ошибке, а не тишина.
           async copyToClipboard(text, message = 'Ключ скопирован') {
+            let copied = false;
             try {
               await navigator.clipboard.writeText(text);
-              this.showToast(message);
+              copied = true;
             } catch (e) {
-              console.error('Copy failed', e);
+              copied = this.copyWithSelection(text);
             }
+            if (copied) {
+              this.showToast(message);
+            } else {
+              this.showToast('Не удалось скопировать', 'error');
+            }
+          },
+
+          copyWithSelection(text) {
+            const field = document.createElement('textarea');
+            field.value = text;
+            field.setAttribute('readonly', '');
+            field.style.position = 'fixed';
+            field.style.opacity = '0';
+            document.body.appendChild(field);
+            field.select();
+            let ok = false;
+            try {
+              ok = document.execCommand('copy');
+            } catch (e) {
+              ok = false;
+            }
+            field.remove();
+            return ok;
           },
         }));
       });
@@ -411,9 +440,14 @@ get alternativeApps() {
     <div x-data="subscriptionManager" x-init="init()" x-cloak class="wrapper">
       {# Уведомление «скопировано» (NPVPN-2315): вверху экрана поверх всего, само скрывается через 3 с #}
       <div class="toast" role="status" :class="{ 'toast--visible': toastVisible }" :aria-hidden="!toastVisible">
-        <svg class="toast__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg x-show="toastKind === 'success'" class="toast__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="11.9999" r="9" fill="#2FC26E" />
           <path d="M15 10L11 14L9 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white" />
+        </svg>
+        {# ошибка — как тост ошибки в вебе #}
+        <svg x-show="toastKind === 'error'" class="toast__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="#EF3124" />
+          <path d="M14 10L10 14M10 10L14 14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         <span class="toast__text" x-text="toast"></span>
         <button type="button" class="toast__close" aria-label="Закрыть" @click="hideToast()">

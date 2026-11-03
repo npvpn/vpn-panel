@@ -63,7 +63,7 @@ def test_menu_with_chat_and_telegram(template):
     html = _render(template, build_support_context({**CHAT, **TG}, 7, "TOKEN"))
     assert "data-support-menu" in html
     assert "Написать в чат" in html
-    assert ">Telegram<" in html
+    assert ">Связаться в Telegram<" in html
     assert 'src="/statics/subscription/scripts/support-menu.js?v=' in html
     cfg = _config(html)
     assert cfg["chat"]["bot_id"] == 7
@@ -158,7 +158,7 @@ def test_floating_both_channels_is_chat_with_close_swap():
     floating = _floating(_render("index.html", build_support_context({**CHAT, **TG}, 7, "TOKEN")))
     assert ">Чат<" in floating
     assert "support-menu__swap" in floating and "support-menu__icon--close" in floating
-    assert "Написать в чат" in floating and ">Telegram<" in floating
+    assert "Написать в чат" in floating and ">Связаться в Telegram<" in floating
 
 
 def test_floating_telegram_only_is_link():

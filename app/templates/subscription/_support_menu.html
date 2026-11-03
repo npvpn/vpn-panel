@@ -12,10 +12,10 @@
    hidden в разметке, а не только в CSS: статика без версии в адресе, и со старым CSS из кэша
    спиннер стоял бы рядом с иконкой. #}
 {% macro spinner() %}<span class="support-menu__spinner" hidden><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M19 10C19 14.9706 14.9706 19 10 19C5.02944 19 1 14.9706 1 10C1 5.02944 5.02944 1 10 1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{% endmacro %}
-{# Пункты выбора — общие для шторки и выпадающего списка. Ошибка чата — под «Написать в чат». #}
+{# Пункты выбора («Написать в чат» / «Связаться в Telegram») — общие для шторки и выпадающего списка. Ошибка чата — под «Написать в чат». #}
 {% macro options() %}
   <button type="button" class="support-menu__item" data-support-chat>{{ chat_icon() }}{{ spinner() }}<span class="support-menu__item-text"><span>Написать в чат</span><span class="support-menu__status" data-support-status hidden></span></span></button>
-  <a class="support-menu__item" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">{{ tg_icon() }}<span>Telegram</span></a>
+  <a class="support-menu__item" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">{{ tg_icon() }}<span>Связаться в Telegram</span></a>
 {% endmacro %}
 {% set header = support_variant == "header" %}
 {% if support and support.mode != "none" %}
