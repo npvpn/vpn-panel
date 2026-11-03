@@ -18,9 +18,24 @@ _ROOT = pathlib.Path(__file__).parent.parent
 _SUB_DIR = _ROOT / "app" / "templates" / "subscription"
 
 
-def test_woff2_served_as_font(tmp_path, monkeypatch):
-    # как в образе панели: .woff2 системе неизвестен — без регистрации ушёл бы text/plain
-    monkeypatch.delitem(mimetypes.types_map, ".woff2", raising=False)
+@pytest.fixture
+def mimetypes_without_woff2(monkeypatch):
+    """Таблица типов без .woff2 — как в образе панели.
+
+    Системный /etc/mime.types (на раннере CI) уже знает .woff2, а mimetypes перечитывает его
+    при инициализации — поэтому строим таблицу без системных файлов. monkeypatch возвращает
+    модульные таблицы после теста.
+    """
+    for name in ("types_map", "common_types", "suffix_map", "encodings_map", "inited", "_db"):
+        monkeypatch.setattr(mimetypes, name, getattr(mimetypes, name))
+    monkeypatch.setattr(mimetypes, "knownfiles", [])
+    monkeypatch.setattr(mimetypes, "_db", None)
+    mimetypes.init([])
+    mimetypes.types_map.pop(".woff2", None)
+
+
+def test_woff2_served_as_font(tmp_path, mimetypes_without_woff2):
+    # без регистрации ушёл бы не font/woff2 (в образе панели — text/plain)
     assert mimetypes.guess_type("inter.woff2")[0] != "font/woff2"
     (tmp_path / "inter.woff2").write_bytes(b"wOF2")
 
