@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import pathlib
 import re
 
@@ -13,17 +14,38 @@ from fastapi.staticfiles import StaticFiles
 import config as panel_config
 from config import register_subscription_static_types, subscription_statics_version
 
-_SUB_DIR = pathlib.Path(__file__).parent.parent / "app" / "templates" / "subscription"
+_ROOT = pathlib.Path(__file__).parent.parent
+_SUB_DIR = _ROOT / "app" / "templates" / "subscription"
 
 
-def test_woff2_served_as_font(tmp_path):
+def test_woff2_served_as_font(tmp_path, monkeypatch):
+    # как в образе панели: .woff2 системе неизвестен — без регистрации ушёл бы text/plain
+    monkeypatch.delitem(mimetypes.types_map, ".woff2", raising=False)
+    assert mimetypes.guess_type("inter.woff2")[0] != "font/woff2"
     (tmp_path / "inter.woff2").write_bytes(b"wOF2")
+
     register_subscription_static_types()
 
     scope = {"type": "http", "method": "GET", "headers": []}
     response = asyncio.run(StaticFiles(directory=tmp_path).get_response("inter.woff2", scope))
-
     assert response.media_type == "font/woff2"
+
+
+def _source(relative: str) -> str:
+    return (_ROOT / relative).read_text(encoding="utf-8")
+
+
+# app.templates и app.dashboard в тестах на Windows не импортируются (тянут всё приложение) —
+# проводку проверяем по исходнику: без неё функции выше в проде не работают, а тесты зелёные
+def test_templates_get_statics_version():
+    assert 'env.globals["static_v"] = subscription_statics_version()' in _source("app/templates/__init__.py")
+
+
+def test_statics_mount_registers_font_type():
+    source = _source("app/dashboard/__init__.py")
+    mount = source[source.index("def mount_sub_statics") :]
+    body = mount.split("\ndef ", 1)[0]
+    assert "register_subscription_static_types()" in body
 
 
 @pytest.fixture
