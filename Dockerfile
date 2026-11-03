@@ -1,5 +1,5 @@
 ARG PYTHON_VERSION=3.12
-ARG XRAY_VERSION=v26.3.27
+ARG XRAY_VERSION=v26.10.21
 
 # Stage 1: Frontend build
 FROM node:16.17.0-slim AS frontend
