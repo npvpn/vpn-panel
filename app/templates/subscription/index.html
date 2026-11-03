@@ -564,12 +564,16 @@ get alternativeApps() {
                 <path d="M28 28V37.3333" stroke-width="4.66667" stroke-linecap="round" stroke-linejoin="round" stroke="white" />
               </svg>
               <p class="state-card__text">
+                {#- без кабинета (не заданы web_url и bot_url) не отправляем туда, где нет кнопки -#}
                 {%- if kind == "revoked" -%}
-                  Чтобы продолжить пользоваться сервисом, вставьте новый ключ в&nbsp;приложение&nbsp;— для этого войдите в&nbsp;личный кабинет
+                  Чтобы продолжить пользоваться сервисом, вставьте новый ключ в&nbsp;приложение
+                  {%- if web_url or bot_url %}&nbsp;— для этого войдите в&nbsp;личный кабинет{% endif %}
                 {%- elif kind == "expired" -%}
                   Подписка истекла&nbsp;— оплатите её, чтобы продолжить пользоваться сервисом
-                {%- else -%}
+                {%- elif web_url or bot_url -%}
                   Чтобы подключить больше устройств&nbsp;— войдите в&nbsp;личный кабинет
+                {%- else -%}
+                  Чтобы подключить новое устройство&nbsp;— удалите одно из&nbsp;подключённых
                 {%- endif -%}
               </p>
               {% set pay = kind == "expired" and pay_url %}
@@ -645,12 +649,13 @@ get alternativeApps() {
                 {%- if page_state == "revoked" %}Ключ доступа устарел{% elif page_state == "expired" %}Подписка истекла{% else %}Лимит устройств достигнут{% endif -%}
               </h3>
               <p class="state-fallback__text">
+                {%- set has_cabinet = web_url or bot_url -%}
                 {%- if page_state == "revoked" -%}
-                  Войдите в&nbsp;личный кабинет, чтобы получить новый ключ
+                  {%- if has_cabinet %}Войдите в&nbsp;личный кабинет, чтобы получить новый ключ{% else %}Получите новый ключ, чтобы подключить устройство{% endif -%}
                 {%- elif page_state == "expired" -%}
                   Оплатите подписку, чтобы подключить устройство
                 {%- else -%}
-                  Удалите устройство или увеличьте лимит в&nbsp;личном кабинете
+                  {%- if has_cabinet %}Удалите устройство или увеличьте лимит в&nbsp;личном кабинете{% else %}Удалите одно из&nbsp;подключённых устройств, чтобы подключить новое{% endif -%}
                 {%- endif -%}
               </p>
               {{ main_action(page_state) }}

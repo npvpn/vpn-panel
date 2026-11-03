@@ -137,6 +137,35 @@ def test_card_without_cabinet_link_has_no_cabinet_button():
     assert "data-cabinet-link>Войти в личный кабинет" not in html
 
 
+@pytest.mark.parametrize(
+    ("template", "with_cabinet", "without_cabinet"),
+    [
+        (
+            "revoked.html",
+            ["для этого войдите в&nbsp;личный кабинет", "Войдите в&nbsp;личный кабинет, чтобы получить новый ключ"],
+            ["вставьте новый ключ в&nbsp;приложение</p>", "Получите новый ключ, чтобы подключить устройство"],
+        ),
+        (
+            "limited.html",
+            ["Чтобы подключить больше устройств&nbsp;— войдите", "увеличьте лимит в&nbsp;личном кабинете"],
+            [
+                "удалите одно из&nbsp;подключённых",
+                "Удалите одно из&nbsp;подключённых устройств, чтобы подключить новое",
+            ],
+        ),
+    ],
+)
+def test_texts_mention_cabinet_only_when_it_exists(template, with_cabinet, without_cabinet):
+    # без web_url и bot_url кнопки входа нет — тексты не должны отправлять в кабинет
+    html = _render(template)
+    assert all(text in html for text in with_cabinet)
+    assert not any(text in html for text in without_cabinet)
+    html = _render(template, web_url="")
+    assert "личн" not in html.split('class="state-card__text"', 1)[1].split("</p>", 1)[0]
+    assert "личн" not in _fallback(html).split('class="state-fallback__text"', 1)[1].split("</p>", 1)[0]
+    assert all(text in html for text in without_cabinet)
+
+
 def test_limited_shows_limit_and_hides_add_device():
     html = _render("limited.html")
     assert "&nbsp;— лимит устройств достигнут" in html
