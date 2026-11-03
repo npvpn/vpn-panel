@@ -19,7 +19,7 @@
 {% endmacro %}
 {% set header = support_variant == "header" %}
 {% if support and support.mode != "none" %}
-<link rel="stylesheet" href="{{ sub_statics }}styles/support-menu.css">
+<link rel="stylesheet" href="{{ sub_statics }}styles/support-menu.css?v={{ static_v }}">
 <div class="support-menu{{ ' support-menu--header' if header else ' support-menu--floating' }}" data-support-menu>
   <script type="application/json" data-support-config>{{ support | tojson }}</script>
   {% if support.mode == "telegram" %}
@@ -65,5 +65,5 @@
     </div>
   {% endif %}
 </div>
-{% if not header %}<script defer src="{{ sub_statics }}scripts/support-menu.js"></script>{% endif %}
+{% if not header %}<script defer src="{{ sub_statics }}scripts/support-menu.js?v={{ static_v }}"></script>{% endif %}
 {% endif %}

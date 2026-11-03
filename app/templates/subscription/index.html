@@ -8,17 +8,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Информация о подписке</title>
     <link rel="stylesheet" href="/statics/main.css">
-    <link rel="stylesheet" href="{{ sub_statics }}styles/index.css">
-    <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');</style>
+    {# стили отдельными ссылками с версией (NPVPN-2315): цепочка @import в index.css версию не передаёт,
+       и components.css мог остаться старым из кэша. Порядок — как был у @import. #}
+    <link rel="stylesheet" href="{{ sub_statics }}styles/fonts.css?v={{ static_v }}">
+    <link rel="stylesheet" href="{{ sub_statics }}styles/variables.css?v={{ static_v }}">
+    <link rel="stylesheet" href="{{ sub_statics }}styles/components.css?v={{ static_v }}">
+    <link rel="stylesheet" href="{{ sub_statics }}styles/index.css?v={{ static_v }}">
+    <link rel="preload" href="{{ sub_statics }}fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="{{ sub_statics }}fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="icon" href="data:,">
     <script defer src="/statics/vendor/js/alpinejs.js"></script>
     <script defer src="/statics/vendor/js/qrcode.min.js"></script>
-    <script defer src="{{ sub_statics }}scripts/cabinet-link.js"></script>
+    <script defer src="{{ sub_statics }}scripts/cabinet-link.js?v={{ static_v }}"></script>
     {# Опрос статуса — по состоянию, как было на отдельных страницах: обычная перезагружается при
        достижении лимита и отзыве токена, «лимит» — когда устройство освободилось, «истекла» — при
        смене статуса. «Устарел» не опрашиваем: /info отвечает 404, и страница перезагружалась бы вечно. #}
     {% if page_state != "revoked" %}
-    <script defer src="{{ sub_statics }}scripts/status-poll.js"
+    <script defer src="{{ sub_statics }}scripts/status-poll.js?v={{ static_v }}"
       data-info-url="/{{ sub_path }}/{{ token }}/info"
       data-initial-status="{{ user.status.value }}"
       {% if page_state == "limited" %}data-device-limit-mode="cleared"
@@ -111,17 +117,17 @@
             return value.includes('v2ray');
           },
 
-          // ?v= — статика без версии в адресе: иначе браузер покажет старую иконку из кэша
-          // (incy.svg и v2ray.svg были перепутаны). Меняя картинку, поднимать номер.
+          // ?v= — версия статики (config.subscription_statics_version): поменялась картинка —
+          // новый адрес, иначе браузер покажет старую иконку из кэша
           getAppIcon(app) {
             if (this.isHappApp(app)) {
-              return '{{ sub_statics }}assets/happ.svg?v=2';
+              return '{{ sub_statics }}assets/happ.svg?v={{ static_v }}';
             }
             if (this.isIncyApp(app)) {
-              return '{{ sub_statics }}assets/incy.svg?v=2';
+              return '{{ sub_statics }}assets/incy.svg?v={{ static_v }}';
             }
             if (this.isV2rayApp(app)) {
-              return '{{ sub_statics }}assets/v2ray.svg?v=2';
+              return '{{ sub_statics }}assets/v2ray.svg?v={{ static_v }}';
             }
             return null;
           },
@@ -623,7 +629,7 @@ get alternativeApps() {
                    картинка): уровень коррекции H восстанавливает закрытый логотипом центр (~8% площади; 56px — с запасом, 60+ на плотном коде уже не всегда читается) #}
                 <div class="qr-code">
                   <div id="qrcode-main"></div>
-                  <img class="qr-code__logo" src="{{ sub_statics }}assets/qr-logo.png" alt="" width="56" height="56">
+                  <img class="qr-code__logo" src="{{ sub_statics }}assets/qr-logo.png?v={{ static_v }}" alt="" width="56" height="56">
                 </div>
             </div>
     

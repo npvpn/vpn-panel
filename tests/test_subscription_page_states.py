@@ -44,7 +44,7 @@ def _start_tab(html: str) -> str:
 
 
 def _poll_script(html: str) -> str | None:
-    match = re.search(r'<script defer src="[^"]*status-poll\.js"(.*?)></script>', html, re.S)
+    match = re.search(r'<script defer src="[^"]*status-poll\.js(?:\?v=[^"]*)?"(.*?)></script>', html, re.S)
     return match.group(1) if match else None
 
 
