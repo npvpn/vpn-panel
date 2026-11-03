@@ -124,7 +124,7 @@ def test_expired_page_shows_pay_button():
 
     assert f'href="{_PAY_URL}/{_TOKEN}"' in html
     assert "Оплатить" in html
-    assert 'href="/statics/subscription/styles/index.css"' in html
+    assert 'href="/statics/subscription/styles/index.css?v=' in html
 
 
 def test_expired_page_shows_pay_button_alongside_cabinet():

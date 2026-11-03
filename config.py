@@ -1,3 +1,5 @@
+import hashlib
+import mimetypes
 from pathlib import Path
 
 from decouple import config
@@ -110,6 +112,32 @@ def resolved_subscription_templates_dir() -> Path | None:
         if builtin.is_dir():
             return builtin
     return None
+
+
+def subscription_statics_version() -> str:
+    """Версия статики страницы подписки для адресов `?v=` (NPVPN-2315).
+
+    Отпечаток содержимого CSS/JS/шрифтов/картинок каталога страниц: файлы поменялись (новый
+    образ) — новые адреса, браузеры скачают их заново; не менялись — тот же, кэш работает.
+    Шаблоны (*.html) не учитываются: они отдаются сервером, а не статикой. Считается один раз
+    при запуске (app/templates).
+    """
+    sub_dir = resolved_subscription_templates_dir()
+    if not sub_dir:
+        return ""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in sub_dir.rglob("*") if p.is_file() and p.suffix != ".html"):
+        digest.update(path.relative_to(sub_dir).as_posix().encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
+
+
+def register_subscription_static_types() -> None:
+    """Шрифты страницы подписки (NPVPN-2315) — с типом font/woff2, а не text/plain.
+
+    StaticFiles берёт тип из mimetypes, а в образе панели .woff2 там нет.
+    """
+    mimetypes.add_type("font/woff2", ".woff2")
 
 
 def subscription_statics_url() -> str:
