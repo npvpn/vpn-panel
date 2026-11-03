@@ -3,6 +3,26 @@ import { balancingSchema } from "./hostBalancing";
 import { injectionSchema } from "./hostInjection";
 
 const FINALMASK_ROOT_KEYS = new Set(["tcp", "udp", "quicParams"]);
+const FINALMASK_MAX_BYTES = 16384;
+
+function finalmaskLayerError(layer: unknown): string | null {
+  if (!Array.isArray(layer) || layer.length === 0) return "hostsDialog.finalmask.error.json";
+  for (const item of layer) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return "hostsDialog.finalmask.error.json";
+    const entry = item as { type?: unknown; settings?: unknown };
+    if (entry.type !== "fragment") continue;
+    const settings = entry.settings;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      return "hostsDialog.finalmask.error.json";
+    }
+    const fragment = settings as Record<string, unknown>;
+    if ("interval" in fragment) return "hostsDialog.finalmask.error.interval";
+    if (!("packets" in fragment)) return "hostsDialog.finalmask.error.json";
+    if (!("length" in fragment) && !("lengths" in fragment)) return "hostsDialog.finalmask.error.json";
+    if (!("delay" in fragment) && !("delays" in fragment)) return "hostsDialog.finalmask.error.json";
+  }
+  return null;
+}
 
 function finalmaskError(
   value: string | null | undefined,
@@ -24,16 +44,13 @@ function finalmaskError(
   if (keys.length === 0 || keys.some((key) => !FINALMASK_ROOT_KEYS.has(key))) {
     return "hostsDialog.finalmask.error.json";
   }
+  if (new TextEncoder().encode(JSON.stringify(mask)).length > FINALMASK_MAX_BYTES) {
+    return "hostsDialog.finalmask.error.size";
+  }
   for (const label of ["tcp", "udp"] as const) {
-    const layer = mask[label];
-    if (layer === undefined) continue;
-    if (!Array.isArray(layer)) return "hostsDialog.finalmask.error.json";
-    for (const item of layer) {
-      if (!item || typeof item !== "object") continue;
-      const entry = item as { type?: unknown; settings?: unknown };
-      if (entry.type !== "fragment" || !entry.settings || typeof entry.settings !== "object") continue;
-      if ("interval" in (entry.settings as object)) return "hostsDialog.finalmask.error.interval";
-    }
+    if (mask[label] === undefined) continue;
+    const layerIssue = finalmaskLayerError(mask[label]);
+    if (layerIssue) return layerIssue;
   }
   if ((fragmentSetting ?? "").trim()) return "hostsDialog.finalmask.error.both";
   return null;

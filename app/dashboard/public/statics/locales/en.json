@@ -100,6 +100,7 @@
   "hostsDialog.finalmask.error.json": "Must be a valid JSON object",
   "hostsDialog.finalmask.error.interval": "Final mask fragment uses delay or delays, not interval",
   "hostsDialog.finalmask.error.both": "Clear the fragment pattern or Final mask. They cannot both be set.",
+  "hostsDialog.finalmask.error.size": "Final mask JSON must be at most 16384 bytes",
   "hostsDialog.host": "Request Host",
   "hostsDialog.host.info": "By default, if a request host is set in the Xray config, this host is used. However, you can set a custom request host here if needed.",
   "hostsDialog.host.multiHost": "To set multiple addresses, separate them with <badge>,</badge> Each time an address is chosen randomly.",

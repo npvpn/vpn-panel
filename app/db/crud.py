@@ -399,7 +399,10 @@ def update_hosts(
         target.is_disabled = host.is_disabled
         target.fragment_setting = host.fragment_setting
         target.noise_setting = host.noise_setting
-        target.finalmask = host.finalmask
+        # Поле новое: клиент, который его не прислал, не должен стирать маску.
+        # Явный null по-прежнему очищает. Новый хост получает переданное значение.
+        if host.id is None or "finalmask" in host.model_fields_set:
+            target.finalmask = host.finalmask
         # Эти три колонки NOT NULL с server_default, а в схеме они `bool | None`.
         # None значит «клиент не передал поле», а не «сбросить»: присваивание
         # None падало бы IntegrityError. False проходит и выключает флаг.

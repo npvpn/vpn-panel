@@ -102,13 +102,14 @@ function groupHosts(
       payload[inbound_tag] = [];
     }
 
+    const finalmaskText = rest.finalmask ?? "";
     payload[inbound_tag].push({
       ...rest,
       // Назад бэкенду — под именем id; без него хост будет пересоздан.
       ...(typeof host_id === "number" ? { id: host_id } : {}),
       order: index,
       xhttp_extra: rest.xhttp_extra ? JSON.parse(rest.xhttp_extra) : null,
-      finalmask: rest.finalmask ? JSON.parse(rest.finalmask) : null,
+      finalmask: finalmaskText.trim() ? JSON.parse(finalmaskText) : null,
     });
   });
 

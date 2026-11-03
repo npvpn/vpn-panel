@@ -50,6 +50,12 @@ def _validate_finalmask_layer(layer: object, label: str) -> None:
             raise ValueError("finalmask fragment requires length or lengths")
         if "delay" not in settings and "delays" not in settings:
             raise ValueError("finalmask fragment requires delay or delays")
+        for name in ("length", "delay"):
+            if name not in settings:
+                continue
+            value = settings[name]
+            if isinstance(value, bool) or not isinstance(value, (int, str)):
+                raise ValueError(f"finalmask fragment {name} must be an integer or a string")
 
 
 class ProxyTypes(str, Enum):

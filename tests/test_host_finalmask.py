@@ -31,6 +31,44 @@ def test_fragment_length_and_delay_is_accepted():
     assert _host(finalmask=_FRAGMENT).finalmask == _FRAGMENT
 
 
+def test_fragment_length_integer_is_accepted():
+    mask = {
+        "tcp": [
+            {
+                "type": "fragment",
+                "settings": {"packets": "tlshello", "length": 1, "delay": 0},
+            }
+        ]
+    }
+    assert _host(finalmask=mask).finalmask == mask
+
+
+def test_fragment_length_bool_is_rejected():
+    mask = {
+        "tcp": [
+            {
+                "type": "fragment",
+                "settings": {"packets": "tlshello", "length": True, "delay": "0"},
+            }
+        ]
+    }
+    with pytest.raises(ValidationError, match="length"):
+        _host(finalmask=mask)
+
+
+def test_fragment_delay_bool_is_rejected():
+    mask = {
+        "tcp": [
+            {
+                "type": "fragment",
+                "settings": {"packets": "tlshello", "length": "1-1", "delay": False},
+            }
+        ]
+    }
+    with pytest.raises(ValidationError, match="delay"):
+        _host(finalmask=mask)
+
+
 def test_fragment_lengths_and_delays_is_accepted():
     mask = {
         "tcp": [

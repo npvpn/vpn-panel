@@ -100,6 +100,7 @@
   "hostsDialog.finalmask.error.json": "Нужен JSON-объект",
   "hostsDialog.finalmask.error.interval": "Во фрагменте Final mask пауза — это delay или delays, не interval",
   "hostsDialog.finalmask.error.both": "Очистите шаблон фрагмента или Final mask. Оба сразу задать нельзя.",
+  "hostsDialog.finalmask.error.size": "JSON Final mask не длиннее 16384 байт",
   "hostsDialog.host": "Host",
   "hostsDialog.host.info": "По умолчанию, если в конфигурации XRAY задан запрашиваемый хост, то он и будет использоваться. Однако, если необходимо, вы можете установить здесь пользовательский запрашиваемый хост.",
   "hostsDialog.host.multiHost": "Чтобы установить несколько адресов, разделяйте их с помощью <badge>,</badge>. Каждый раз будет выбран случайный адрес.",

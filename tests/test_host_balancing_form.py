@@ -85,6 +85,44 @@ def test_form_selected_nodes_override_empty_legacy_fields_and_roundtrip():
     assert not run_form(op="host", host=host)["success"]
 
 
+def _finalmask_host(finalmask: str, fragment_setting: str | None = None) -> dict:
+    return dict(
+        inbound_tag="VLESS",
+        order=0,
+        remark="NL",
+        address="1.1.1.1",
+        port=None,
+        path=None,
+        sni=None,
+        host=None,
+        fragment_setting=fragment_setting,
+        noise_setting=None,
+        security="inbound_default",
+        alpn="",
+        fingerprint="",
+        finalmask=finalmask,
+    )
+
+
+def test_form_finalmask_rejects_shapes_the_api_rejects():
+    ok = json.dumps({"tcp": [{"type": "fragment", "settings": {"packets": "tlshello", "length": "1-1", "delay": "0"}}]})
+    assert run_form(op="host", host=_finalmask_host(ok))["success"]
+    assert run_form(op="host", host=_finalmask_host("   "))["success"]
+
+    cases = [
+        json.dumps({"tcp": []}),
+        json.dumps({"tcp": [None]}),
+        json.dumps({"tcp": [{"type": "fragment", "settings": {}}]}),
+        json.dumps({"quicParams": {"pad": "x" * 17000}}),
+    ]
+    for finalmask in cases:
+        assert not run_form(op="host", host=_finalmask_host(finalmask))["success"]
+
+    both = run_form(op="host", host=_finalmask_host(ok, fragment_setting="1-1,0,tlshello"))
+    assert not both["success"]
+    assert any(issue["message"] == "hostsDialog.finalmask.error.both" for issue in both["error"]["issues"])
+
+
 def test_form_warns_when_selected_pool_has_no_active_members():
     assert not run_form(op="pool", ids=[1, 2], nodes=[{"id": 1, "status": "disabled"}, {"id": 2, "status": "disabled"}])
     assert not run_form(op="pool", ids=[1], nodes=[])

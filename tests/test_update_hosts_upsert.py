@@ -161,6 +161,26 @@ def test_update_hosts_stores_finalmask(db, seeded):
     assert db.query(ProxyHost).one().finalmask == mask
 
 
+def test_update_hosts_keeps_finalmask_when_the_field_is_omitted(db, seeded):
+    mask = {"tcp": [{"type": "fragment", "settings": {"packets": "tlshello", "length": "1-1", "delay": "0"}}]}
+    crud.update_hosts(db, TAG, [_payload(seeded, finalmask=mask)])
+
+    crud.update_hosts(db, TAG, [_payload(seeded, remark="Без маски в запросе")])
+
+    stored = db.query(ProxyHost).one()
+    assert stored.remark == "Без маски в запросе"
+    assert stored.finalmask == mask
+
+
+def test_update_hosts_clears_finalmask_when_null_is_explicit(db, seeded):
+    mask = {"tcp": [{"type": "fragment", "settings": {"packets": "tlshello", "length": "1-1", "delay": "0"}}]}
+    crud.update_hosts(db, TAG, [_payload(seeded, finalmask=mask)])
+
+    crud.update_hosts(db, TAG, [_payload(seeded, finalmask=None)])
+
+    assert db.query(ProxyHost).one().finalmask is None
+
+
 def test_id_from_other_inbound_is_rejected(db, seeded):
     other = ProxyInbound(tag="VMESS WS")
     db.add(other)
