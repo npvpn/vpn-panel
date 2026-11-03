@@ -15,6 +15,7 @@
 // скрипта падает, вторая — нет); otherTabDuringLoad — пока грузится скрипт, другая вкладка
 // открыла чат своей подписки (в localStorage её токен);
 // readyDelay — через сколько мс после run() виджет присылает chatwoot:ready.
+// errorDelay — через сколько мс после setUser приходит chatwoot:error (по умолчанию сразу).
 // Выход: { identityCalls, scriptLoads, chatOpened, chatClosed, setUser, cookiesCleared, storedToken,
 //          bodyLocked, focus, roots: [{ listOpen, closing, status, chatLoading, toggleLoading }] }.
 'use strict';
@@ -159,7 +160,7 @@ const sdk = {
           state.setUser = { identifier, ...attrs };
           // Chatwoot отвечает на setUser асинхронно
           if (scenario.chatwootError) {
-            setTimeout(() => window.dispatch('chatwoot:error', { detail: 'SET_USER_ERROR' }), 0);
+            setTimeout(() => window.dispatch('chatwoot:error', { detail: 'SET_USER_ERROR' }), scenario.errorDelay || 0);
           }
         },
         setCustomAttributes() {},
@@ -204,9 +205,17 @@ const SHEET_CLOSE_MS = 300;
       const event = { key: 'Tab', shiftKey: target === 'shiftTab', prevented: false };
       event.preventDefault = () => { event.prevented = true; };
       list.dispatch('keydown', event);
-      // без перехвата браузер сам увёл бы фокус дальше по странице
-      if (!event.prevented) { document.activeElement = { name: 'page' }; }
+      // без перехвата браузер сам переводит фокус: внутри шторки — на соседний пункт,
+      // с краёв — дальше по странице
+      if (!event.prevented) {
+        const items = list.focusables;
+        const at = items.indexOf(document.activeElement);
+        const next = at + (event.shiftKey ? -1 : 1);
+        document.activeElement = at >= 0 && next >= 0 && next < items.length ? items[next] : { name: 'page' };
+      }
     } else if (target === 'desktop') {
+      // на ПК значок-шторка в шапке скрыт стилями
+      roots.forEach((r) => { if (r.parts['[data-support-list]'].focusables.length) { r.parts['[data-support-toggle]'].visible = false; } });
       desktopQuery.matches = true;
       desktopQuery.dispatch('change', { matches: true });
     } else if (target === 'wait') {

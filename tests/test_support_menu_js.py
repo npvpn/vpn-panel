@@ -36,6 +36,7 @@ def _run(
     sdk="present",
     ready_delay=0,
     settle=0,
+    error_delay=0,
 ) -> dict:
     scenario = {
         "search": search,
@@ -48,6 +49,7 @@ def _run(
         "sdk": sdk,
         "readyDelay": ready_delay,
         "settle": settle,
+        "errorDelay": error_delay,
         "roots": roots,
         "clicks": list(clicks),
     }
@@ -311,3 +313,31 @@ def test_floating_menu_does_not_lock_page():
     out = _run(roots=_two("menu"), clicks=[(0, "toggle")])
     assert out["roots"][0]["listOpen"] is True
     assert out["bodyLocked"] is False
+
+
+def test_tab_moves_through_sheet_items():
+    # крестик → «Написать в чат» → «Связаться в Telegram» — обычный Tab внутри шторки не перехватывается
+    to_chat = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab")])
+    assert to_chat["focus"] == "chat"
+    to_tg = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab"), (0, "tab")])
+    assert to_tg["focus"] == "tg"
+
+
+def test_chat_error_after_resize_to_desktop_does_not_lock_page():
+    # ошибка Chatwoot пришла, когда окно уже расширили до ПК: шторка там скрыта —
+    # открывать её и блокировать прокрутку страницы нельзя
+    out = _run(
+        roots=_sheet(),
+        clicks=[(0, "toggle"), (0, "chat"), (0, "desktop")],
+        chatwoot_error=True,
+        error_delay=60,
+        settle=400,
+    )
+    assert out["bodyLocked"] is False
+
+
+def test_focus_not_returned_to_hidden_icon_on_desktop():
+    # шторка закрылась из-за расширения до ПК — значок в шапке скрыт, фокус на него не ставим
+    out = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "desktop"), (0, "wait")])
+    assert out["roots"][0]["listOpen"] is False
+    assert out["focus"] != "toggle"

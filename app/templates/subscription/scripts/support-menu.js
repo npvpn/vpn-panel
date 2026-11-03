@@ -158,7 +158,14 @@
       return list.hidden || list.classList.contains('is-closing');
     }
 
+    function isDesktop() {
+      return !!(window.matchMedia && window.matchMedia('(min-width: 1024px)').matches);
+    }
+
     function setOpen(open) {
+      // шторка — только мобилка: на ПК она скрыта стилями, а открытие заблокировало бы
+      // прокрутку страницы (например, если chatwoot:error пришёл после расширения окна)
+      if (open && sheet && isDesktop()) { return; }
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (!sheet) { list.hidden = !open; return; }
       var wasClosed = isClosed();
@@ -176,7 +183,8 @@
       }
       if (list.hidden) { return; }
       document.body.classList.remove('support-sheet-open');
-      if (focusBack && list.contains(document.activeElement)) { focusBack.focus(); }
+      // фокус — обратно на значок, только если он виден (на ПК значок в шапке скрыт)
+      if (focusBack && list.contains(document.activeElement) && focusBack.getClientRects().length) { focusBack.focus(); }
       focusBack = null;
       list.classList.add('is-closing');
       closeTimer = setTimeout(function () {
