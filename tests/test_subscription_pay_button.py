@@ -141,8 +141,10 @@ def test_expired_page_keeps_both_buttons_in_one_card():
     html = _render("expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
 
     assert html.count('class="state-card__actions state-card__actions--pay"') == 1
-    assert f'href="{_PAY_URL}/{_TOKEN}" class="primary-btn"' in html
-    assert 'class="text-btn" data-cabinet-link>Войти в личный кабинет' in html
+    start = html.index('class="state-card__actions state-card__actions--pay"')
+    actions = html[start : html.index("</div>", start)]
+    assert f'href="{_PAY_URL}/{_TOKEN}" class="primary-btn"' in actions
+    assert 'class="text-btn" data-cabinet-link>Войти в личный кабинет' in actions
 
 
 def test_expired_page_without_pay_url_has_no_button():

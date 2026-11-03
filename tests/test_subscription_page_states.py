@@ -217,3 +217,24 @@ def _settings_header(html: str) -> str:
 def test_settings_header_cabinet_icon_not_duplicated(template, pay_url, has_cabinet_icon):
     header = _settings_header(_render(template, pay_url=pay_url))
     assert ('class="header-account-btn"' in header) is has_cabinet_icon
+
+
+@pytest.mark.parametrize(
+    ("template", "can_delete"),
+    [("index.html", True), ("limited.html", True), ("expired.html", False), ("revoked.html", False)],
+)
+def test_device_delete_only_where_server_allows(template, can_delete):
+    # ключ устарел / подписка истекла — сервер отклоняет удаление (403), крестик не показываем
+    assert ('class="device-card__delete"' in _render(template)) is can_delete
+
+
+def test_tariff_device_count_is_live():
+    # после удаления устройства счётчик на «Тарифе» обновляется без перезагрузки
+    assert 'x-text="deviceLimit > 0 ? `${deviceCount} из ${deviceLimit}` : deviceCount"' in _render("index.html")
+
+
+def test_linux_command_only_for_deb():
+    # apt install — только для .deb; адрес и имя файла в кавычках (getter linuxInstallCommand)
+    html = _render("index.html")
+    assert "selectedOs === 'Linux' && linuxDebUrl" in html
+    assert 'x-text="linuxInstallCommand"' in html

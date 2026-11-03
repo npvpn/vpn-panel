@@ -90,6 +90,20 @@ def test_version_ignores_templates(sub_dir):
     assert subscription_statics_version() == before
 
 
+def test_unreadable_file_does_not_break_startup(sub_dir, monkeypatch):
+    # нечитаемый файл в своей папке шаблонов — версия считается без него, панель запускается
+    (sub_dir / "styles" / "locked.css").write_text("x")
+    real_read = pathlib.Path.read_bytes
+
+    def read_bytes(path):
+        if path.name == "locked.css":
+            raise PermissionError("denied")
+        return real_read(path)
+
+    monkeypatch.setattr(pathlib.Path, "read_bytes", read_bytes)
+    assert re.fullmatch(r"[0-9a-f]{10}", subscription_statics_version())
+
+
 def test_no_templates_dir_gives_empty_version(monkeypatch):
     monkeypatch.setattr(panel_config, "resolved_subscription_templates_dir", lambda: None)
     assert subscription_statics_version() == ""
@@ -122,6 +136,12 @@ def test_styles_linked_separately_with_version(template):
     links = re.findall(r'<link rel="stylesheet" href="/statics/subscription/styles/([\w-]+\.css)\?v=abc123"', html)
     assert links[:4] == ["fonts.css", "variables.css", "components.css", "index.css"]
     assert "@import" not in (_SUB_DIR / "styles" / "index.css").read_text(encoding="utf-8")
+
+
+def test_app_icons_exist():
+    # иконки приложений подключаются из JS по имени — проверяем, что файлы на месте
+    for name in ["happ.svg", "incy.svg", "v2ray.svg", "qr-logo.png"]:
+        assert (_SUB_DIR / "assets" / name).is_file(), name
 
 
 def test_scripts_and_images_have_version():

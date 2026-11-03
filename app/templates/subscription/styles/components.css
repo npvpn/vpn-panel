@@ -1208,6 +1208,12 @@
     margin: 0;
 }
 
+/* длинный ID без пробелов переносится, а не растягивает карточку на узком экране */
+.tariff-card__rows dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .state-card {
     display: flex;
     flex-direction: column;

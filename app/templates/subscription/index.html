@@ -300,6 +300,19 @@ get alternativeApps() {
     return app && !primaryIds.has(app.id);
   });
 },
+          // ссылка на .deb основного приложения Linux (без query — подписанные ссылки CDN)
+          get linuxDebUrl() {
+            const url = this.primaryApp?.install?.[0]?.url || '';
+            return url.split(/[?#]/)[0].toLowerCase().endsWith('.deb') ? url : null;
+          },
+          // адрес и имя файла — в одинарных кавычках: & ; и пробелы в ссылке не ломают команду
+          get linuxInstallCommand() {
+            const url = this.linuxDebUrl;
+            if (!url) return '';
+            const quote = (value) => "'" + value.replace(/'/g, "'\\''") + "'";
+            const fileName = url.split(/[?#]/)[0].split('/').pop();
+            return 'wget -O ' + quote(fileName) + ' ' + quote(url) + '\nsudo apt install ./' + quote(fileName);
+          },
           deeplink(app) {
             return `${app.scheme}://add/${this.user.subscription_url}`;
           },
@@ -691,19 +704,14 @@ get alternativeApps() {
                     </template>
                   </div>
 
-                  <template x-if="selectedOs === 'Linux'">
+                  {# команда apt — только для .deb: для AppImage, rpm и прочего она ничего не установит #}
+                  <template x-if="selectedOs === 'Linux' && linuxDebUrl">
                     <div class="setup-card__group">
                       <p class="setup-card__label">
                         Установка через терминал для <span x-text="primaryApp?.name || ''"></span>
                       </p>
                       <pre id="linux-commands" class="terminal-code"><code
-                        x-text="(() => {
-                          const url = primaryApp?.install?.[0]?.url;
-                          if (!url) return 'Ссылка на установщик недоступна';
-                          const fileName = url.split('/').pop();
-                          return `wget ${url}
-sudo apt install ./${fileName}`;
-                        })()"
+                        x-text="linuxInstallCommand"
                       ></code></pre>
                       <button type="button" class="small-copy-btn" @click="copyTerminalCommands()">
                         <span>Скопировать</span>
@@ -794,7 +802,8 @@ sudo apt install ./${fileName}`;
                 <dt>Срок действия</dt>
                 <dd x-text="termText"></dd>
                 <dt>Устройства</dt>
-                <dd>{% if user.device_limit %}{{ devices|length }} из {{ user.device_limit }}{% else %}{{ devices|length }}{% endif %}</dd>
+                {# живой счётчик: после удаления устройства обновляется без перезагрузки #}
+                <dd x-text="deviceLimit > 0 ? `${deviceCount} из ${deviceLimit}` : deviceCount">{% if user.device_limit %}{{ devices|length }} из {{ user.device_limit }}{% else %}{{ devices|length }}{% endif %}</dd>
               </dl>
             </div>
             {% if page_state in ("expired", "revoked") %}{{ state_card }}{% endif %}
@@ -836,6 +845,8 @@ sudo apt install ./${fileName}`;
                     </div>
                   </div>
     
+                  {# ключ устарел / подписка истекла — сервер удаление отклоняет (403), кнопку не показываем #}
+                  {% if page_state not in ("revoked", "expired") %}
                   <button
                     type="button"
                     class="device-card__delete"
@@ -847,6 +858,7 @@ sudo apt install ./${fileName}`;
                       <path d="M7 7L12 12M12 12L17 17M12 12L7 17M12 12L17 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="currentColor" />
                     </svg>
                   </button>
+                  {% endif %}
                 </div>
               </template>
 
