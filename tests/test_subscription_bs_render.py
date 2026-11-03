@@ -242,6 +242,25 @@ def _xhttp_inbound(extra: dict) -> dict:
     return {**_inbound(), "network": "xhttp", "xhttp_extra": extra}
 
 
+def test_host_finalmask_reaches_subscription_inbound(xray_stub):
+    mask = {
+        "tcp": [
+            {
+                "type": "fragment",
+                "settings": {"packets": "tlshello", "length": "1-1", "delay": "0"},
+            }
+        ]
+    }
+    host = _host("x.example.com", node_ids=[42])
+    host["finalmask"] = mask
+    xray_stub([host])
+    conf = _FakeConf()
+
+    _render(conf, BsContext.empty())
+
+    assert conf.calls[0]["inbound"]["finalmask"] == mask
+
+
 def test_host_xhttp_extra_overrides_inbound_extra(xray_stub):
     host = _host("x.example.com", node_ids=[42])
     host["xhttp_extra"] = {"xPaddingMethod": "tokenish"}

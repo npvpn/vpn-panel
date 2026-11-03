@@ -46,6 +46,7 @@ import { HostBalancingOptions } from "./HostBalancingOptions";
 import { RHFInput } from "./RHFInput";
 import { RHFCheckbox } from "./RHFCheckbox";
 import { RHFSelect } from "./RHFSelect";
+import { FinalMaskModal } from "./FinalMaskModal";
 import { XhttpExtraModal } from "./XhttpExtraModal";
 import { HostInfoPopover } from "./HostInfoPopover";
 import { selectAllBots, withoutUnboundRentals } from "./botBindings";
@@ -88,6 +89,7 @@ export const HostAdvancedOptions = memo(
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
+    const [isFinalMaskOpen, setIsFinalMaskOpen] = useState(false);
     const [botSearch, setBotSearch] = useState("");
     const form = useFormContext();
     const currentHost = useWatch({ control, name: `${hostKey}.${index}` }) || {};
@@ -471,6 +473,57 @@ export const HostAdvancedOptions = memo(
             gap: 1,
           }}
         />
+
+        <FormControl isInvalid={!!accordionErrors?.finalmask} gridColumn={{ md: "1 / -1" }}>
+          <FormLabel>{t("hostsDialog.finalmask")}</FormLabel>
+          <Controller
+            control={control}
+            name={`${hostKey}.${index}.finalmask`}
+            render={({ field }) => {
+              const preview = (() => {
+                if (!field.value) return null;
+                try {
+                  return JSON.stringify(JSON.parse(field.value));
+                } catch {
+                  return field.value;
+                }
+              })();
+              const message = accordionErrors?.finalmask?.message;
+
+              return (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    w="full"
+                    justifyContent="space-between"
+                    onClick={() => setIsFinalMaskOpen(true)}
+                  >
+                    <Text
+                      as="span"
+                      noOfLines={1}
+                      fontFamily={preview ? "mono" : "body"}
+                      fontSize={preview ? "xs" : "sm"}
+                    >
+                      {preview || t("hostsDialog.finalmask.edit")}
+                    </Text>
+                    <PencilIcon />
+                  </Button>
+                  <FinalMaskModal
+                    isOpen={isFinalMaskOpen}
+                    onClose={() => setIsFinalMaskOpen(false)}
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={message ? t(message) : undefined}
+                    t={t}
+                  />
+                </>
+              );
+            }}
+          />
+          {accordionErrors?.finalmask && <Error>{t(accordionErrors.finalmask.message)}</Error>}
+        </FormControl>
 
         <RHFInput
           label={t("hostsDialog.noise")}
