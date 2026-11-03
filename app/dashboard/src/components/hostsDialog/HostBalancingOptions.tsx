@@ -31,7 +31,7 @@ export function HostBalancingOptions({ hostKey, index, nodes, errors, composite 
   const fieldErrors = (error: any) => {
     const list = [...new Set(errorMessages(error))];
     shown.push(...list);
-    return list.length ? <Text fontSize="xs" color="red.500">{list.join("; ")}</Text> : null;
+    return list.length ? <Text fontSize="xs" color="red.500">{list.map((m) => t(m)).join("; ")}</Text> : null;
   };
   const textField = (suffix: string, label: string, numeric = false, step?: string) => {
     shown.push(...errorMessages(fieldError(suffix)));
@@ -39,12 +39,13 @@ export function HostBalancingOptions({ hostKey, index, nodes, errors, composite 
     <FormControl key={suffix} isInvalid={!!fieldError(suffix)}>
       <FormLabel fontSize="sm" htmlFor={`${path}.balancing.${suffix}`}>{label}</FormLabel>
       <Input id={`${path}.balancing.${suffix}`} size="sm" type={numeric ? "number" : "text"} step={step} {...register(`${path}.balancing.${suffix}`, numeric ? { valueAsNumber: true } : {})} />
-      <FormErrorMessage>{fieldError(suffix)?.message}</FormErrorMessage>
+      <FormErrorMessage>{fieldError(suffix)?.message && t(fieldError(suffix).message)}</FormErrorMessage>
     </FormControl>
     );
   };
   return (
     <CollapsibleSection
+      alwaysOpen
       title={t("hostsDialog.balancing.title")}
       status={[balancing?.strategy || t("hostsDialog.balancing.template"), !composite && source === "selected" ? t("hostsDialog.balancing.selectedSource") : null].filter(Boolean).join(" · ")}
       defaultOpen={!!balancing?.strategy || (!composite && source === "selected")}
@@ -133,7 +134,7 @@ export function HostBalancingOptions({ hostKey, index, nodes, errors, composite 
         </>}
         {(() => {
           const rest = [...new Set(messages)].filter((m) => !shown.includes(m));
-          return rest.length ? <FormControl isInvalid><FormErrorMessage>{rest.join("; ")}</FormErrorMessage></FormControl> : null;
+          return rest.length ? <FormControl isInvalid><FormErrorMessage>{rest.map((m) => t(m)).join("; ")}</FormErrorMessage></FormControl> : null;
         })()}
       </VStack>
     </CollapsibleSection>

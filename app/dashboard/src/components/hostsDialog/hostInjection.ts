@@ -97,7 +97,7 @@ export const injectionGroupSchema = z
         Number(v.useHostRemarkAsTag) +
         Number(v.useHostTagAsTag) ===
       1,
-    "Choose exactly one tagging mode"
+    "hostsDialog.injection.errors.oneTaggingMode"
   );
 export const injectionSchema = z
   .object({
@@ -110,12 +110,12 @@ export const injectionSchema = z
     if (v.enabled && !v.injectHosts.length && !v.addVirtualHostAsOutbound)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Select source hosts or include own connection",
+        message: "hostsDialog.injection.errors.noSources",
       });
     if (!v.enabled && (v.injectHosts.length || v.addVirtualHostAsOutbound))
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Disabled injection must not have groups",
+        message: "hostsDialog.injection.errors.disabledWithGroups",
       });
   });
 export type HostInjection = z.infer<typeof injectionSchema>;
