@@ -469,7 +469,7 @@ class V2rayJsonConfig(str):
 
     def build_endpoint_outbounds(self, endpoint, tag: str, *, helper_tag: str):
         inbound = endpoint.inbound
-        dialer = self.make_dialer_outbound(inbound.get("fragment_setting"), inbound.get("noise_setting"))
+        dialer = self.make_dialer_outbound(self._fragment_for_dialer(inbound), inbound.get("noise_setting"))
         if dialer:
             dialer["tag"] = helper_tag
         outbound = self._build_proxy_outbound(
@@ -510,7 +510,7 @@ class V2rayJsonConfig(str):
         balancing: dict | None = None,
     ):
         """Multi-address хост → один конфиг с N proxy-outbound + xray-балансировщик."""
-        dialer = self.make_dialer_outbound(inbound["fragment_setting"], inbound["noise_setting"])
+        dialer = self.make_dialer_outbound(self._fragment_for_dialer(inbound), inbound["noise_setting"])
         dialer_proxy = dialer["tag"] if dialer else ""
         outbounds = [
             self._build_proxy_outbound(proxy_outbound_tag(i), address, inbound, settings, dialer_proxy)
@@ -844,6 +844,12 @@ class V2rayJsonConfig(str):
         }
 
     @staticmethod
+    def _fragment_for_dialer(inbound: dict) -> str:
+        if inbound.get("finalmask"):
+            return ""
+        return inbound.get("fragment_setting") or ""
+
+    @staticmethod
     def make_fragment(fragment: str) -> dict:
         length, interval, packets = fragment.split(",")
         return {"packets": packets, "length": length, "interval": interval}
@@ -1001,6 +1007,8 @@ class V2rayJsonConfig(str):
             heartbeatPeriod=inbound.get("heartbeatPeriod", 0),
             xhttp_extra=inbound.get("xhttp_extra"),
         )
+        if inbound.get("finalmask"):
+            outbound["streamSettings"]["finalmask"] = copy.deepcopy(inbound["finalmask"])
 
         if inbound.get("mux_enable", False):
             mux_config = json.loads(self.mux_template)["v2ray"]
@@ -1010,7 +1018,7 @@ class V2rayJsonConfig(str):
         return outbound
 
     def add(self, remark: str, address: str, inbound: dict, settings: dict, client_config_id: int | None = None):
-        dialer = self.make_dialer_outbound(inbound["fragment_setting"], inbound["noise_setting"])
+        dialer = self.make_dialer_outbound(self._fragment_for_dialer(inbound), inbound["noise_setting"])
         dialer_proxy = dialer["tag"] if dialer else ""
         outbound = self._build_proxy_outbound("proxy", address, inbound, settings, dialer_proxy)
         outbounds = [outbound]
