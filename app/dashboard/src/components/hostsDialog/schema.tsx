@@ -2,6 +2,60 @@ import { z } from "zod";
 import { balancingSchema } from "./hostBalancing";
 import { injectionSchema } from "./hostInjection";
 
+const FINALMASK_ROOT_KEYS = new Set(["tcp", "udp", "quicParams"]);
+const FINALMASK_MAX_BYTES = 16384;
+
+function finalmaskLayerError(layer: unknown): string | null {
+  if (!Array.isArray(layer) || layer.length === 0) return "hostsDialog.finalmask.error.json";
+  for (const item of layer) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return "hostsDialog.finalmask.error.json";
+    const entry = item as { type?: unknown; settings?: unknown };
+    if (entry.type !== "fragment") continue;
+    const settings = entry.settings;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      return "hostsDialog.finalmask.error.json";
+    }
+    const fragment = settings as Record<string, unknown>;
+    if ("interval" in fragment) return "hostsDialog.finalmask.error.interval";
+    if (!("packets" in fragment)) return "hostsDialog.finalmask.error.json";
+    if (!("length" in fragment) && !("lengths" in fragment)) return "hostsDialog.finalmask.error.json";
+    if (!("delay" in fragment) && !("delays" in fragment)) return "hostsDialog.finalmask.error.json";
+  }
+  return null;
+}
+
+function finalmaskError(
+  value: string | null | undefined,
+  fragmentSetting: string | null | undefined
+): string | null {
+  const text = (value ?? "").trim();
+  if (!text) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return "hostsDialog.finalmask.error.json";
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return "hostsDialog.finalmask.error.json";
+  }
+  const mask = parsed as Record<string, unknown>;
+  const keys = Object.keys(mask);
+  if (keys.length === 0 || keys.some((key) => !FINALMASK_ROOT_KEYS.has(key))) {
+    return "hostsDialog.finalmask.error.json";
+  }
+  if (new TextEncoder().encode(JSON.stringify(mask)).length > FINALMASK_MAX_BYTES) {
+    return "hostsDialog.finalmask.error.size";
+  }
+  for (const label of ["tcp", "udp"] as const) {
+    if (mask[label] === undefined) continue;
+    const layerIssue = finalmaskLayerError(mask[label]);
+    if (layerIssue) return layerIssue;
+  }
+  if ((fragmentSetting ?? "").trim()) return "hostsDialog.finalmask.error.both";
+  return null;
+}
+
 export const hostItemSchema = z
   .object({
     // NPVPN-2044: id хоста обязателен к передаче назад — без него бэкенд
@@ -40,6 +94,7 @@ export const hostItemSchema = z
     alpn: z.string(),
     fingerprint: z.string(),
     use_sni_as_host: z.boolean().default(false),
+    finalmask: z.string().nullable().optional().default(""),
     xhttp_extra: z
       .string()
       .nullable()
@@ -98,6 +153,10 @@ export const hostItemSchema = z
       }),
   })
   .superRefine((data, ctx) => {
+    const maskIssue = finalmaskError(data.finalmask, data.fragment_setting);
+    if (maskIssue) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["finalmask"], message: maskIssue });
+    }
     const effective = data.host_injection ?? data.template_injection;
     if (effective?.enabled && !effective.addVirtualHostAsOutbound) return;
     if (data.balancer_nodes_source === "selected" && !data.balancer_node_ids.length && !data.host_id) {

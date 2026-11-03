@@ -138,6 +138,7 @@ def prepare_candidates(
                         "mux_enable": host["mux_enable"],
                         "fragment_setting": host["fragment_setting"],
                         "noise_setting": host["noise_setting"],
+                        "finalmask": host.get("finalmask"),
                         "random_user_agent": host["random_user_agent"],
                         "xhttp_extra": host["xhttp_extra"] or inbound.get("xhttp_extra"),
                     }

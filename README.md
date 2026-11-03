@@ -31,56 +31,40 @@
 
 ## Установка
 
+Если требуется обновиться с оригинальной панели Marzban, то следуйте инструкциям ниже в разделе "Обновление с оригинальной панели".
+
 ### Обычная установка
 
-**SQLite** — без SSL, панель на порту 8000.
+На этот сервер нужна A-запись домена. Для MySQL и MariaDB установщик проверяет, что домен указывает на IP сервера, и выпускает сертификат Let's Encrypt. **Нужны свободный порт 80 и Debian или Ubuntu.**
 
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install
-```
+**Убедитесь, что domain указывает на сервер панели.**
 
-Скрипт задаст два вопроса: название подписки в клиенте и username Telegram-бота (можно оставить оба пустыми — Enter). Ссылку на поддержку скрипт не спрашивает: пока она не задана, ссылка поддержки в подписке указывает на `https://t.me/` (пустая ссылка). Задайте её позже в `/opt/marzban/.env` (`SUB_SUPPORT_URL`) и выполните `marzban restart`.
-
-Установка всегда заканчивается показом логов панели, если не указан `--no-logs`. Нажмите Ctrl+C — это не останавливает панель.
-
-После установки создайте администратора:
-
-```bash
-marzban cli admin create
-```
-
-Команда спросит логин, «Is sudo [y/N]» (для главного администратора ответьте `y`), пароль с подтверждением, а также необязательные Telegram ID и Discord webhook.
-
-Войдите по адресу `http://<IP или домен>:8000/dashboard/#/login`.
-
-**MySQL / MariaDB** — автоматические Let's Encrypt, volumes сертификатов в compose, HTTPS на порту 8001. UFW, админ панели и GitHub runner не ставятся (это только `install-partner`).
-
-Перед запуском: A-запись домена на IP сервера, порт 80 свободен (certbot standalone), Debian/Ubuntu.
-
-Интерактивно (скрипт спросит домен и email для Let's Encrypt):
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mysql
-```
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mariadb
-```
-
-С параметрами:
 
 ```bash
 sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban.sh)" @ install --database mysql \
   --domain panel.example.com \
   --cert-email admin@example.com \
+  --admin-username admin \
+  --admin-password 'change-me' \
   --non-interactive
 ```
 
-Опционально: `--uvicorn-port 8001`, `--skip-dns-check`, `--skip-cert` (сертификаты уже лежат в `/etc/letsencrypt/live/<домен>/`), `--no-logs`.
+- `--database` — `mysql`, `mariadb` или `sqlite`. Проверка домена и сертификат выполняются для `mysql` и `mariadb`. С `sqlite` панель открывается по HTTP на порту 8000; `--domain` и `--cert-email` с ним указывать нельзя, установщик завершится с ошибкой.
+- `--domain` — домен панели, например `panel.example.com`.
+- `--cert-email` — почта для Let's Encrypt.
+- `--admin-username` и `--admin-password` — создать главного администратора (sudo) во время установки. Пароль попадёт в вывод установщика.
+- `--non-interactive` — не спрашивать домен, почту и пароль администратора. Без этого флага домен и почту скрипт спросит сам, а пароль администратора — только если указан `--admin-username` без пароля.
+- `--uvicorn-port` — порт HTTPS, по умолчанию 8001.
+- `--skip-dns-check` — не проверять A-запись.
+- `--skip-cert` — не выпускать сертификат; файлы уже лежат в `/etc/letsencrypt/live/<домен>/`.
 
-Установка всегда заканчивается показом логов панели, если не указан `--no-logs`; Ctrl+C возвращает управление и не останавливает панель. С `--non-interactive` название подписки, ссылка бота и ссылка поддержки остаются значениями по умолчанию; их можно поменять позже в `/opt/marzban/.env` (`SUB_PROFILE_TITLE`, `BOT_URL`, `SUB_SUPPORT_URL`) и применить командой `marzban restart`.
+С `--non-interactive` название подписки, ссылка бота и ссылка поддержки остаются значениями по умолчанию. Их можно будет установить в панели позднее. Если хотите сразу, то этот флаг не пишем. 
 
-После установки создайте администратора:
+После установки будет выведен адрес входа. Если администратор создан флагами выше, там же будут логин и пароль.
+
+Для MySQL и MariaDB адрес входа: `https://<домен>:8001/dashboard/#/login`. Для SQLite: `http://<IP сервера>:8000/dashboard/#/login`.
+
+Если при установке не передавали `--admin-username` и `--admin-password`, создайте администратора:
 
 ```bash
 marzban cli admin create
@@ -88,7 +72,7 @@ marzban cli admin create
 
 Команда спросит логин, «Is sudo [y/N]» (для главного администратора ответьте `y`), пароль с подтверждением, а также необязательные Telegram ID и Discord webhook.
 
-Войдите по адресу `https://<домен>:8001/dashboard/`.
+Дальше установка ноды описана в разделе «Установка ноды» ниже.
 
 ---
 
@@ -143,6 +127,71 @@ marzban restart
 
 ## Установка ноды
 
+Если требуется обновиться с оригинальной ноды Marzban, то следуйте инструкциям ниже в разделе "Обновление оригинальной ноды".
+
+### Новая установка
+
+У вас уже должна быть установлена панель (см. выше). 
+
+На отдельном сервере для ноды:
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install
+```
+
+Во время установке скрипт потребует сертификат. Берёте его в панели:
+
+1. Откройте панель https://<домен панели>/dashboard/ 
+2. Нажимаем в правом верхнем меню «Настройки узлов».
+3. Нажмите «Добавить новый узел Marzban».
+4. На той же форме заполните адрес сервера ноды, порты (по умолчанию порт `62050` и API-порт `62051`).
+5. Сертификат уже наверху этой формы, до сохранения узла. Это общий клиентский сертификат панели. Скопируйте PEM целиком: значок глаза («Показать сертификат») или кнопка «Скачать сертификат». Нажатие на текст сертификата выделяет его.
+6. Сохраняем ноду в панели.
+
+Скрипт интерактивно спросит:
+
+1. **Client Certificate** панели — вставьте PEM целиком (от `-----BEGIN CERTIFICATE-----` до `-----END CERTIFICATE-----`) и нажмите Enter на пустой строке. Скрипт не проверяет сертификат: если вставить его обрезанным, нода будет бесконечно перезапускаться.
+2. Использовать ли REST-протокол (по умолчанию да), `SERVICE_PORT` (по умолчанию 62050) и `XRAY_API_PORT` (по умолчанию 62051).
+3. IPv4 бота для ограничения `:9100` (см. ниже; пустой ввод — порт останется публичным).
+
+Нода должна быть доступна с панели на `SERVICE_PORT`. После сохранения узла в панели статус должен стать `connected`. До добавления ноды в панель на свежей ноде слушает только `SERVICE_PORT` (62050); порт `XRAY_API_PORT` (62051) появляется после запуска ядра xray.
+
+Установка ноды с кастомным именем:
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install --name marzban-node2
+```
+
+Вместе с нодой ставится **node_exporter** (`:9100`, host network) для Prometheus на боте. Если панель используется вместе с ботом npvpn, то IP бота можно передать сразу — тогда `:9100` откроется только ему (nftables, без включения UFW):
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install --bot-server-ip 1.2.3.4
+```
+
+Без флага скрипт спросит IP интерактивно; пустой ввод — exporter поднимется, порт останется публичным.
+
+`--skip-firewall` - пропускаем ограничение порта:
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install --skip-firewall
+```
+
+Только CLI-команда `marzban-node` (без самой ноды):
+
+```bash
+sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install-script
+```
+
+Список команд: `marzban-node help`.
+
+Обновить или сменить версию Xray-core:
+
+```bash
+sudo marzban-node core-update
+```
+
+---
+
 ### Обновление оригинальной ноды
 
 Мигрировать уже установленную ноду (Watchtower, conntrack, node_exporter).
@@ -161,55 +210,19 @@ sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/mar
 
 ---
 
-### Новая установка
-
-На отдельном сервере:
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install
-```
-
-Скрипт интерактивно спросит:
-
-1. **Client Certificate** панели — вставьте PEM целиком (от `-----BEGIN CERTIFICATE-----` до `-----END CERTIFICATE-----`) и нажмите Enter на пустой строке. Сертификат можно взять в дашборде панели: «Настройки узлов» → «Добавить новый узел Marzban» → «Показать сертификат» (или «Скачать сертификат»). Либо через API: `GET /api/node/settings` (поле `certificate`). Скрипт не проверяет сертификат: если вставить его обрезанным, нода будет бесконечно перезапускаться.
-2. Использовать ли REST-протокол (по умолчанию да), `SERVICE_PORT` (по умолчанию 62050) и `XRAY_API_PORT` (по умолчанию 62051).
-3. IPv4 бота для ограничения `:9100` (см. ниже; пустой ввод — порт останется публичным).
-
-Нода должна быть доступна с панели на `SERVICE_PORT`. После установки добавьте ноду в панели: «Настройки узлов» → «Добавить новый узел Marzban» (адрес сервера, порты 62050 и 62051); статус должен стать `connected`. До добавления ноды в панель на свежей ноде слушает только `SERVICE_PORT` (62050); порт `XRAY_API_PORT` (62051) появляется после запуска ядра xray.
-
-С кастомным именем:
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install --name marzban-node2
-```
-
-Вместе с нодой ставится **node_exporter** (`:9100`, host network) для Prometheus на боте. IP бота от npvpn можно передать сразу — тогда `:9100` откроется только ему (nftables, без включения UFW):
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install --bot-server-ip 1.2.3.4
-```
-
-Без флага скрипт спросит IP интерактивно; пустой ввод — exporter поднимется, порт останется публичным. `--skip-firewall` пропускает ограничение порта.
-
-Только CLI-команда `marzban-node` (без самой ноды):
-
-```bash
-sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/marzban-node.sh)" @ install-script
-```
-
-Список команд: `marzban-node help`.
-
-Обновить или сменить версию Xray-core:
-
-```bash
-sudo marzban-node core-update
-```
-
----
-
 ## Версии и образы
 
 Версии — по дате релиза: `vГГГГ.ММ.ДД`, хотфикс в тот же день — `vГГГГ.ММ.ДД.N`. Образ для версии — `npvpn/panel:ГГГГ.ММ.ДД` (Docker Hub) и `ghcr.io/npvpn/panel:ГГГГ.ММ.ДД`; `latest` указывает на последний релиз. Список изменений — в [релизах](https://github.com/npvpn/vpn-panel/releases).
+
+---
+
+## API
+
+Актуальная схема API ветки `master` публикуется при каждом её обновлении:
+
+[openapi.json](https://github.com/npvpn/vpn-panel/releases/download/openapi/openapi.json)
+
+На установленной панели схема этой версии доступна по адресу `/openapi.json`. Она совпадает с публикуемым файлом только при настройках по умолчанию. Если `MEMORY_PROFILING_ENABLED=true`, панель добавляет маршруты `/api/system/memory/*`, которых в публикуемом файле нет. Страницы `/docs` и `/redoc` включаются переменной `DOCS=true`.
 
 ---
 

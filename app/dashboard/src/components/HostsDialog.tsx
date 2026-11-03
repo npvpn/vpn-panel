@@ -80,6 +80,7 @@ function flattenHosts(hosts: HostsDict | null | undefined) {
       xhttp_extra: host.xhttp_extra
         ? JSON.stringify(host.xhttp_extra, null, 2)
         : "",
+      finalmask: host.finalmask ? JSON.stringify(host.finalmask, null, 2) : "",
     }))
   );
 
@@ -101,12 +102,14 @@ function groupHosts(
       payload[inbound_tag] = [];
     }
 
+    const finalmaskText = rest.finalmask ?? "";
     payload[inbound_tag].push({
       ...rest,
       // Назад бэкенду — под именем id; без него хост будет пересоздан.
       ...(typeof host_id === "number" ? { id: host_id } : {}),
       order: index,
       xhttp_extra: rest.xhttp_extra ? JSON.parse(rest.xhttp_extra) : null,
+      finalmask: finalmaskText.trim() ? JSON.parse(finalmaskText) : null,
     });
   });
 
