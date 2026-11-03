@@ -41,5 +41,16 @@ jobs:
           # а не mypy. filter вернёт ненулевой код только на НОВЫХ ошибках.
           set +o pipefail
           uv run mypy app | uv run mypy-baseline filter
+      - name: Install Xray
+        # tests/test_export_openapi.py импортирует приложение, а XRayCore
+        # при импорте вызывает `xray version`. Без бинарника pytest падает
+        # с FileNotFoundError: /usr/local/bin/xray.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl unzip ca-certificates
+          version="$(sed -n 's/^ARG XRAY_VERSION=//p' Dockerfile | head -n 1)"
+          test -n "$version"
+          curl -fsSL https://github.com/npvpn/Marzban-scripts/raw/master/install_latest_xray.sh | sudo bash -s -- "$version"
+          xray version
       - name: pytest
         run: uv run pytest -q
