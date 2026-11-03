@@ -25,10 +25,54 @@ import "./happPreview.css";
 
 const FLAGS = ["🇩🇪", "🇳🇱", "🇫🇮"];
 
+type ScenarioSelectProps = {
+  value: HappPreviewScenario;
+  onChange: (scenario: HappPreviewScenario) => void;
+};
+
+// Сценарий выбирается и над полями «Сообщений» (какие тексты показать), и в
+// превью на узком экране — один и тот же список
+export const HappScenarioSelect: FC<ScenarioSelectProps> = ({
+  value,
+  onChange,
+}) => {
+  const { t } = useTranslation();
+  return (
+    <FormControl>
+      <FormLabel fontSize="xs" mb={1}>
+        {t("panelSettings.previewScenario")}
+      </FormLabel>
+      <Select
+        size="sm"
+        value={value}
+        onChange={(e) => onChange(e.target.value as HappPreviewScenario)}
+      >
+        <option value="normal">
+          {t("panelSettings.previewScenarioNormal")}
+        </option>
+        <option value="expired">
+          {t("panelSettings.previewScenarioExpired")}
+        </option>
+        <option value="revoked">
+          {t("panelSettings.previewScenarioRevoked")}
+        </option>
+        <option value="unsupported">
+          {t("panelSettings.previewScenarioUnsupported")}
+        </option>
+        <option value="device">
+          {t("panelSettings.previewScenarioDevice")}
+        </option>
+        <option value="bs">{t("panelSettings.previewScenarioBs")}</option>
+      </Select>
+    </FormControl>
+  );
+};
+
 type Props = {
   settings: PanelSettings;
   scenario: HappPreviewScenario;
-  onScenarioChange: (scenario: HappPreviewScenario) => void;
+  // без обработчика своего выбора сценария в превью нет: его задаёт окно
+  onScenarioChange?: (scenario: HappPreviewScenario) => void;
 };
 
 export const HappSubscriptionPreview: FC<Props> = ({
@@ -135,40 +179,10 @@ export const HappSubscriptionPreview: FC<Props> = ({
             ))}
           </Select>
         </FormControl>
-        <FormControl>
-          <FormLabel fontSize="xs" mb={1}>
-            {t("panelSettings.previewScenario")}
-          </FormLabel>
-          <Select
-            size="sm"
-            value={scenario}
-            onChange={(e) =>
-              onScenarioChange(e.target.value as HappPreviewScenario)
-            }
-          >
-            <option value="normal">
-              {t("panelSettings.previewScenarioNormal")}
-            </option>
-            <option value="expired">
-              {t("panelSettings.previewScenarioExpired")}
-            </option>
-            <option value="revoked">
-              {t("panelSettings.previewScenarioRevoked")}
-            </option>
-            <option value="unsupported">
-              {t("panelSettings.previewScenarioUnsupported")}
-            </option>
-            <option value="device">
-              {t("panelSettings.previewScenarioDevice")}
-            </option>
-            <option value="bs">{t("panelSettings.previewScenarioBs")}</option>
-          </Select>
-        </FormControl>
+        {onScenarioChange && (
+          <HappScenarioSelect value={scenario} onChange={onScenarioChange} />
+        )}
       </HStack>
-      <Text fontSize="sm" color="gray.500">
-        {t("panelSettings.previewHint")}
-      </Text>
-
       <div className="happ-preview-phone">
         <div className="happ-preview-phone-top">
           <span>10:24</span>
@@ -224,7 +238,10 @@ export const HappSubscriptionPreview: FC<Props> = ({
               </div>
             )}
             {servers.map((server, index) => (
-              <div className="happ-preview-server" key={`${server.name}-${index}`}>
+              <div
+                className="happ-preview-server"
+                key={`${server.name}-${index}`}
+              >
                 <div className="happ-preview-server-icon">
                   {server.isStub ? "⚠" : FLAGS[index % FLAGS.length]}
                 </div>
@@ -240,6 +257,10 @@ export const HappSubscriptionPreview: FC<Props> = ({
           </div>
         </div>
       </div>
+      {/* оговорка под телефоном: не отодвигает превью вниз */}
+      <Text fontSize="xs" color="gray.500">
+        {t("panelSettings.previewHint")}
+      </Text>
     </VStack>
   );
 };
