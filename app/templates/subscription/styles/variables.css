@@ -32,13 +32,13 @@
     --control-secondary-bg: #f6f6f6;
     --control-secondary-hover-bg: #ebebeb;
     --control-secondary-pressed-bg: #dbdbdb;
+    --control-secondary-content: #141413;
     /* затемнение под шторкой (Overlay / scrim): в тёмной теме плотнее — 20% там не видно */
     --overlay-scrim: rgba(0, 0, 0, 0.2);
 
     /* FONTS */
-    --font-family: 'Open Sans', sans-serif;
-    --second-family: 'Inter', sans-serif;
-    --third-family: 'Open Sans Condensed', 'Open Sans', sans-serif;
+    /* NPVPN-2315: один шрифт на всю страницу подписки */
+    --font-family: "Inter", sans-serif;
 
     /* RADIUS */
     --small-border: 16px;
@@ -64,6 +64,7 @@
     --control-secondary-bg: #343434;
     --control-secondary-hover-bg: #7b7b7b;
     --control-secondary-pressed-bg: #252525;
+    --control-secondary-content: #ffffff;
     --overlay-scrim: rgba(0, 0, 0, 0.5);
 
     --gray-2: #dbdbdb;
