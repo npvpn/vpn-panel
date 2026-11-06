@@ -85,6 +85,29 @@ def test_support_open_menu_mode_opens_only_visible_list():
     assert out["chatOpened"] is False
 
 
+def test_support_open_menu_survives_click_outside():
+    # пришли по ссылке за поддержкой — случайный клик по странице меню не закрывает
+    out = _run(roots=_two("menu"), search="?support=open", clicks=[(0, "outside")])
+    assert out["roots"][0]["listOpen"] is True
+
+
+@pytest.mark.parametrize("target", ["toggle", "escape"])
+def test_support_open_menu_closes_explicitly(target):
+    out = _run(roots=_two("menu"), search="?support=open", clicks=[(0, target)])
+    assert out["roots"][0]["listOpen"] is False
+
+
+def test_support_open_menu_after_reopen_closes_on_click_outside():
+    # закрыли и открыли снова кнопкой — дальше как обычно
+    out = _run(roots=_two("menu"), search="?support=open", clicks=[(0, "toggle"), (0, "toggle"), (0, "outside")])
+    assert out["roots"][0]["listOpen"] is False
+
+
+def test_menu_opened_by_toggle_closes_on_click_outside():
+    out = _run(roots=_two("menu"), clicks=[(0, "toggle"), (0, "outside")])
+    assert out["roots"][0]["listOpen"] is False
+
+
 def test_without_param_nothing_happens():
     out = _run(roots=_two("chat", ""))
     assert out["identityCalls"] == 0
@@ -270,6 +293,13 @@ def test_sheet_closes_unlocks_page_and_returns_focus(target):
     assert root["closing"] is False
     assert out["bodyLocked"] is False
     assert out["focus"] == "toggle"
+
+
+def test_sheet_from_link_survives_overlay_tap_but_closes_by_cross():
+    out = _run(roots=_sheet(), search="?support=open", clicks=[(0, "overlay")])
+    assert out["roots"][0]["listOpen"] is True
+    out = _run(roots=_sheet(), search="?support=open", clicks=[(0, "close"), (0, "wait")])
+    assert out["roots"][0]["listOpen"] is False
 
 
 def test_sheet_slides_away_before_hiding():

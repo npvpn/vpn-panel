@@ -213,17 +213,22 @@
       if (activeChat === root) { activeChat = null; }
     }
 
+    // Открыто по ссылке ?support=open: человек пришёл именно в поддержку — случайный клик
+    // мимо меню (или тап по затемнению шторки) его не закрывает; только кнопка, крестик, Escape.
+    var openedByLink = false;
+
     function leaveMenu() {
+      openedByLink = false;
       cancelWaiting();
       setOpen(false);
     }
 
-    document.addEventListener('click', function (event) { if (!root.contains(event.target)) { leaveMenu(); } });
+    document.addEventListener('click', function (event) { if (!openedByLink && !root.contains(event.target)) { leaveMenu(); } });
     document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { leaveMenu(); } });
     var tgLink = root.querySelector('a.support-menu__item');
     if (tgLink) { tgLink.addEventListener('click', leaveMenu); }
     // шторка: затемнение — сам список, клик мимо неё закрывает; и крестик
-    list.addEventListener('click', function (event) { if (event.target === list) { leaveMenu(); } });
+    list.addEventListener('click', function (event) { if (!openedByLink && event.target === list) { leaveMenu(); } });
     var closeBtn = root.querySelector('[data-support-close]');
     if (closeBtn) { closeBtn.addEventListener('click', leaveMenu); }
     if (sheet) {
@@ -309,7 +314,7 @@
     // ?support=open — пришли из VPN-приложения. Реагирует только видимая кнопка: на странице
     // их несколько (плавающая и значки в шапках), иначе identity запросили бы дважды.
     if (new URLSearchParams(window.location.search).get('support') === 'open' && toggle.getClientRects().length) {
-      if (direct) { runChat(toggle); } else { setOpen(true); }
+      if (direct) { runChat(toggle); } else { openedByLink = true; setOpen(true); }
     }
   }
 

@@ -4,6 +4,7 @@
 // Зависимостей нет — только встроенные модули Node.
 //
 // Вход (argv[2], JSON): { search, identityOk, chatwootError, lastToken, sdk, readyDelay, settle, roots: [{ mode, tgUrl, visible, sheet }], clicks: [[rootIndex, target]] }
+// target: toggle | chat | tg | close | escape | outside | overlay | tab | shiftTab | desktop | wait
 // target: "toggle" | "chat" | "tg" | "escape" | шторка: "close" (крестик) | "overlay" (затемнение) |
 // "tab" / "shiftTab" (клавиши в шторке) | "desktop" (окно расширили до десктопа) | "wait" (300 мс,
 // шторка успевает уехать) — по очереди, с паузой; sheet — корень-шторка (значок в шапке, оба способа);
@@ -199,6 +200,9 @@ const SHEET_CLOSE_MS = 300;
     const list = roots[index].parts['[data-support-list]'];
     if (target === 'escape') {
       document.dispatch('keydown', { key: 'Escape' });
+    } else if (target === 'outside') {
+      // клик по странице мимо меню
+      document.dispatch('click', { target: { name: 'page' } });
     } else if (target === 'overlay') {
       list.dispatch('click', { target: list });
     } else if (target === 'tab' || target === 'shiftTab') {
