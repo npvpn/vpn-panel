@@ -1,4 +1,4 @@
-"""Гейт 409 на PUT /api/settings/apps при managed-ключе (NPVPN-1659, Task A4).
+"""PUT /api/settings/apps сохраняет каталог и при устаревшей managed-пометке.
 
 `app.routers.settings` на уровне модуля тянет `app.db` (Session/get_db/crud) и
 `app.models.admin.Admin`. В реальности эти импорты доходят до SQLAlchemy-моделей
@@ -37,7 +37,6 @@ import types
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import HTTPException
 
 from app.models.settings import DEFAULT_CLIENT_APPS, ClientAppsPayload
 
@@ -53,6 +52,10 @@ class _FakeAdmin:
     def get_current():
         return None
 
+    @staticmethod
+    def check_sudo_admin():
+        return None
+
 
 @pytest.fixture
 def settings_router(monkeypatch):
@@ -64,6 +67,17 @@ def settings_router(monkeypatch):
         monkeypatch.setattr(db_module, "Session", object, raising=False)
     if not hasattr(db_module, "get_db"):
         monkeypatch.setattr(db_module, "get_db", _get_db_stub, raising=False)
+    if not hasattr(db_module, "GetDB"):
+        monkeypatch.setattr(db_module, "GetDB", lambda: None, raising=False)
+
+    # settings.py импортирует panel_settings, а тот — app.db.models.JWT.
+    # В изолированном прогоне настоящего пакета моделей нет.
+    models_module = sys.modules.get("app.db.models")
+    if models_module is None:
+        models_module = types.ModuleType("app.db.models")
+        monkeypatch.setitem(sys.modules, "app.db.models", models_module)
+    if not hasattr(models_module, "JWT"):
+        monkeypatch.setattr(models_module, "JWT", object, raising=False)
 
     # crud — общий подобъект app.db, дописываем is_managed в существующий (если он уже
     # заведён другим тестом), а не подменяем целиком (см. докстринг модуля).
@@ -88,17 +102,19 @@ def settings_router(monkeypatch):
     return module
 
 
-def test_put_blocked_when_managed(settings_router, monkeypatch):
-    monkeypatch.setattr(settings_router.crud, "is_managed", lambda db, key: True)
+def test_put_saves_even_if_stale_managed_row_exists(settings_router, monkeypatch):
+    import inspect
+
+    monkeypatch.setattr(
+        settings_router.client_apps_service, "save_client_apps", lambda db, payload: payload.model_dump()
+    )
+    assert "managed_by_admin" not in inspect.getsource(settings_router.update_client_apps)
     payload = ClientAppsPayload.model_validate(DEFAULT_CLIENT_APPS)
-    with pytest.raises(HTTPException) as exc:
-        settings_router.update_client_apps(payload=payload, db=MagicMock(), admin=object())
-    assert exc.value.status_code == 409
-    assert exc.value.detail == "managed_by_admin"
+    result = settings_router.update_client_apps(payload=payload, db=MagicMock(), admin=object())
+    assert result["apps"][0]["id"] == DEFAULT_CLIENT_APPS["apps"][0]["id"]
 
 
 def test_put_allowed_when_not_managed(settings_router, monkeypatch):
-    monkeypatch.setattr(settings_router.crud, "is_managed", lambda db, key: False)
     monkeypatch.setattr(
         settings_router.client_apps_service, "save_client_apps", lambda db, payload: payload.model_dump()
     )

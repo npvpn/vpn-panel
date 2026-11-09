@@ -221,10 +221,6 @@ class ClientAppsPayload(BaseModel):
         return self
 
 
-class ClientAppsWithManagedResponse(ClientAppsPayload):
-    managed: dict[str, Any] | None = None
-
-
 def normalize_legacy_secret_keys(value: Any) -> list[str]:
     """Trim, drop empties, dedupe; accept list or comma-separated string."""
     if value is None:

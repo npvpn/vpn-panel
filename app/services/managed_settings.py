@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from app.models.managed import ManagedBotSettingsPayload
-from app.models.settings import CLIENT_APPS_KEY, PANEL_SETTING_KEYS, SUBSCRIPTION_MESSAGE_KEYS, ClientAppsPayload
+from app.models.settings import PANEL_SETTING_KEYS, SUBSCRIPTION_MESSAGE_KEYS
 
 if TYPE_CHECKING:
     # Отложенный импорт: app.db тянет SQLAlchemy-модели и подключение к БД,
@@ -26,13 +26,7 @@ class ManagedSection:
     validate: Callable[[dict[str, Any]], dict[str, Any]]
 
 
-def _validate_client_apps(data: dict[str, Any]) -> dict[str, Any]:
-    return ClientAppsPayload.model_validate(data).model_dump()
-
-
-MANAGED_SECTIONS: dict[str, ManagedSection] = {
-    CLIENT_APPS_KEY: ManagedSection(key=CLIENT_APPS_KEY, scope="global", validate=_validate_client_apps),
-}
+MANAGED_SECTIONS: dict[str, ManagedSection] = {}
 
 BOT_SETTINGS_KEY = "bot_settings"
 BOT_MANAGED_IDENTITY_FIELDS = frozenset({"username", "title", "web_url"})
