@@ -278,11 +278,12 @@ def _sheet():
     return [{"mode": "menu", "tgUrl": TG, "visible": True, "sheet": True}]
 
 
-def test_sheet_opens_locks_page_and_focuses_close():
+def test_sheet_opens_locks_page_and_focuses_sheet():
+    # фокус на самой шторке, а не на крестике: программный фокус на кнопке браузер подсвечивает
     out = _run(roots=_sheet(), clicks=[(0, "toggle")])
     assert out["roots"][0]["listOpen"] is True
     assert out["bodyLocked"] is True
-    assert out["focus"] == "close"
+    assert out["focus"] == "sheet"
 
 
 @pytest.mark.parametrize("target", ["close", "overlay", "escape"])
@@ -319,7 +320,7 @@ def test_toggle_while_sheet_slides_away_opens_it_again():
 
 
 def test_tab_stays_inside_sheet():
-    # фокус на крестике (первый); Shift+Tab — на последний пункт, Tab с него — снова на крестик
+    # фокус на шторке; Shift+Tab — на последний пункт, Tab с него — снова на крестик (первый)
     back = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "shiftTab")])
     assert back["focus"] == "tg"
     forward = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "shiftTab"), (0, "tab")])
@@ -346,11 +347,27 @@ def test_floating_menu_does_not_lock_page():
 
 
 def test_tab_moves_through_sheet_items():
-    # крестик → «Написать в чат» → «Связаться в Telegram» — обычный Tab внутри шторки не перехватывается
-    to_chat = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab")])
+    # шторка → крестик → «Написать в чат» → «Связаться в Telegram»
+    to_close = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab")])
+    assert to_close["focus"] == "close"
+    to_chat = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab"), (0, "tab")])
     assert to_chat["focus"] == "chat"
-    to_tg = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab"), (0, "tab")])
+    to_tg = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab"), (0, "tab"), (0, "tab")])
     assert to_tg["focus"] == "tg"
+
+
+def test_own_template_without_sheet_attr_focuses_cross():
+    # своя папка шаблонов со старой разметкой шторки — фокус по-старому на крестике
+    roots = [{"mode": "menu", "tgUrl": TG, "visible": True, "sheet": True, "legacySheet": True}]
+    out = _run(roots=roots, clicks=[(0, "toggle")])
+    assert out["focus"] == "close"
+
+
+def test_sheet_from_link_focuses_sheet_not_cross():
+    # открыли по ссылке — без касания; рамка на крестике была бы видна
+    out = _run(roots=_sheet(), search="?support=open")
+    assert out["roots"][0]["listOpen"] is True
+    assert out["focus"] == "sheet"
 
 
 def test_chat_error_after_resize_to_desktop_does_not_lock_page():

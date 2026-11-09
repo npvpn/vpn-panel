@@ -51,6 +51,8 @@
 .support-menu__sheet { box-sizing: border-box; width: 100%; padding: 24px 16px max(42px, env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; background: var(--surface); animation: support-menu-sheet-in .3s ease-out; transition: transform .3s ease-out; }
 .support-menu__list--sheet.is-closing { opacity: 0; pointer-events: none; }
 .support-menu__list--sheet.is-closing .support-menu__sheet { transform: translateY(100%); }
+/* фокус при открытии — на самой шторке (tabindex="-1"), рамка ей не нужна */
+.support-menu__sheet:focus { outline: none; }
 @keyframes support-menu-fade-in { from { opacity: 0; } }
 @keyframes support-menu-sheet-in { from { transform: translateY(100%); } }
 .support-menu__sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }

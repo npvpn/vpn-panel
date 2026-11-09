@@ -147,7 +147,9 @@
 
     // Шторка (мобилка, оба способа): появляется анимацией, уходит переходом (is-closing),
     // скрываем, когда уехала; пока открыта, страница под ней не прокручивается.
-    // Модальная: фокус — на крестик, Tab не уходит из шторки, после закрытия — обратно.
+    // Модальная: фокус — на саму шторку (читалка озвучит её, Tab поведёт к пунктам), а не на
+    // крестик: программный фокус на кнопке без касания (открыли по ?support=open) браузер
+    // подсвечивает рамкой. Tab не уходит из шторки, после закрытия — обратно.
     var sheet = list.classList.contains('support-menu__list--sheet');
     var SHEET_CLOSE_MS = 300;
     var closeTimer = null;
@@ -176,8 +178,9 @@
         document.body.classList.add('support-sheet-open');
         if (wasClosed) {
           focusBack = document.activeElement;
-          var close = list.querySelector('[data-support-close]');
-          if (close) { close.focus(); }
+          // своя разметка без data-support-sheet — по-старому, на крестик
+          var target = list.querySelector('[data-support-sheet]') || list.querySelector('[data-support-close]');
+          if (target) { target.focus({ preventScroll: true }); }
         }
         return;
       }
@@ -238,10 +241,13 @@
         if (!items.length) { return; }
         var first = items[0];
         var last = items[items.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
+        // фокус на самой шторке (сразу после открытия): Tab — на первый пункт, Shift+Tab — на
+        // последний, иначе Shift+Tab увёл бы фокус на страницу под шторкой
+        var onSheet = document.activeElement === list.querySelector('[data-support-sheet]');
+        if (event.shiftKey && (onSheet || document.activeElement === first)) {
           event.preventDefault();
           last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+        } else if (!event.shiftKey && (onSheet || document.activeElement === last)) {
           event.preventDefault();
           first.focus();
         }

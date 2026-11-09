@@ -34,7 +34,7 @@
       {# Шторка снизу: затемнение — сам список (клик по нему закрывает), содержимое — .support-menu__sheet.
          Без id: на index.html шапок три, и шторка в каждой. #}
       <div class="support-menu__list support-menu__list--sheet" data-support-list hidden>
-        <div class="support-menu__sheet" role="dialog" aria-modal="true" aria-label="Как хотите связаться">
+        <div class="support-menu__sheet" role="dialog" aria-modal="true" aria-label="Как хотите связаться" tabindex="-1" data-support-sheet>
           <div class="support-menu__sheet-head">
             <h2 class="support-menu__sheet-title">Как хотите связаться</h2>
             <button type="button" class="support-menu__close" data-support-close aria-label="Закрыть">{{ close_icon(24, "") }}</button>
