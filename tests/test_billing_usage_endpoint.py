@@ -91,8 +91,8 @@ def seeded(db):
     return {"bot": bot}
 
 
-def test_rented_hosts_split_regular_bs_and_skip_partner_owned(db, seeded):
-    """Наш обычный хост и наш БС считаются раздельно, хост партнёра не входит ни туда."""
+def test_rented_hosts_split_regular_and_bs_including_partner_owned(db, seeded):
+    """Обычный и БС считаются раздельно. Хост на ноде партнёра тоже входит в разрез."""
     bot = Bot(username="OwnedSplitBot")
     inbound = ProxyInbound(tag="SPLIT")
     regular = Node(name="regular-1", address="10.0.0.1", port=62050, api_port=62051, is_bs=False)
@@ -128,8 +128,9 @@ def test_rented_hosts_split_regular_bs_and_skip_partner_owned(db, seeded):
     row = rows["OwnedSplitBot"]
 
     assert row["regular_rented_hosts"] == 1
-    assert row["bs_rented_hosts"] == 1
+    assert row["bs_rented_hosts"] == 2
     assert row["rented_hosts"] == 3
+    assert row["regular_rented_hosts"] + row["bs_rented_hosts"] == row["rented_hosts"]
 
 
 def test_collects_four_values_for_a_bot(db, seeded):
@@ -140,7 +141,7 @@ def test_collects_four_values_for_a_bot(db, seeded):
             "bot_username": "AppleGurruBot",
             "rented_hosts": 1,
             "rented_host_remarks": ["🇪🇺 [Белый список] #1"],
-            "regular_rented_hosts": 0,
+            "regular_rented_hosts": 1,
             "bs_rented_hosts": 0,
             "devices_active": 2,
             "bs_bytes": 140,

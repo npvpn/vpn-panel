@@ -30,12 +30,14 @@ def validate_period(period_from: datetime, period_to: datetime) -> None:
         raise BillingPeriodError("'from' must be earlier than 'to'")
 
 
-def _rent_bucket(host: ProxyHost) -> str | None:
-    """Обычный или БС — только по нашим видимым нодам. Чужие ноды хост из счёта выводят."""
-    ours = [node for node in visible_nodes(host) if node.owner_bot_id is None]
-    if not ours:
-        return None
-    if any(node.is_bs for node in ours):
+def _rent_bucket(host: ProxyHost) -> str:
+    """Каждый арендованный хост попадает в разрез: БС либо обычный.
+
+    Набор тот же, что у rented_hosts. Владелец ноды не отсекает хост.
+    БС — если среди видимых нод есть is_bs, иначе хост обычный, в том числе
+    когда нод нет.
+    """
+    if any(node.is_bs for node in visible_nodes(host)):
         return "bs"
     return "regular"
 
@@ -106,9 +108,7 @@ def collect_bot_usage(db: Session, period_from: datetime, period_to: datetime) -
         row = row_for(username)
         row["rented_hosts"] += 1
         row["rented_host_remarks"].append(host.remark)
-        bucket = _rent_bucket(host)
-        if bucket is not None:
-            row[f"{bucket}_rented_hosts"] += 1
+        row[f"{_rent_bucket(host)}_rented_hosts"] += 1
 
     for username, count in devices_rows:
         row_for(username)["devices_active"] = int(count or 0)
