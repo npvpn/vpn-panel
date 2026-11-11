@@ -35,6 +35,8 @@ def _run(
     other_tab_during_load=False,
     sdk="present",
     ready_delay=0,
+    settle=0,
+    error_delay=0,
 ) -> dict:
     scenario = {
         "search": search,
@@ -46,6 +48,8 @@ def _run(
         "otherTabDuringLoad": other_tab_during_load,
         "sdk": sdk,
         "readyDelay": ready_delay,
+        "settle": settle,
+        "errorDelay": error_delay,
         "roots": roots,
         "clicks": list(clicks),
     }
@@ -185,7 +189,7 @@ def test_spinner_gone_after_chat_opens():
     assert out["roots"][0]["listOpen"] is False
 
 
-# На кнопке «Помощь» лоадера нет — ни в вебе, ни в панели.
+# На самой кнопке поддержки лоадера нет — ни в вебе, ни в панели.
 def test_chat_mode_no_spinner_on_help_button():
     out = _run(roots=_two("chat", ""), clicks=[(0, "toggle")], ready_delay=500)
     assert out["roots"][0]["toggleLoading"] is False
@@ -244,3 +248,96 @@ def test_chatwoot_error_after_leaving_menu_does_not_reopen_it():
     )
     assert out["chatOpened"] is False
     assert out["roots"][0]["listOpen"] is False
+
+
+# NPVPN-2314: шторка «Как хотите связаться» — значок в шапке на мобилке при обоих способах.
+def _sheet():
+    return [{"mode": "menu", "tgUrl": TG, "visible": True, "sheet": True}]
+
+
+def test_sheet_opens_locks_page_and_focuses_close():
+    out = _run(roots=_sheet(), clicks=[(0, "toggle")])
+    assert out["roots"][0]["listOpen"] is True
+    assert out["bodyLocked"] is True
+    assert out["focus"] == "close"
+
+
+@pytest.mark.parametrize("target", ["close", "overlay", "escape"])
+def test_sheet_closes_unlocks_page_and_returns_focus(target):
+    out = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, target), (0, "wait")])
+    root = out["roots"][0]
+    assert root["listOpen"] is False
+    assert root["closing"] is False
+    assert out["bodyLocked"] is False
+    assert out["focus"] == "toggle"
+
+
+def test_sheet_slides_away_before_hiding():
+    # уезжает анимацией: сразу после закрытия ещё в DOM, но прокрутка страницы уже вернулась
+    out = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "close")])
+    assert out["roots"][0]["listOpen"] is True
+    assert out["roots"][0]["closing"] is True
+    assert out["bodyLocked"] is False
+
+
+def test_toggle_while_sheet_slides_away_opens_it_again():
+    out = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "close"), (0, "toggle")], settle=400)
+    root = out["roots"][0]
+    assert root["listOpen"] is True
+    assert root["closing"] is False
+    assert out["bodyLocked"] is True
+
+
+def test_tab_stays_inside_sheet():
+    # фокус на крестике (первый); Shift+Tab — на последний пункт, Tab с него — снова на крестик
+    back = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "shiftTab")])
+    assert back["focus"] == "tg"
+    forward = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "shiftTab"), (0, "tab")])
+    assert forward["focus"] == "close"
+
+
+def test_sheet_closes_when_window_becomes_desktop():
+    out = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "desktop"), (0, "wait")])
+    assert out["roots"][0]["listOpen"] is False
+    assert out["bodyLocked"] is False
+
+
+def test_chat_from_sheet_closes_it():
+    out = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "chat")], settle=400)
+    assert out["chatOpened"] is True
+    assert out["roots"][0]["listOpen"] is False
+    assert out["bodyLocked"] is False
+
+
+def test_floating_menu_does_not_lock_page():
+    out = _run(roots=_two("menu"), clicks=[(0, "toggle")])
+    assert out["roots"][0]["listOpen"] is True
+    assert out["bodyLocked"] is False
+
+
+def test_tab_moves_through_sheet_items():
+    # крестик → «Написать в чат» → «Связаться в Telegram» — обычный Tab внутри шторки не перехватывается
+    to_chat = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab")])
+    assert to_chat["focus"] == "chat"
+    to_tg = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "tab"), (0, "tab")])
+    assert to_tg["focus"] == "tg"
+
+
+def test_chat_error_after_resize_to_desktop_does_not_lock_page():
+    # ошибка Chatwoot пришла, когда окно уже расширили до ПК: шторка там скрыта —
+    # открывать её и блокировать прокрутку страницы нельзя
+    out = _run(
+        roots=_sheet(),
+        clicks=[(0, "toggle"), (0, "chat"), (0, "desktop")],
+        chatwoot_error=True,
+        error_delay=60,
+        settle=400,
+    )
+    assert out["bodyLocked"] is False
+
+
+def test_focus_not_returned_to_hidden_icon_on_desktop():
+    # шторка закрылась из-за расширения до ПК — значок в шапке скрыт, фокус на него не ставим
+    out = _run(roots=_sheet(), clicks=[(0, "toggle"), (0, "desktop"), (0, "wait")])
+    assert out["roots"][0]["listOpen"] is False
+    assert out["focus"] != "toggle"
