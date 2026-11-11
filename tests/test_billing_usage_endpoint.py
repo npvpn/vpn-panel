@@ -91,6 +91,48 @@ def seeded(db):
     return {"bot": bot}
 
 
+def test_rented_hosts_split_regular_and_bs_including_partner_owned(db, seeded):
+    """Обычный и БС считаются раздельно. Хост на ноде партнёра тоже входит в разрез."""
+    bot = Bot(username="OwnedSplitBot")
+    inbound = ProxyInbound(tag="SPLIT")
+    regular = Node(name="regular-1", address="10.0.0.1", port=62050, api_port=62051, is_bs=False)
+    bs = Node(name="bs-ours", address="10.0.0.2", port=62050, api_port=62051, is_bs=True)
+    db.add_all([bot, inbound, regular, bs])
+    db.flush()
+    partner = Node(
+        name="partner-bs",
+        address="10.0.0.3",
+        port=62050,
+        api_port=62051,
+        is_bs=True,
+        owner_bot_id=bot.id,
+    )
+    db.add(partner)
+    db.flush()
+    hosts = [
+        ProxyHost(remark="обычный", address="10.0.0.1", inbound=inbound, bots=[bot], nodes=[regular]),
+        ProxyHost(remark="бс", address="10.0.0.2", inbound=inbound, bots=[bot], nodes=[bs]),
+        ProxyHost(remark="партнёр", address="10.0.0.3", inbound=inbound, bots=[bot], nodes=[partner]),
+    ]
+    db.add_all(hosts)
+    db.flush()
+    for host in hosts:
+        db.execute(
+            host_bot_association.update()
+            .where(host_bot_association.c.host_id == host.id, host_bot_association.c.bot_id == bot.id)
+            .values(rented_at=datetime(2026, 9, 1))
+        )
+    db.commit()
+
+    rows = {row["bot_username"]: row for row in collect_bot_usage(db, datetime(2026, 9, 1), datetime(2026, 10, 1))}
+    row = rows["OwnedSplitBot"]
+
+    assert row["regular_rented_hosts"] == 1
+    assert row["bs_rented_hosts"] == 2
+    assert row["rented_hosts"] == 3
+    assert row["regular_rented_hosts"] + row["bs_rented_hosts"] == row["rented_hosts"]
+
+
 def test_collects_four_values_for_a_bot(db, seeded):
     rows = collect_bot_usage(db, datetime(2026, 9, 1), datetime(2026, 10, 1))
 
@@ -99,6 +141,8 @@ def test_collects_four_values_for_a_bot(db, seeded):
             "bot_username": "AppleGurruBot",
             "rented_hosts": 1,
             "rented_host_remarks": ["🇪🇺 [Белый список] #1"],
+            "regular_rented_hosts": 1,
+            "bs_rented_hosts": 0,
             "devices_active": 2,
             "bs_bytes": 140,
         }
