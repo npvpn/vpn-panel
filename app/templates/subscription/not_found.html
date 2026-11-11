@@ -4,9 +4,14 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Страница не найдена</title>
-        <link rel="stylesheet" href="{{ sub_statics }}styles/index.css" />
-        <link rel="stylesheet" href="{{ sub_statics }}styles/components.css" />
-        <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
+        {# стили отдельными ссылками с версией (NPVPN-2315): цепочка @import в index.css версию не передаёт,
+           и components.css мог остаться старым из кэша. Порядок — как был у @import. #}
+        <link rel="stylesheet" href="{{ sub_statics }}styles/fonts.css?v={{ static_v }}">
+        <link rel="stylesheet" href="{{ sub_statics }}styles/variables.css?v={{ static_v }}">
+        <link rel="stylesheet" href="{{ sub_statics }}styles/components.css?v={{ static_v }}">
+        <link rel="stylesheet" href="{{ sub_statics }}styles/index.css?v={{ static_v }}">
+        <link rel="preload" href="{{ sub_statics }}fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+        <link rel="preload" href="{{ sub_statics }}fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
         <link rel="icon" href="data:," />
     </head>
     <body>

@@ -10,9 +10,10 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Bot, BotBsDaily, ProxyHost, User, UserDevice, host_bot_association
+from app.xray.host_addresses import visible_nodes
 
 
 class BillingPeriodError(ValueError):
@@ -29,6 +30,18 @@ def validate_period(period_from: datetime, period_to: datetime) -> None:
         raise BillingPeriodError("'from' must be earlier than 'to'")
 
 
+def _rent_bucket(host: ProxyHost) -> str:
+    """Каждый арендованный хост попадает в разрез: БС либо обычный.
+
+    Набор тот же, что у rented_hosts. Владелец ноды не отсекает хост.
+    БС — если среди видимых нод есть is_bs, иначе хост обычный, в том числе
+    когда нод нет.
+    """
+    if any(node.is_bs for node in visible_nodes(host)):
+        return "bs"
+    return "regular"
+
+
 def collect_bot_usage(db: Session, period_from: datetime, period_to: datetime) -> list[dict[str, Any]]:
     """Четыре величины по каждому боту, у которого есть хоть что-то.
 
@@ -38,13 +51,18 @@ def collect_bot_usage(db: Session, period_from: datetime, period_to: datetime) -
 
     Хосты и устройства — срез на сейчас, трафик — накопление за [from, to).
     """
-    rented_rows = db.execute(
-        select(Bot.username, ProxyHost.remark)
-        .select_from(host_bot_association)
-        .join(Bot, Bot.id == host_bot_association.c.bot_id)
-        .join(ProxyHost, ProxyHost.id == host_bot_association.c.host_id)
-        .where(host_bot_association.c.rented_at.isnot(None))
-    ).all()
+    rented_rows = (
+        db.execute(
+            select(Bot.username, ProxyHost)
+            .select_from(host_bot_association)
+            .join(Bot, Bot.id == host_bot_association.c.bot_id)
+            .join(ProxyHost, ProxyHost.id == host_bot_association.c.host_id)
+            .where(host_bot_association.c.rented_at.isnot(None))
+            .options(selectinload(ProxyHost.nodes), selectinload(ProxyHost.balancer_nodes))
+        )
+        .unique()
+        .all()
+    )
 
     devices_rows = db.execute(
         select(Bot.username, func.count(UserDevice.id))
@@ -79,15 +97,18 @@ def collect_bot_usage(db: Session, period_from: datetime, period_to: datetime) -
                 "bot_username": username,
                 "rented_hosts": 0,
                 "rented_host_remarks": [],
+                "regular_rented_hosts": 0,
+                "bs_rented_hosts": 0,
                 "devices_active": 0,
                 "bs_bytes": 0,
             },
         )
 
-    for username, remark in rented_rows:
+    for username, host in rented_rows:
         row = row_for(username)
         row["rented_hosts"] += 1
-        row["rented_host_remarks"].append(remark)
+        row["rented_host_remarks"].append(host.remark)
+        row[f"{_rent_bucket(host)}_rented_hosts"] += 1
 
     for username, count in devices_rows:
         row_for(username)["devices_active"] = int(count or 0)

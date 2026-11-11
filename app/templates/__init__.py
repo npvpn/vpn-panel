@@ -2,7 +2,11 @@ from datetime import datetime
 
 import jinja2
 
-from config import resolved_custom_templates_directory, resolved_subscription_templates_dir
+from config import (
+    resolved_custom_templates_directory,
+    resolved_subscription_templates_dir,
+    subscription_statics_version,
+)
 
 from .filters import CUSTOM_FILTERS
 
@@ -19,6 +23,8 @@ if subscription_templates_dir:
 env = jinja2.Environment(loader=jinja2.FileSystemLoader(template_directories))
 env.filters.update(CUSTOM_FILTERS)
 env.globals["now"] = datetime.utcnow
+# версия статики страницы подписки в адресах `?v=` — считается один раз при запуске (NPVPN-2315)
+env.globals["static_v"] = subscription_statics_version()
 
 
 def render_template(template: str, context: dict | None = None) -> str:

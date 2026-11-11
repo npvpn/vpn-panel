@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class BotUsage(BaseModel):
-    """Четыре величины по одному боту.
+    """Величины счёта по одному боту.
 
     Байты, а не гигабайты: округление — дело представления, а здесь нужна
     точность, по которой можно спорить с партнёром.
@@ -15,5 +15,7 @@ class BotUsage(BaseModel):
     rented_host_remarks: list[str]
     devices_active: int
     bs_bytes: int
+    regular_rented_hosts: int = 0
+    bs_rented_hosts: int = 0
 
     model_config = ConfigDict(from_attributes=True)
