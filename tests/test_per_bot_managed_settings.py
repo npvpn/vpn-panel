@@ -105,7 +105,7 @@ def test_full_push_overwrites_new_managed_fields(db):
     assert "sub_profile_title" not in svc.BOT_MANAGED_JSON_FIELDS
     assert "sub_client_note" not in settings
     assert "sub_revoked_server_text" not in settings
-    assert settings["sub_device_limit_hard_mode"] is True
+    assert "sub_device_limit_hard_mode" not in settings
     assert settings["bs_extra_reset_pool_on_prolong"] is True
 
 

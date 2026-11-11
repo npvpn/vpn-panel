@@ -54,7 +54,6 @@ const emptySettings: BotSettings = {
   sub_subscription_domain: "",
   bot_url: "",
   web_url: "",
-  sub_device_limit_hard_mode: false,
   bs_extra_reset_pool_on_prolong: false,
   show_ads: true,
 };
@@ -312,7 +311,6 @@ export const BotSettingsDialog: FC = () => {
         defaultSettings.sub_subscription_domain,
       bot_url: current.bot_url.trim() || defaultSettings.bot_url,
       web_url: current.web_url.trim() || defaultSettings.web_url,
-      sub_device_limit_hard_mode: current.sub_device_limit_hard_mode,
       bs_extra_reset_pool_on_prolong: current.bs_extra_reset_pool_on_prolong,
       show_ads: current.show_ads,
     };
@@ -895,30 +893,6 @@ export const BotSettingsDialog: FC = () => {
                       />
                       <FormHelperText>
                         {fieldHint("botSettings.bsExtraResetPoolOnProlongHint")}
-                      </FormHelperText>
-                    </FormControl>
-                  </Box>
-                  <Box
-                    border="1px solid"
-                    borderColor="inherit"
-                    borderRadius="md"
-                    p={4}
-                  >
-                    <FormControl isDisabled={isManaged}>
-                      <FormLabel>
-                        {t("botSettings.subDeviceLimitHardMode")}
-                      </FormLabel>
-                      <Switch
-                        colorScheme="primary"
-                        isChecked={settings.sub_device_limit_hard_mode}
-                        onChange={(e) =>
-                          updateSettings({
-                            sub_device_limit_hard_mode: e.target.checked,
-                          })
-                        }
-                      />
-                      <FormHelperText>
-                        {fieldHint("botSettings.subDeviceLimitHardModeHint")}
                       </FormHelperText>
                     </FormControl>
                   </Box>

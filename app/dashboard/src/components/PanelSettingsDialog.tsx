@@ -34,6 +34,7 @@ import {
   TabList,
   TabPanel,
   TabPanels,
+  Switch,
   Tabs,
   Text,
   Tooltip,
@@ -80,6 +81,7 @@ const emptySettings: PanelSettings = {
   sub_device_limit_server_text: [],
   sub_unsupported_client_server_text: [],
   sub_bs_limit_server_text: [],
+  sub_device_limit_hard_mode: false,
 };
 
 const SERVER_TEXT_FIELDS: SubscriptionMessageServerField[] = [
@@ -142,6 +144,7 @@ const SUBSCRIPTION_FIELDS = [
   "sub_routing_v2raytun",
   "sub_custom_headers",
   "bs_monthly_limit",
+  "sub_device_limit_hard_mode",
 ] as const;
 
 const MESSAGE_TEXT_FIELDS = [
@@ -481,6 +484,18 @@ export const PanelSettingsDialog: FC = () => {
         to: [{ short: String(target.bs_monthly_limit / GB_IN_BYTES) }],
       });
     }
+    if (
+      settings.sub_device_limit_hard_mode !== target.sub_device_limit_hard_mode
+    ) {
+      const flag = (value: boolean) =>
+        t(value ? "panelSettings.switchOn" : "panelSettings.switchOff");
+      rows.push({
+        tab: "subscription",
+        label: t("botSettings.subDeviceLimitHardMode"),
+        from: [{ short: flag(settings.sub_device_limit_hard_mode) }],
+        to: [{ short: flag(target.sub_device_limit_hard_mode) }],
+      });
+    }
     if (isJwtDirty(settings, target)) {
       rows.push({
         tab: "jwt",
@@ -700,6 +715,23 @@ export const PanelSettingsDialog: FC = () => {
                       />
                       <FormHelperText>
                         {t("panelSettings.bsMonthlyLimitGbHint")}
+                      </FormHelperText>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>
+                        {t("botSettings.subDeviceLimitHardMode")}
+                      </FormLabel>
+                      <Switch
+                        colorScheme="primary"
+                        isChecked={settings.sub_device_limit_hard_mode}
+                        onChange={(event) =>
+                          updateSettings({
+                            sub_device_limit_hard_mode: event.target.checked,
+                          })
+                        }
+                      />
+                      <FormHelperText>
+                        {t("botSettings.subDeviceLimitHardModeHint")}
                       </FormHelperText>
                     </FormControl>
                   </VStack>

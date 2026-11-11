@@ -28,6 +28,12 @@ from app.services import panel_settings as panel_svc  # noqa: E402
 from app.utils.jwt import get_subscription_payload, get_subscription_secret_keys  # noqa: E402
 
 
+def test_panel_fallback_hard_stub_defaults_false_and_keeps_saved_true():
+    assert apply_panel_settings_fallback(None)["sub_device_limit_hard_mode"] is False
+    assert apply_panel_settings_fallback({"sub_device_limit_hard_mode": True})["sub_device_limit_hard_mode"] is True
+    assert "sub_device_limit_hard_mode" in PANEL_SETTING_KEYS
+
+
 def test_panel_fallback_fills_defaults():
     assert apply_panel_settings_fallback(None) == DEFAULT_PANEL_SETTINGS
     assert apply_panel_settings_fallback({})["bs_monthly_limit"] == 0

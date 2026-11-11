@@ -46,7 +46,6 @@ BOT_MANAGED_JSON_FIELDS = frozenset(
         # Старый пуш ещё может прислать public_name — поле принимается схемой, но не пишется.
         "sub_update_interval",
         "bs_extra_reset_pool_on_prolong",
-        "sub_device_limit_hard_mode",
     }
 )
 BOT_MANAGED_SETTINGS_FIELDS = BOT_MANAGED_IDENTITY_FIELDS | BOT_MANAGED_JSON_FIELDS
