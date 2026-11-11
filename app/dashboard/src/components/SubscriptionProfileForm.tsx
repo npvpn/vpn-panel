@@ -3,6 +3,7 @@ import {
   FormControl,
   FormHelperText,
   FormLabel,
+  HStack,
   Input,
   SimpleGrid,
   Switch,
@@ -139,33 +140,46 @@ export const SubscriptionProfileForm: FC = () => {
           <FormHelperText>{t("botSettings.webUrlHint")}</FormHelperText>
         </FormControl>
       </SimpleGrid>
-      <FormControl display="flex" alignItems="center" justifyContent="space-between">
-        <FormLabel mb={0}>{t("botSettings.showAds")}</FormLabel>
-        <Switch
-          colorScheme="primary"
-          isChecked={profile.show_ads}
-          onChange={(event) => update({ show_ads: event.target.checked })}
-        />
+      <FormControl>
+        <HStack justify="space-between">
+          <FormLabel mb={0}>{t("botSettings.showAds")}</FormLabel>
+          <Switch
+            colorScheme="primary"
+            isChecked={profile.show_ads}
+            onChange={(event) => update({ show_ads: event.target.checked })}
+          />
+        </HStack>
+        <FormHelperText>{t("botSettings.showAdsHint")}</FormHelperText>
       </FormControl>
-      <FormControl display="flex" alignItems="center" justifyContent="space-between">
-        <FormLabel mb={0}>{t("botSettings.bsExtraResetPoolOnProlong")}</FormLabel>
-        <Switch
-          colorScheme="primary"
-          isChecked={profile.bs_extra_reset_pool_on_prolong}
-          onChange={(event) =>
-            update({ bs_extra_reset_pool_on_prolong: event.target.checked })
-          }
-        />
+      <FormControl>
+        <HStack justify="space-between">
+          <FormLabel mb={0}>{t("botSettings.bsExtraResetPoolOnProlong")}</FormLabel>
+          <Switch
+            colorScheme="primary"
+            isChecked={profile.bs_extra_reset_pool_on_prolong}
+            onChange={(event) =>
+              update({ bs_extra_reset_pool_on_prolong: event.target.checked })
+            }
+          />
+        </HStack>
+        <FormHelperText>
+          {t("botSettings.bsExtraResetPoolOnProlongHint")}
+        </FormHelperText>
       </FormControl>
-      <FormControl display="flex" alignItems="center" justifyContent="space-between">
-        <FormLabel mb={0}>{t("botSettings.subDeviceLimitHardMode")}</FormLabel>
-        <Switch
-          colorScheme="primary"
-          isChecked={profile.sub_device_limit_hard_mode}
-          onChange={(event) =>
-            update({ sub_device_limit_hard_mode: event.target.checked })
-          }
-        />
+      <FormControl>
+        <HStack justify="space-between">
+          <FormLabel mb={0}>{t("botSettings.subDeviceLimitHardMode")}</FormLabel>
+          <Switch
+            colorScheme="primary"
+            isChecked={profile.sub_device_limit_hard_mode}
+            onChange={(event) =>
+              update({ sub_device_limit_hard_mode: event.target.checked })
+            }
+          />
+        </HStack>
+        <FormHelperText>
+          {t("botSettings.subDeviceLimitHardModeHint")}
+        </FormHelperText>
       </FormControl>
       <Button alignSelf="flex-end" colorScheme="primary" onClick={save} isLoading={saving}>
         {t("core.save")}
