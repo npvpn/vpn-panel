@@ -6,7 +6,6 @@ from app.models.managed import ManagedStateResponse
 from app.models.settings import PANEL_SETTING_KEYS
 from config import (
     BOT_URL,
-    SUB_DEVICE_LIMIT_HARD_MODE,
     SUB_PROFILE_TITLE,
     SUB_PROFILE_URL,
     SUB_SUPPORT_URL,
@@ -25,7 +24,6 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "chat_base_url": "",
     "chat_website_token": "",
     "chat_identity_url": "",
-    "sub_device_limit_hard_mode": SUB_DEVICE_LIMIT_HARD_MODE,
     "bs_extra_reset_pool_on_prolong": False,
     "show_ads": True,
     # NPVPN-2072. Источник истины — админка бота; здесь дефолт на случай, когда синк
@@ -78,7 +76,6 @@ class BotSettingsPayload(BaseModel):
     chat_base_url: str = ""
     chat_website_token: str = ""
     chat_identity_url: str = ""
-    sub_device_limit_hard_mode: bool = False
     bs_extra_reset_pool_on_prolong: bool = False
     show_ads: bool = True
 
@@ -113,7 +110,6 @@ def apply_bot_settings_fallback(raw_settings: dict[str, Any] | None) -> dict[str
                 continue
             base[key] = value
 
-    base["sub_device_limit_hard_mode"] = bool(base.get("sub_device_limit_hard_mode"))
     base["bs_extra_reset_pool_on_prolong"] = bool(base.get("bs_extra_reset_pool_on_prolong", False))
     base["show_ads"] = bool(base.get("show_ads", True))
 

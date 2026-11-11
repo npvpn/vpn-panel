@@ -22,7 +22,6 @@ export type BotSettings = {
   sub_subscription_domain: string;
   bot_url: string;
   web_url: string;
-  sub_device_limit_hard_mode: boolean;
   bs_extra_reset_pool_on_prolong: boolean;
   show_ads: boolean;
   updated_at?: string;

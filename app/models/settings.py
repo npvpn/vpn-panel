@@ -53,6 +53,7 @@ PANEL_SETTING_KEYS: tuple[str, ...] = (
     "sub_routing_happ",
     "sub_routing_v2raytun",
     "subscription_legacy_secret_keys",
+    "sub_device_limit_hard_mode",
     *SUBSCRIPTION_MESSAGE_KEYS,
 )
 
@@ -86,6 +87,7 @@ DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "sub_device_limit_server_text": normalize_server_text(SUB_DEVICE_LIMIT_SERVER_TEXT),
     "sub_unsupported_client_server_text": normalize_server_text(SUB_UNSUPPORTED_CLIENT_SERVER_TEXT),
     "sub_bs_limit_server_text": [],
+    "sub_device_limit_hard_mode": False,
 }
 
 PLATFORMS: tuple[str, ...] = ("ios", "macos", "android", "androidtv", "windows", "linux")
@@ -259,6 +261,7 @@ class PanelSettingsPayload(BaseModel):
     sub_device_limit_server_text: list[str] = Field(default_factory=list)
     sub_unsupported_client_server_text: list[str] = Field(default_factory=list)
     sub_bs_limit_server_text: list[str] = Field(default_factory=list)
+    sub_device_limit_hard_mode: bool = False
 
     @field_validator("subscription_legacy_secret_keys", mode="before")
     @classmethod
@@ -319,6 +322,7 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
             continue
         base[key] = raw[key]
     base["bs_monthly_limit"] = int(base.get("bs_monthly_limit") or 0)
+    base["sub_device_limit_hard_mode"] = bool(base.get("sub_device_limit_hard_mode"))
     for key in SUBSCRIPTION_MESSAGE_SERVER_KEYS:
         base[key] = normalize_server_text(base.get(key))
     return base

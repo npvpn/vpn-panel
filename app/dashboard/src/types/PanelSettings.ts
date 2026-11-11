@@ -16,6 +16,7 @@ export type PanelSettings = {
   sub_device_limit_server_text: string[];
   sub_unsupported_client_server_text: string[];
   sub_bs_limit_server_text: string[];
+  sub_device_limit_hard_mode: boolean;
 };
 
 export type SubscriptionMessageServerField =

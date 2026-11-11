@@ -141,9 +141,9 @@ export const HappSubscriptionPreview: FC<Props> = ({
         settings,
         scenario,
         botHosts,
-        Boolean(botSettings?.sub_device_limit_hard_mode)
+        Boolean(settings.sub_device_limit_hard_mode)
       ),
-    [settings, scenario, botHosts, botSettings]
+    [settings, scenario, botHosts]
   );
   const announce = previewAnnounce(settings, scenario);
   const title =

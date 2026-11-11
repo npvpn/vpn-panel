@@ -29,6 +29,8 @@ class ManagedBotSettingsPayload(BaseModel):
     sub_profile_title: str | None = None
     sub_update_interval: str | None = None
     bs_extra_reset_pool_on_prolong: bool | None = None
+    # Панель владеет жёсткой заглушкой. Поле остаётся в схеме: старый бот ещё шлёт его,
+    # и extra=forbid иначе роняет весь синк. Значение не применяется.
     sub_device_limit_hard_mode: bool | None = None
     model_config = ConfigDict(extra="forbid")
 

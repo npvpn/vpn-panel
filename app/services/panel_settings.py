@@ -64,6 +64,10 @@ def save_panel_settings(db: Session, payload: PanelSettingsPayload) -> dict[str,
             data[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_keys(existing[LEGACY_SECRET_KEYS_SETTING])
         else:
             data[LEGACY_SECRET_KEYS_SETTING] = list(apply_panel_settings_fallback(None)[LEGACY_SECRET_KEYS_SETTING])
+    if "sub_device_limit_hard_mode" not in payload.model_fields_set:
+        existing = crud.get_global_setting(db, PANEL_SETTINGS_KEY) or {}
+        if "sub_device_limit_hard_mode" in existing:
+            data["sub_device_limit_hard_mode"] = bool(existing["sub_device_limit_hard_mode"])
     stored = crud.upsert_global_setting(db, PANEL_SETTINGS_KEY, data)
     settings = apply_panel_settings_fallback(stored)
     db.info[_SESSION_CACHE_KEY] = settings
