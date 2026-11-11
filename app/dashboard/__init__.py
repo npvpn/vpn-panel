@@ -10,6 +10,7 @@ from config import (
     DASHBOARD_PATH,
     DEBUG,
     VITE_BASE_API,
+    register_subscription_static_types,
     resolved_subscription_templates_dir,
     subscription_statics_url,
 )
@@ -20,6 +21,7 @@ statics_dir = build_dir / "statics"
 
 
 def mount_sub_statics() -> None:
+    register_subscription_static_types()
     sub_dir = resolved_subscription_templates_dir()
     if sub_dir:
         app.mount(

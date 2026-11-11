@@ -124,7 +124,7 @@ def test_expired_page_shows_pay_button():
 
     assert f'href="{_PAY_URL}/{_TOKEN}"' in html
     assert "Оплатить" in html
-    assert 'href="/statics/subscription/styles/index.css"' in html
+    assert 'href="/statics/subscription/styles/index.css?v=' in html
 
 
 def test_expired_page_shows_pay_button_alongside_cabinet():
@@ -135,12 +135,16 @@ def test_expired_page_shows_pay_button_alongside_cabinet():
     assert "Войти в личный кабинет" in html
 
 
-def test_expired_page_keeps_both_buttons_in_one_wrapper():
-    """.button-wrapper_revoke — position: fixed: две обёртки легли бы друг на друга,
-    и в браузере была бы видна только нижняя кнопка (в HTML при этом обе)."""
+def test_expired_page_keeps_both_buttons_in_one_card():
+    """NPVPN-2315: «Оплатить» и «Войти в личный кабинет» — в одной карточке состояния на «Тарифе»:
+    «Оплатить» основная, кабинет — текстовая рядом (на мобилке под ней)."""
     html = _render("expired.html", pay_url=_PAY_URL, token=_TOKEN, web_url="https://cab.example.com")
 
-    assert html.count("button-wrapper_revoke") == 1
+    assert html.count('class="state-card__actions state-card__actions--pay"') == 1
+    start = html.index('class="state-card__actions state-card__actions--pay"')
+    actions = html[start : html.index("</div>", start)]
+    assert f'href="{_PAY_URL}/{_TOKEN}" class="primary-btn"' in actions
+    assert 'class="text-btn" data-cabinet-link>Войти в личный кабинет' in actions
 
 
 def test_expired_page_without_pay_url_has_no_button():
