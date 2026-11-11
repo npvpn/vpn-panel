@@ -63,8 +63,8 @@ def test_menu_with_chat_and_telegram(template):
     html = _render(template, build_support_context({**CHAT, **TG}, 7, "TOKEN"))
     assert "data-support-menu" in html
     assert "Написать в чат" in html
-    assert ">Telegram<" in html
-    assert 'src="/statics/subscription/scripts/support-menu.js"' in html
+    assert ">Связаться в Telegram<" in html
+    assert 'src="/statics/subscription/scripts/support-menu.js?v=' in html
     cfg = _config(html)
     assert cfg["chat"]["bot_id"] == 7
     assert cfg["token"] == "TOKEN"
@@ -103,7 +103,7 @@ def test_floating_button_once_with_script_right_before_body_end(template):
     html = _render(template, build_support_context({**CHAT, **TG}, 7, "TOKEN"))
     assert html.count("support-menu--floating") == 1
     assert html.count("support-menu.js") == 1
-    assert re.search(r"support-menu\.js\"></script>\s*</body>", html)
+    assert re.search(r'support-menu\.js\?v=[^"]*"></script>\s*</body>', html)
 
 
 @pytest.mark.parametrize("template", ["index.html", "expired.html", "limited.html", "revoked.html"])
@@ -158,7 +158,7 @@ def test_floating_both_channels_is_chat_with_close_swap():
     floating = _floating(_render("index.html", build_support_context({**CHAT, **TG}, 7, "TOKEN")))
     assert ">Чат<" in floating
     assert "support-menu__swap" in floating and "support-menu__icon--close" in floating
-    assert "Написать в чат" in floating and ">Telegram<" in floating
+    assert "Написать в чат" in floating and ">Связаться в Telegram<" in floating
 
 
 def test_floating_telegram_only_is_link():

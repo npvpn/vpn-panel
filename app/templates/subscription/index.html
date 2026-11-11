@@ -1,3 +1,6 @@
+{# NPVPN-2315: одна страница на все состояния подписки. expired/limited/revoked.html задают
+   page_state и включают этот шаблон; без него — обычная страница. #}
+{% set page_state = page_state | default("") %}
 <!DOCTYPE html>
 <html lang="ru">
   <head>
@@ -5,18 +8,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Информация о подписке</title>
     <link rel="stylesheet" href="/statics/main.css">
-    <link rel="stylesheet" href="{{ sub_statics }}styles/index.css">
-    <style>@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');</style>
+    {# стили отдельными ссылками с версией (NPVPN-2315): цепочка @import в index.css версию не передаёт,
+       и components.css мог остаться старым из кэша. Порядок — как был у @import. #}
+    <link rel="stylesheet" href="{{ sub_statics }}styles/fonts.css?v={{ static_v }}">
+    <link rel="stylesheet" href="{{ sub_statics }}styles/variables.css?v={{ static_v }}">
+    <link rel="stylesheet" href="{{ sub_statics }}styles/components.css?v={{ static_v }}">
+    <link rel="stylesheet" href="{{ sub_statics }}styles/index.css?v={{ static_v }}">
+    <link rel="preload" href="{{ sub_statics }}fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="{{ sub_statics }}fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="icon" href="data:,">
     <script defer src="/statics/vendor/js/alpinejs.js"></script>
     <script defer src="/statics/vendor/js/qrcode.min.js"></script>
-    <script defer src="{{ sub_statics }}scripts/cabinet-link.js"></script>
-    <script defer src="{{ sub_statics }}scripts/status-poll.js"
+    <script defer src="{{ sub_statics }}scripts/cabinet-link.js?v={{ static_v }}"></script>
+    {# Опрос статуса — по состоянию, как было на отдельных страницах: обычная перезагружается при
+       достижении лимита и отзыве токена, «лимит» — когда устройство освободилось, «истекла» — при
+       смене статуса. «Устарел» не опрашиваем: /info отвечает 404, и страница перезагружалась бы вечно. #}
+    {% if page_state != "revoked" %}
+    <script defer src="{{ sub_statics }}scripts/status-poll.js?v={{ static_v }}"
       data-info-url="/{{ sub_path }}/{{ token }}/info"
       data-initial-status="{{ user.status.value }}"
-      data-device-limit-mode="reached"
+      {% if page_state == "limited" %}data-device-limit-mode="cleared"
+      {% elif not page_state %}data-device-limit-mode="reached"
       data-reload-on-gone="true"
-      data-interval-ms="30000"></script>
+      {% endif %}data-interval-ms="30000"></script>
+    {% endif %}
     <script id="devices-data" type="application/json">{{ devices_json | safe }}</script>
     <script>
       const initialDevices = JSON.parse(
@@ -61,7 +76,9 @@
         Alpine.data('subscriptionManager', () => ({
           user: userData,
           selectedOs: 'QR',
-          currentPage: 'settings',
+          pageState: '{{ page_state }}',
+          // вкладка по макету: истекла/устарел — «Тариф», лимит — «Устройства»
+          currentPage: '{{ "tariff" if page_state in ("expired", "revoked") else ("devices" if page_state == "limited" else "settings") }}',
           // clientApps: {{ client_apps | tojson }},
           clientApps: JSON.parse('{{ client_apps | tojson | safe }}'),
 
@@ -70,11 +87,14 @@
           revokingId: null,
           showRevokeModal: false,
           selectedDevice: null,
-          copiedKey: false,
+          // уведомление «скопировано» вверху экрана (NPVPN-2315), как тост в вебе
+          toast: '',
+          toastKind: 'success',
+          toastVisible: false,
+          toastTimer: null,
 
           selectedClient: null,
 
-          copiedTerminal: false,
 
           selectClient(app) {
               this.selectedClient = app.id;
@@ -98,15 +118,17 @@
             return value.includes('v2ray');
           },
 
+          // ?v= — версия статики (config.subscription_statics_version): поменялась картинка —
+          // новый адрес, иначе браузер покажет старую иконку из кэша
           getAppIcon(app) {
             if (this.isHappApp(app)) {
-              return '{{ sub_statics }}assets/Happ.png';
+              return '{{ sub_statics }}assets/happ.svg?v={{ static_v }}';
             }
             if (this.isIncyApp(app)) {
-              return '{{ sub_statics }}assets/incy.png';
+              return '{{ sub_statics }}assets/incy.svg?v={{ static_v }}';
             }
             if (this.isV2rayApp(app)) {
-              return '{{ sub_statics }}assets/v2ray.png';
+              return '{{ sub_statics }}assets/v2ray.svg?v={{ static_v }}';
             }
             return null;
           },
@@ -140,13 +162,21 @@
           },
 
           copyTerminalCommands() {
-            const text = document.getElementById('linux-commands').innerText;
-            navigator.clipboard.writeText(text).then(() => {
-                this.copiedTerminal = true;
-                setTimeout(() => {
-                    this.copiedTerminal = false;
-                }, 2000);
-            });
+            this.copyToClipboard(document.getElementById('linux-commands').innerText, 'Команда скопирована');
+          },
+
+          // текст остаётся, пока уведомление плавно уходит; прячет только toastVisible
+          showToast(text, kind = 'success') {
+            clearTimeout(this.toastTimer);
+            this.toast = text;
+            this.toastKind = kind;
+            this.toastVisible = true;
+            this.toastTimer = setTimeout(() => this.hideToast(), 3000);
+          },
+
+          hideToast() {
+            clearTimeout(this.toastTimer);
+            this.toastVisible = false;
           },
 
           async revokeDevice(deviceId) {
@@ -155,6 +185,11 @@
               const response = await fetch(`/{{ sub_path }}/{{ token }}/devices/${deviceId}/revoke`);
               if (!response.ok) throw new Error(`revoke failed: ${response.status}`);
               this.devices = this.devices.filter((device) => device.id !== deviceId);
+              // лимит: освободили место — сервер покажет обычную страницу. Строго меньше лимита, как
+              // «cleared» в status-poll.js: сервер считает лимит достигнутым при устройств ≥ лимита
+              if (this.pageState === 'limited' && this.deviceLimit > 0 && this.devices.length < this.deviceLimit) {
+                window.location.reload();
+              }
             } catch {
               alert('Не удалось удалить устройство. Попробуйте ещё раз.');
             } finally {
@@ -181,7 +216,8 @@
                   new QRCode(qrMainContainer, {
                     text: this.user.subscription_url,
                     width: 200,
-                    height: 200
+                    height: 200,
+                    correctLevel: QRCode.CorrectLevel.H
                   });
                 }
               });
@@ -208,11 +244,6 @@
                   if (apps.length > 0 && !this.selectedClient) {
                       this.selectedClient = apps[0].id;
                   }
-              });
-
-              this.$watch('selectedOs', () => {
-                this.copiedKey = false;
-                this.copiedTerminal = false;
               });
           },
           get deviceCount() {
@@ -269,6 +300,19 @@ get alternativeApps() {
     return app && !primaryIds.has(app.id);
   });
 },
+          // ссылка на .deb основного приложения Linux (без query — подписанные ссылки CDN)
+          get linuxDebUrl() {
+            const url = this.primaryApp?.install?.[0]?.url || '';
+            return url.split(/[?#]/)[0].toLowerCase().endsWith('.deb') ? url : null;
+          },
+          // адрес и имя файла — в одинарных кавычках: & ; и пробелы в ссылке не ломают команду
+          get linuxInstallCommand() {
+            const url = this.linuxDebUrl;
+            if (!url) return '';
+            const quote = (value) => "'" + value.replace(/'/g, "'\\''") + "'";
+            const fileName = url.split(/[?#]/)[0].split('/').pop();
+            return 'wget -O ' + quote(fileName) + ' ' + quote(url) + '\nsudo apt install ./' + quote(fileName);
+          },
           deeplink(app) {
             return `${app.scheme}://add/${this.user.subscription_url}`;
           },
@@ -279,27 +323,40 @@ get alternativeApps() {
             const statuses = {
               active: "Активен",
               limited: "Ограничен",
-              expired: "Просрочен",
+              expired: "Подписка истекла",
               disabled: "Отключен"
             };
             return statuses[this.user.status.value] || "Неизвестен";
           },
-          get statusClass() {
-            const classes = {
-              active: 'text-green-500',
-              limited: 'text-yellow-500',
-              expired: 'text-red-500',
-              disabled: 'text-gray-500'
+          get statusColor() {
+            const colors = {
+              active: 'var(--green)',
+              limited: '#eeba00',
+              expired: 'var(--red)',
+              disabled: 'var(--text-secondary)'
             };
-            return classes[this.user.status.value] || 'text-gray-500';
+            return colors[this.user.status.value] || 'var(--text-secondary)';
           },
+          // строка белого списка: есть лимит или уже есть расход — без лимита «расход/Безлимит»;
+          // у кого белого списка нет совсем (ни лимита, ни расхода), строки нет
           get isBsActive() {
-            return this.user.bs_monthly_limit_total > 0;
+            return this.user.bs_monthly_limit_total > 0 || this.user.bs_monthly_used > 0;
           },
           get bsTrafficText() {
             const used = bytesFormat(this.user.bs_monthly_used);
-            const limit = bytesFormat(this.user.bs_monthly_limit_total);
+            const limit = +this.user.bs_monthly_limit_total ? bytesFormat(this.user.bs_monthly_limit_total) : 'Безлимит';
             return `${used}/${limit}`;
+          },
+          // «2 дня • 23.05.26»; истекла / ключ устарел — только дата
+          get termText() {
+            if (this.user.expire == 0) return 'Бессрочно';
+            const date = new Date(this.user.expire * 1000).toLocaleDateString('ru-RU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: '2-digit'
+            });
+            const ended = this.pageState === 'expired' || this.pageState === 'revoked' || this.user.expire * 1000 < Date.now();
+            return ended ? date : `${this.remainingDays} • ${date}`;
           },
           get expirationText() {
             if (this.user.expire == 0) return 'Никогда';
@@ -353,16 +410,40 @@ get alternativeApps() {
               return app ? app.scheme : null;
           },
 
-          async copyToClipboard(text) {
+          // Буфер обмена браузер даёт не везде: только по https, а встроенные окна приложений
+          // (мессенджеры, VPN-клиенты) иногда его запрещают. Тогда — старый способ через выделение текста,
+          // не вышло и так — уведомление об ошибке, а не тишина.
+          async copyToClipboard(text, message = 'Ключ скопирован') {
+            let copied = false;
             try {
               await navigator.clipboard.writeText(text);
-              this.copiedKey = true;
-              setTimeout(() => {
-                this.copiedKey = false;
-              }, 2000);
+              copied = true;
             } catch (e) {
-              console.error('Copy failed', e);
+              copied = this.copyWithSelection(text);
             }
+            if (copied) {
+              this.showToast(message);
+            } else {
+              this.showToast('Не удалось скопировать', 'error');
+            }
+          },
+
+          copyWithSelection(text) {
+            const field = document.createElement('textarea');
+            field.value = text;
+            field.setAttribute('readonly', '');
+            field.style.position = 'fixed';
+            field.style.opacity = '0';
+            document.body.appendChild(field);
+            field.select();
+            let ok = false;
+            try {
+              ok = document.execCommand('copy');
+            } catch (e) {
+              ok = false;
+            }
+            field.remove();
+            return ok;
           },
         }));
       });
@@ -370,21 +451,25 @@ get alternativeApps() {
   </head>
   <body>
     <div x-data="subscriptionManager" x-init="init()" x-cloak class="wrapper">
+      {# Уведомление «скопировано» (NPVPN-2315): вверху экрана поверх всего, само скрывается через 3 с #}
+      <div class="toast" role="status" :class="{ 'toast--visible': toastVisible }" :aria-hidden="!toastVisible">
+        <svg x-show="toastKind === 'success'" class="toast__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="11.9999" r="9" fill="#2FC26E" />
+          <path d="M15 10L11 14L9 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white" />
+        </svg>
+        {# ошибка — как тост ошибки в вебе #}
+        <svg x-show="toastKind === 'error'" class="toast__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="#EF3124" />
+          <path d="M14 10L10 14M10 10L14 14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span class="toast__text" x-text="toast"></span>
+        <button type="button" class="toast__close" aria-label="Закрыть" @click="hideToast()">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 7L12 12M12 12L17 17M12 12L7 17M12 12L17 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
       <div class="app-container">
         <aside  side class="sidebar">
           <nav class="sidebar-nav">
-            <button
-              @click="currentPage = 'settings'"
-              class="sidebar-nav__item"
-              :class="{ 'sidebar-nav__item--active': currentPage === 'settings' }"
-            >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <path d="M13.6006 21.0761L19.0608 17.9236C19.6437 17.5871 19.9346 17.4188 20.1465 17.1834C20.3341 16.9751 20.4759 16.7297 20.5625 16.4632C20.6602 16.1626 20.6602 15.8267 20.6602 15.1568V8.84268C20.6602 8.17277 20.6602 7.83694 20.5625 7.53638C20.4759 7.26982 20.3341 7.02428 20.1465 6.816C19.9355 6.58161 19.6453 6.41405 19.0674 6.08043L13.5996 2.92359C13.0167 2.58706 12.7259 2.41913 12.416 2.35328C12.1419 2.295 11.8584 2.295 11.5843 2.35328C11.2744 2.41914 10.9826 2.58706 10.3997 2.92359L4.93843 6.07666C4.35623 6.41279 4.06535 6.58073 3.85352 6.816C3.66597 7.02428 3.52434 7.26982 3.43773 7.53638C3.33984 7.83765 3.33984 8.17436 3.33984 8.84742V15.1524C3.33984 15.8254 3.33984 16.1619 3.43773 16.4632C3.52434 16.7297 3.66597 16.9751 3.85352 17.1834C4.06548 17.4188 4.35657 17.5871 4.93945 17.9236L10.3997 21.0761C10.9826 21.4126 11.2744 21.5806 11.5843 21.6465C11.8584 21.7047 12.1419 21.7047 12.416 21.6465C12.7259 21.5806 13.0177 21.4126 13.6006 21.0761Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                <path d="M9 11.9998C9 13.6566 10.3431 14.9998 12 14.9998C13.6569 14.9998 15 13.6566 15 11.9998C15 10.3429 13.6569 8.99976 12 8.99976C10.3431 8.99976 9 10.3429 9 11.9998Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              <span>Настройки</span>
-            </button>
-
             <button
               @click="currentPage = 'tariff'"
               class="sidebar-nav__item"
@@ -405,6 +490,18 @@ get alternativeApps() {
                 <path d="M6 7.5002V7.2002C6 6.08009 6 5.51962 6.21799 5.0918C6.40973 4.71547 6.71547 4.40973 7.0918 4.21799C7.51962 4 8.08009 4 9.2002 4H17.8002C18.9203 4 19.4796 4 19.9074 4.21799C20.2837 4.40973 20.5905 4.71547 20.7822 5.0918C21 5.5192 21 6.07899 21 7.19691V13.8031C21 14.921 21 15.48 20.7822 15.9074C20.5905 16.2837 20.2839 16.5905 19.9076 16.7822C19.4802 17 18.921 17 17.8031 17H10.5M3 16.8002V11.2002C3 10.0801 3 9.51962 3.21799 9.0918C3.40973 8.71547 3.71547 8.40973 4.0918 8.21799C4.51962 8 5.08009 8 6.2002 8H6.80019C7.9203 8 8.47957 8 8.9074 8.21799C9.28372 8.40973 9.59048 8.71547 9.78223 9.0918C10 9.5192 10 10.079 10 11.1969V16.8031C10 17.921 10 18.48 9.78223 18.9074C9.59048 19.2837 9.28372 19.5905 8.9074 19.7822C8.47999 20 7.921 20 6.80309 20H6.19691C5.07899 20 4.5192 20 4.0918 19.7822C3.71547 19.5905 3.40973 19.2837 3.21799 18.9074C3 18.4796 3 17.9203 3 16.8002Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               <span>Устройства</span>
+            </button>
+
+            <button
+              @click="currentPage = 'settings'"
+              class="sidebar-nav__item"
+              :class="{ 'sidebar-nav__item--active': currentPage === 'settings' }"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M13.6006 21.0761L19.0608 17.9236C19.6437 17.5871 19.9346 17.4188 20.1465 17.1834C20.3341 16.9751 20.4759 16.7297 20.5625 16.4632C20.6602 16.1626 20.6602 15.8267 20.6602 15.1568V8.84268C20.6602 8.17277 20.6602 7.83694 20.5625 7.53638C20.4759 7.26982 20.3341 7.02428 20.1465 6.816C19.9355 6.58161 19.6453 6.41405 19.0674 6.08043L13.5996 2.92359C13.0167 2.58706 12.7259 2.41913 12.416 2.35328C12.1419 2.295 11.8584 2.295 11.5843 2.35328C11.2744 2.41914 10.9826 2.58706 10.3997 2.92359L4.93843 6.07666C4.35623 6.41279 4.06535 6.58073 3.85352 6.816C3.66597 7.02428 3.52434 7.26982 3.43773 7.53638C3.33984 7.83765 3.33984 8.17436 3.33984 8.84742V15.1524C3.33984 15.8254 3.33984 16.1619 3.43773 16.4632C3.52434 16.7297 3.66597 16.9751 3.85352 17.1834C4.06548 17.4188 4.35657 17.5871 4.93945 17.9236L10.3997 21.0761C10.9826 21.4126 11.2744 21.5806 11.5843 21.6465C11.8584 21.7047 12.1419 21.7047 12.416 21.6465C12.7259 21.5806 13.0177 21.4126 13.6006 21.0761Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M9 11.9998C9 13.6566 10.3431 14.9998 12 14.9998C13.6569 14.9998 15 13.6566 15 11.9998C15 10.3429 13.6569 8.99976 12 8.99976C10.3431 8.99976 9 10.3429 9 11.9998Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span>Настройки</span>
             </button>
 
             {% if web_url or bot_url %}
@@ -439,21 +536,79 @@ get alternativeApps() {
             {% endif %}
           {% endset %}
           {# Мобилка: справа в шапке — значок поддержки и кабинет (NPVPN-2314). #}
+          {% set support_header %}{% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}{% endset %}
           {% set header_actions %}
             <div class="page-header__actions">
-              {% with support_variant = "header" %}{% include "_support_menu.html" %}{% endwith %}
+              {{ support_header }}
               {{ account_btn }}
             </div>
           {% endset %}
-          <div x-show="currentPage === 'settings'" class="page-header">
-            <div class="page-header__top">
-              <h2 class="page-title">Настройка VPN</h2>
-              {{ header_actions }}
+          {# Инфокарточка (NPVPN-2315): что случилось и что делать. kind: revoked — «вставьте новый ключ»
+             («Тариф» и вместо «Настроек»: старый ключ не работает), expired — «оплатите» («Тариф»),
+             devices — «войдите в кабинет, чтобы подключить больше» («Устройства» на лимите). #}
+          {# Основная кнопка состояния: истекла и есть оплата — «Оплатить» (ссылку собирает бэк,
+             resolve_pay_url: только http(s)), иначе «Войти в личный кабинет», если он есть.
+             Одна на инфоблок и заглушку «Настроек», чтобы не разошлись. #}
+          {% macro main_action(kind) %}
+            {%- if kind == "expired" and pay_url -%}
+              <a href="{{ pay_url }}/{{ token }}" class="primary-btn" rel="noreferrer">Оплатить</a>
+            {%- elif web_url or bot_url -%}
+              <a href="{{ web_url or bot_url }}" class="primary-btn" data-cabinet-link>Войти в личный кабинет</a>
+            {%- endif -%}
+          {% endmacro %}
+          {% macro info_card(kind) %}
+            <div class="state-card">
+              <svg class="state-card__icon" width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <circle cx="28" cy="27.9999" r="21" fill="#F99E0B" />
+                <rect x="28" y="18.6666" width="0.0233333" height="0.0233333" stroke="white" stroke-width="7" stroke-linejoin="round" />
+                <path d="M28 28V37.3333" stroke-width="4.66667" stroke-linecap="round" stroke-linejoin="round" stroke="white" />
+              </svg>
+              <p class="state-card__text">
+                {#- без кабинета (не заданы web_url и bot_url) не отправляем туда, где нет кнопки -#}
+                {%- if kind == "revoked" -%}
+                  Чтобы продолжить пользоваться сервисом, вставьте новый ключ в&nbsp;приложение
+                  {%- if web_url or bot_url %}&nbsp;— для этого войдите в&nbsp;личный кабинет{% endif %}
+                {%- elif kind == "expired" -%}
+                  Подписка истекла&nbsp;— оплатите её, чтобы продолжить пользоваться сервисом
+                {%- elif web_url or bot_url -%}
+                  Чтобы подключить больше устройств&nbsp;— войдите в&nbsp;личный кабинет
+                {%- else -%}
+                  Чтобы подключить новое устройство&nbsp;— удалите одно из&nbsp;подключённых
+                {%- endif -%}
+              </p>
+              {% set pay = kind == "expired" and pay_url %}
+              {% if pay or web_url or bot_url %}
+                <div class="state-card__actions{{ ' state-card__actions--pay' if pay }}">
+                  {{ main_action(kind) }}
+                  {% if pay and (web_url or bot_url) %}
+                    <a href="{{ web_url or bot_url }}" class="text-btn" data-cabinet-link>Войти в личный кабинет</a>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+          {% endmacro %}
+          {% set state_card %}{% if page_state %}{{ info_card("devices" if page_state == "limited" else page_state) }}{% endif %}{% endset %}
+          {# В состояниях на «Настройках» заглушка сама говорит, что случилось: заголовка нет (макет),
+             на мобилке остаются значки поддержки и кабинета, на ПК шапки нет совсем. #}
+          <div x-show="currentPage === 'settings'" class="page-header{{ ' page-header--mobile-only' if page_state }}">
+            <div class="page-header__top{{ ' page-header__top--actions-only' if page_state }}">
+              {% if not page_state %}
+                <h2 class="page-title">Как настроить VPN</h2>
+                {{ header_actions }}
+              {% elif page_state == "expired" and pay_url %}
+                {# в заглушке «Оплатить» — вход в кабинет остаётся в шапке #}
+                {{ header_actions }}
+              {% else %}
+                {# в заглушке уже «Войти в личный кабинет» — без дубля в шапке #}
+                <div class="page-header__actions">{{ support_header }}</div>
+              {% endif %}
             </div>
           </div>
           <div x-show="currentPage === 'tariff'" class="page-header">
             <div class="page-header__top">
-              <h2 class="page-title">Текущий тариф</h2>
+              <h2 class="page-title">
+                {%- if page_state == "expired" %}Подписка истекла{% elif page_state == "revoked" %}Ключ доступа устарел{% else %}Тариф{% endif -%}
+              </h2>
               {{ header_actions }}
             </div>
           </div>
@@ -473,11 +628,40 @@ get alternativeApps() {
             <p class="device-count">
                Подключено <span x-text="deviceCount"></span>
               <span x-show="deviceLimit > 0">
-                из <span x-text="deviceLimit"></span>
-              </span>
+                из <span x-text="deviceLimit"></span></span>
+              {%- if page_state == "limited" %}&nbsp;— лимит устройств достигнут{% endif %}
             </p>
           </div>
     
+          {% if page_state %}
+          {# Заглушка «Настроек» в состояниях: QR и инструкции тут не сработают (ключ устарел, подписка
+             истекла, лимит) — говорим, что сделать. Вид — как «Нет активной подписки» в вебе. #}
+          <main x-show="currentPage === 'settings'" class="state-fallback-main">
+            <div class="state-fallback">
+              <div class="state-fallback__icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                  <rect x="2" y="17" width="20" height="3" rx="1" stroke-width="2"/>
+                  <rect x="3" y="5" width="18" height="12" rx="1" stroke-width="2"/>
+                  <path d="M14 6L10 6" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <h3 class="state-fallback__title">
+                {%- if page_state == "revoked" %}Ключ доступа устарел{% elif page_state == "expired" %}Подписка истекла{% else %}Лимит устройств достигнут{% endif -%}
+              </h3>
+              <p class="state-fallback__text">
+                {%- set has_cabinet = web_url or bot_url -%}
+                {%- if page_state == "revoked" -%}
+                  {%- if has_cabinet %}Войдите в&nbsp;личный кабинет, чтобы получить новый ключ{% else %}Получите новый ключ, чтобы подключить устройство{% endif -%}
+                {%- elif page_state == "expired" -%}
+                  Оплатите подписку, чтобы подключить устройство
+                {%- else -%}
+                  {%- if has_cabinet %}Удалите устройство или увеличьте лимит в&nbsp;личном кабинете{% else %}Удалите одно из&nbsp;подключённых устройств, чтобы подключить новое{% endif -%}
+                {%- endif -%}
+              </p>
+              {{ main_action(page_state) }}
+            </div>
+          </main>
+          {% else %}
           <main x-show="currentPage === 'settings'" class="space-y-4">
             <div class="platforms-list">
               <template x-for="os in osOptions" :key="os.id">
@@ -493,313 +677,141 @@ get alternativeApps() {
     
             <div x-show="selectedOs === 'QR'" class="qr-wrapper">
                 <p class="qr-title">Отсканируйте для подключения другого устройства</p>
-                <div
-                  id="qrcode-main"
-                  class="w-[214px] h-[216px]" 
-                  @click="copyToClipboard(user.subscription_url)"
-                ></div>
-                <p class="text-center text-[#7b7b7b]" x-text="copiedKey ? 'Ключ скопирован!' : 'Нажмите на QR-код, чтобы скопировать ключ'"></p>
+                {# QR с логотипом «VPN» по центру — как реферальный QR бота (src/utils/ref_qr.py, та же
+                   картинка): уровень коррекции H восстанавливает закрытый логотипом центр (~8% площади; 56px — с запасом, 60+ на плотном коде уже не всегда читается) #}
+                <div class="qr-code">
+                  <div id="qrcode-main"></div>
+                  <img class="qr-code__logo" src="{{ sub_statics }}assets/qr-logo.png?v={{ static_v }}" alt="" width="56" height="56">
+                </div>
             </div>
     
-            <div x-show="selectedOs !== 'QR'" class="grid grid-cols-1 custom-gap">
-                <template x-if="selectedOs === 'QR'">
-                  <div class="flex flex-col items-center">
-                    <div
-                      id="qrcode-main"
-                      class="bg-white rounded-lg flex items-center justify-center"
-                      style="
-                        width:214px;
-                        height:216px;
-                        padding:8px;
-                      "
-                    ></div>
+            {# Вкладки платформ (макет NPVPN-2315): серые карточки «Скачайте приложение» и «Добавьте ключ»,
+               у TV — две карточки-шага. #}
+            <div x-show="selectedOs !== 'QR'" class="setup-steps">
+              <template x-if="selectedOs !== 'TV'">
+                <section class="setup-card">
+                  <h3 class="setup-card__title">Скачайте приложение</h3>
+
+                  <div class="app-chips" x-show="primaryApps.length">
+                    <template x-for="app in primaryApps" :key="app.id">
+                      <a
+                        :href="app.install?.[0]?.url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="app-chip"
+                        @click="selectedClient = app.id"
+                      >
+                        <template x-if="getAppIcon(app)">
+                          <img class="app-chip__icon" :src="getAppIcon(app)" alt="" width="16" height="16">
+                        </template>
+                        <span x-text="app.name"></span>
+                      </a>
+                    </template>
                   </div>
-                </template>
 
-                  <div>
-                    <template x-if="selectedOs !== 'TV'">
-                      <div>
-                        <p class="steps-title mb-4">
-                          Скачайте приложение
-                        </p>
+                  {# команда apt — только для .deb: для AppImage, rpm и прочего она ничего не установит #}
+                  <template x-if="selectedOs === 'Linux' && linuxDebUrl">
+                    <div class="setup-card__group">
+                      <p class="setup-card__label">
+                        Установка через терминал для <span x-text="primaryApp?.name || ''"></span>
+                      </p>
+                      <pre id="linux-commands" class="terminal-code"><code
+                        x-text="linuxInstallCommand"
+                      ></code></pre>
+                      <button type="button" class="small-copy-btn" @click="copyTerminalCommands()">
+                        <span>Скопировать</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 3H4V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </button>
+                    </div>
+                  </template>
 
-                        <template x-for="app in primaryApps" :key="app.id">
+                  <template x-if="alternativeApps.length && currentPlatform !== 'androidtv'">
+                    <div class="setup-card__group">
+                      <p class="setup-card__label">Также подойдут</p>
+                      <div class="app-chips">
+                        <template x-for="app in alternativeApps" :key="app.id">
                           <a
-                            :href="app.install?.[0]?.url"
+                            :href="app.install[0].url"
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="download-app-card"
+                            class="app-chip"
                             @click="selectedClient = app.id"
-                          >
-                            <div class="download-app-card__left">
-
-                              <template x-if="isHappApp(app) || isIncyApp(app) || isV2rayApp(app)">
-                                <div class="download-app-card__icon">
-                                  <img
-                                    :src="getAppIcon(app)"
-                                    :alt="app.name"
-                                  >
-                                </div>
-                              </template>
-
-                              <div class="download-app-card__info">
-                                <div
-                                  class="download-app-card__name"
-                                  x-text="app.name"
-                                ></div>
-
-                                <div class="download-app-card__description">
-                                  Основное приложение
-                                </div>
-                              </div>
-                            </div>
-
-                            <div class="download-app-card__download">
-                              <svg
-                                width="24"
-                                height="24"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <path
-                                  d="M6 21H18M12 3V17M7 12L12 17L17 12"
-                                  stroke="black"
-                                  stroke-width="2"
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                />
-                              </svg>
-                            </div>
-                          </a>
-                        </template>
-
-                        <template x-if="alternativeApps.length && currentPlatform !== 'androidtv'">
-                          <div class="flex flex-col custom-gap-steps">
-                            <p class="steps-text mt-4">
-                              Также подойдут
-                            </p>
-
-                            <div class="flex gap-2">
-                              <template x-for="app in alternativeApps" :key="app.id">
-                                <a
-                                  :href="app.install[0].url"
-                                  target="_blank"
-                                  @click="selectedClient = app.id"
-                                  :class="['ios','macos'].includes(currentPlatform)
-                                    ? 'config-btn clients-btn'
-                                    : 'config-btn box-content flex items-center justify-center gap-2 bg-[#f6f6f6] font-semibold transition-colors clients-btn'"
-                                  :style="['ios','macos'].includes(currentPlatform) ? 'border-radius: 100px;' : ''"
-                                  x-text="app.name"
-                                ></a>
-                              </template>
-                            </div>
-                          </div>
+                            x-text="app.name"
+                          ></a>
                         </template>
                       </div>
-                    </template>
+                    </div>
+                  </template>
+                </section>
+              </template>
 
-                    <!-- TV -->
-                    <template x-if="selectedOs === 'TV'">
-                      <div>
-                        <p class="steps-title tv-step-title mb-2">
-                          Сначала установите приложение
-                          <template x-if="primaryApp?.name">
-                            <span>«<span x-text="primaryApp.name"></span>»</span>
-                          </template>
-                          на телефон iPhone или Android
-                        </p>
-                        <p class="steps-text tv-step-text">
-                          Настройте и убедитесь что VPN корректно работает на телефоне.
-                          После этого скачайте то же приложение на телевизор AndroidTV через Google Play,
-                          найдя его в поиске.
-                        </p>
-                      </div>
-                    </template>
-
-                    <template x-if="selectedOs === 'Linux'">
-                      <div class="flex flex-col steps-text mb-2 mt-4">
-                        <p class="steps-text">
-                          Установка через терминал для
-                          <span x-text="primaryApp?.name || ''"></span>
-                        </p>
-                      </div>
-                    </template>
-
-                    <template x-if="selectedOs === 'Linux'">
-                      <div class="flex flex-col custom-gap-steps">
-                        <div class="linux-code w-full p-3">
-                          <pre
-                            id="linux-commands"
-                            class="m-0 leading-[20px] whitespace-pre-wrap break-all overflow-hidden"
-                            style="font-family: var(--font-family);"
-                          ><code
-                            x-text="(() => {
-                              const url = primaryApp?.install?.[0]?.url;
-                              if (!url) return 'Ссылка на установщик недоступна';
-
-                              const fileName = url.split('/').pop();
-
-                              return `wget ${url}\nsudo apt install ./${fileName}`;
-                            })()"
-                          ></code></pre>
-                          <button @click="copyTerminalCommands()" class="mb-2 block">
-                            <template x-if="!copiedTerminal">
-                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M16 3H4V16" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                                <path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="#7B7B7B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                              </svg>
-                            </template>
-
-                            <template x-if="copiedTerminal">
-                              <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <circle cx="8" cy="7.99988" r="6" stroke="#2FC26E" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/>
-                                <path d="M10 6.66663L7.33333 9.33329L6 7.99996" stroke="#2FC26E" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/>
-                              </svg>
-                            </template>
-                          </button>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-    
-              <div>
-                <template x-if="selectedOs !== 'TV'">
-                  <p class="steps-title mb-2 lg:mb-4">
-                    Добавьте ключ
-                  </p>
-                </template>
-
-                <template x-if="selectedOs === 'TV'">
-                  <p class="steps-title tv-step-title mb-2">
-                    Запустите приложение на телевизоре
-                  </p>
-                </template>
-
-                <div x-show="selectedOs !== 'TV'">
-                  <p class="steps-text mb-2 key-step-text">
-                    Добавьте ключ в приложение, чтобы подключиться к VPN
-                  </p>
-                </div>
-
-                <div x-show="selectedOs === 'TV'">
-                  <p class="steps-text tv-step-text mb-4">
-                    На телевизоре появится QR-код. Отсканируйте его
-                    на мобильном телефоне. Выберите настройки подключения
-                    для телевизора.
-                  </p>
-                  <p class="steps-text tv-step-text mb-4">
-                    После добавления выберите страну
-                    и нажмите «Подключить»
-                  </p>
-                </div>
-
-                <template x-if="!['QR','TV'].includes(selectedOs)">
-                  <div class="button-row">
-                    <button
-                      @click="copyToClipboard(user.subscription_url)"
-                      class="copy-button"
-                    >
-                      <template x-if="!copiedKey">
-                        <svg
-                          width="24"
-                          height="24"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            d="M16 3H4V16"
-                            stroke="#141413"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                          <path
-                            d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z"
-                            stroke="#141413"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                        </svg>
-                      </template>
-
-                      <template x-if="copiedKey">
-                        <svg
-                          width="24"
-                          height="24"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <circle
-                            cx="12"
-                            cy="12"
-                            r="9"
-                            stroke="#2FC26E"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                          <path
-                            d="M15 10L11 14L9 12"
-                            stroke="#2FC26E"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          />
-                        </svg>
-                      </template>
-
-                      <span>Копировать ключ</span>
-                    </button>
-
+              <template x-if="selectedOs !== 'TV'">
+                <section class="setup-card">
+                  <h3 class="setup-card__title">Добавьте ключ</h3>
+                  <p class="setup-card__text">Добавьте ключ в приложение, чтобы подключиться к VPN</p>
+                  <div class="setup-card__actions">
                     <template x-if="selectedApp && selectedApp.scheme">
                       <a
                         :href="`${selectedApp.scheme}://add/${user.subscription_url}`"
-                        class="add-key-button"
-                        style="font-family: var(--third-family);"
+                        class="primary-btn"
                         x-text="`Добавить ключ в ${selectedApp.name}`"
                       ></a>
                     </template>
+                    <button type="button" class="text-btn copy-key-btn" @click="copyToClipboard(user.subscription_url)">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 3H4V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <span>Копировать ключ</span>
+                    </button>
                   </div>
-                </template>
-              </div>
+                </section>
+              </template>
+
+              <template x-if="selectedOs === 'TV'">
+                <section class="setup-card">
+                  <h3 class="setup-card__title">
+                    Сначала установите приложение<template x-if="primaryApp?.name"><span> «<span x-text="primaryApp.name"></span>»</span></template>
+                    на&nbsp;телефон iPhone или Android
+                  </h3>
+                  <p class="setup-card__body">
+                    Настройте и убедитесь что VPN корректно работает на телефоне. После этого скачайте то же
+                    приложение на телевизор AndroidTV через Google Play, найдя его в поиске.
+                  </p>
+                </section>
+              </template>
+
+              <template x-if="selectedOs === 'TV'">
+                <section class="setup-card">
+                  <h3 class="setup-card__title">Запустите приложение на телевизоре</h3>
+                  <p class="setup-card__body">
+                    На телевизоре появится QR-код. Отсканируйте его на мобильном телефоне. Выберите настройки
+                    подключения для телевизора.
+                  </p>
+                  <p class="setup-card__body">После добавления выберите страну и нажмите «Подключить»</p>
+                </section>
+              </template>
             </div>
           </main>
+          {% endif %}
     
-          <main x-show="currentPage === 'tariff'" style="max-width: 680px;">
-            <div class="flex items-center space-x-4">
-              <div class="space-y-2 flex-1">
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">ID</span>
-                  <span class="tariff-info" x-text="user.username"></span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Статус</span>
-                  <span class="tariff-info" :class="statusClass" x-text="statusText"></span>
-                </div>
-                <div class="flex justify-between items-center" x-show="isBsActive">
-                  <span class="text-[#7b7b7b] tariff-info">Трафик (белый список)</span>
-                  <span class="tariff-info" x-text="bsTrafficText"></span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Действует до</span>
-                  <span class="tariff-info" x-text="expirationText"></span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Осталось</span>
-                  <span class="tariff-info" x-text="remainingDays"></span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-[#7b7b7b] tariff-info">Кол-во устройств</span>
-                  <span class="tariff-info">
-                    {% if user.device_limit %}{{ devices|length }} из {{ user.device_limit }}{% else %}{{ devices|length }}{% endif %}
-                  </span>
-                </div>
-              </div>
+          <main x-show="currentPage === 'tariff'" class="tariff-stack">
+            <div class="tariff-card">
+              {# заголовок карточки — только когда у страницы другой («Подписка истекла» / «Ключ доступа устарел»),
+                 иначе дубль «Тариф» под «Тарифом» #}
+              {% if page_state in ("expired", "revoked") %}<h3 class="tariff-card__title">Тариф</h3>{% endif %}
+              <dl class="tariff-card__rows">
+                <dt>ID</dt>
+                <dd x-text="user.username"></dd>
+                <dt>Статус</dt>
+                <dd :style="{ color: statusColor }" x-text="statusText"></dd>
+                <dt x-show="isBsActive">Трафик (белый список)</dt>
+                <dd x-show="isBsActive" x-text="bsTrafficText"></dd>
+                <dt>Срок действия</dt>
+                <dd x-text="termText"></dd>
+                <dt>Устройства</dt>
+                {# живой счётчик: после удаления устройства обновляется без перезагрузки #}
+                <dd x-text="deviceLimit > 0 ? `${deviceCount} из ${deviceLimit}` : deviceCount">{% if user.device_limit %}{{ devices|length }} из {{ user.device_limit }}{% else %}{{ devices|length }}{% endif %}</dd>
+              </dl>
             </div>
+            {% if page_state in ("expired", "revoked") %}{{ state_card }}{% endif %}
           </main>
     
           <main x-show="currentPage === 'devices'" :class="{ 'main--centered': deviceCount === 0 }">
@@ -838,6 +850,8 @@ get alternativeApps() {
                     </div>
                   </div>
     
+                  {# ключ устарел / подписка истекла — сервер удаление отклоняет (403), кнопку не показываем #}
+                  {% if page_state not in ("revoked", "expired") %}
                   <button
                     type="button"
                     class="device-card__delete"
@@ -845,31 +859,16 @@ get alternativeApps() {
                     :disabled="revokingId === device.id"
                     @click="openRevokeModal(device)"
                   >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <g clip-path="url(#clip0_5280_1914)">
-                        <path d="M8 6.14239L8 4.4709C8 3.30611 8 2.72371 8.34942 2.36186C8.69883 2 9.26121 2 10.386 2L13.614 2C14.7388 2 15.3012 2 15.6506 2.36186C16 2.72371 16 3.30611 16 4.4709V6.14239" stroke="#141413" stroke-width="2" />
-                        <path d="M12 21.0002C10.6442 21.0002 9.70218 20.9992 8.97266 20.925C8.26177 20.8528 7.85572 20.7184 7.54492 20.5168C7.28461 20.348 7.05193 20.1398 6.85547 19.8997C6.62098 19.6129 6.44287 19.2241 6.29297 18.5256C6.13912 17.8086 6.03462 16.8716 5.88574 15.5237L4.88184 6.43091L19.1182 6.43091L18.1143 15.5237C17.9654 16.8716 17.8609 17.8086 17.707 18.5256C17.5571 19.2241 17.38 19.6129 17.1455 19.8997C16.949 20.14 16.7155 20.3479 16.4551 20.5168C16.1444 20.7184 15.7389 20.8527 15.0283 20.925C14.2987 20.9992 13.3561 21.0002 12 21.0002Z" stroke="#141413" stroke-width="2" />
-                        <path d="M3 6.12198H21" stroke="#141413" stroke-width="2" stroke-linecap="round" />
-                      </g>
-                      <defs>
-                        <clipPath id="clip0_5280_1914">
-                          <rect width="24" height="24" fill="white" />
-                        </clipPath>
-                      </defs>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M7 7L12 12M12 12L17 17M12 12L7 17M12 12L17 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="currentColor" />
                     </svg>
                   </button>
+                  {% endif %}
                 </div>
               </template>
 
-                <button class="btn-fourth add-device" style="border-radius: 100px;" @click="currentPage = 'settings'" rel="noopener noreferrer">
-                  <div class="device_button">
-                      <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M8.07107 1V8.07107M8.07107 8.07107V15.1421M8.07107 8.07107H1M8.07107 8.07107H15.1421" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                  </div>
-                  Добавить устройства
-                </button>
             </div>
+            {% if page_state == "limited" %}{{ state_card }}{% endif %}
     
             <div class="empty-devices" x-show="devices.length === 0">
               <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -898,7 +897,7 @@ get alternativeApps() {
                         Удалить устройство<br>
                         из списка?
                       </h3>
-                      <p>Оно исчезнет из списка ваших устройств. Вы сможете снова добавить его позже.</p>
+                      <p class="modal-text">Оно исчезнет из списка ваших устройств. Вы сможете снова добавить его позже.</p>
                     </div>
                     <button
                         class="modal-close"
@@ -929,10 +928,11 @@ get alternativeApps() {
                         Оставить
                     </button>
                     <button
-                        class="btn-tertiary"
+                        class="btn-danger"
+                        :disabled="revokingId !== null"
                         @click="revokeDevice(selectedDevice.id)"
                     >
-                        Выйти с устройства
+                        Удалить
                     </button>
                 </div>
             </div>
@@ -942,18 +942,6 @@ get alternativeApps() {
 
       <footer>
         <nav class="floating-nav">
-          <button
-              @click="currentPage = 'settings'"
-              class="floating-nav__item"
-              :class="{ 'floating-nav__item--active': currentPage === 'settings' }"
-          >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M13.6006 21.0761L19.0608 17.9236C19.6437 17.5871 19.9346 17.4188 20.1465 17.1834C20.3341 16.9751 20.4759 16.7297 20.5625 16.4632C20.6602 16.1626 20.6602 15.8267 20.6602 15.1568V8.84268C20.6602 8.17277 20.6602 7.83694 20.5625 7.53638C20.4759 7.26982 20.3341 7.02428 20.1465 6.816C19.9355 6.58161 19.6453 6.41405 19.0674 6.08043L13.5996 2.92359C13.0167 2.58706 12.7259 2.41913 12.416 2.35328C12.1419 2.295 11.8584 2.295 11.5843 2.35328C11.2744 2.41914 10.9826 2.58706 10.3997 2.92359L4.93843 6.07666C4.35623 6.41279 4.06535 6.58073 3.85352 6.816C3.66597 7.02428 3.52434 7.26982 3.43773 7.53638C3.33984 7.83765 3.33984 8.17436 3.33984 8.84742V15.1524C3.33984 15.8254 3.33984 16.1619 3.43773 16.4632C3.52434 16.7297 3.66597 16.9751 3.85352 17.1834C4.06548 17.4188 4.35657 17.5871 4.93945 17.9236L10.3997 21.0761C10.9826 21.4126 11.2744 21.5806 11.5843 21.6465C11.8584 21.7047 12.1419 21.7047 12.416 21.6465C12.7259 21.5806 13.0177 21.4126 13.6006 21.0761Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                <path d="M9 11.9998C9 13.6566 10.3431 14.9998 12 14.9998C13.6569 14.9998 15 13.6566 15 11.9998C15 10.3429 13.6569 8.99976 12 8.99976C10.3431 8.99976 9 10.3429 9 11.9998Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              <span class="floating-nav__name">Настройки</span>
-          </button>
-
           <button
               @click="currentPage = 'tariff'"
               class="floating-nav__item"
@@ -974,6 +962,18 @@ get alternativeApps() {
                 <path d="M6 7.5002V7.2002C6 6.08009 6 5.51962 6.21799 5.0918C6.40973 4.71547 6.71547 4.40973 7.0918 4.21799C7.51962 4 8.08009 4 9.2002 4H17.8002C18.9203 4 19.4796 4 19.9074 4.21799C20.2837 4.40973 20.5905 4.71547 20.7822 5.0918C21 5.5192 21 6.07899 21 7.19691V13.8031C21 14.921 21 15.48 20.7822 15.9074C20.5905 16.2837 20.2839 16.5905 19.9076 16.7822C19.4802 17 18.921 17 17.8031 17H10.5M3 16.8002V11.2002C3 10.0801 3 9.51962 3.21799 9.0918C3.40973 8.71547 3.71547 8.40973 4.0918 8.21799C4.51962 8 5.08009 8 6.2002 8H6.80019C7.9203 8 8.47957 8 8.9074 8.21799C9.28372 8.40973 9.59048 8.71547 9.78223 9.0918C10 9.5192 10 10.079 10 11.1969V16.8031C10 17.921 10 18.48 9.78223 18.9074C9.59048 19.2837 9.28372 19.5905 8.9074 19.7822C8.47999 20 7.921 20 6.80309 20H6.19691C5.07899 20 4.5192 20 4.0918 19.7822C3.71547 19.5905 3.40973 19.2837 3.21799 18.9074C3 18.4796 3 17.9203 3 16.8002Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
               <span class="floating-nav__name">Устройства</span>
+          </button>
+
+          <button
+              @click="currentPage = 'settings'"
+              class="floating-nav__item"
+              :class="{ 'floating-nav__item--active': currentPage === 'settings' }"
+          >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13.6006 21.0761L19.0608 17.9236C19.6437 17.5871 19.9346 17.4188 20.1465 17.1834C20.3341 16.9751 20.4759 16.7297 20.5625 16.4632C20.6602 16.1626 20.6602 15.8267 20.6602 15.1568V8.84268C20.6602 8.17277 20.6602 7.83694 20.5625 7.53638C20.4759 7.26982 20.3341 7.02428 20.1465 6.816C19.9355 6.58161 19.6453 6.41405 19.0674 6.08043L13.5996 2.92359C13.0167 2.58706 12.7259 2.41913 12.416 2.35328C12.1419 2.295 11.8584 2.295 11.5843 2.35328C11.2744 2.41914 10.9826 2.58706 10.3997 2.92359L4.93843 6.07666C4.35623 6.41279 4.06535 6.58073 3.85352 6.816C3.66597 7.02428 3.52434 7.26982 3.43773 7.53638C3.33984 7.83765 3.33984 8.17436 3.33984 8.84742V15.1524C3.33984 15.8254 3.33984 16.1619 3.43773 16.4632C3.52434 16.7297 3.66597 16.9751 3.85352 17.1834C4.06548 17.4188 4.35657 17.5871 4.93945 17.9236L10.3997 21.0761C10.9826 21.4126 11.2744 21.5806 11.5843 21.6465C11.8584 21.7047 12.1419 21.7047 12.416 21.6465C12.7259 21.5806 13.0177 21.4126 13.6006 21.0761Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M9 11.9998C9 13.6566 10.3431 14.9998 12 14.9998C13.6569 14.9998 15 13.6566 15 11.9998C15 10.3429 13.6569 8.99976 12 8.99976C10.3431 8.99976 9 10.3429 9 11.9998Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span class="floating-nav__name">Настройки</span>
           </button>
         </nav>
       </footer>

@@ -4,6 +4,7 @@
 // Зависимостей нет — только встроенные модули Node.
 //
 // Вход (argv[2], JSON): { search, identityOk, chatwootError, lastToken, sdk, readyDelay, settle, roots: [{ mode, tgUrl, visible, sheet }], clicks: [[rootIndex, target]] }
+// target: toggle | chat | tg | close | escape | outside | overlay | tab | shiftTab | desktop | wait
 // target: "toggle" | "chat" | "tg" | "escape" | шторка: "close" (крестик) | "overlay" (затемнение) |
 // "tab" / "shiftTab" (клавиши в шторке) | "desktop" (окно расширили до десктопа) | "wait" (300 мс,
 // шторка успевает уехать) — по очереди, с паузой; sheet — корень-шторка (значок в шапке, оба способа);
@@ -69,7 +70,7 @@ class FakeEl {
 }
 
 // Корень меню как его рисует _support_menu.html: конфиг, кнопка-вход, список, статус, пункт чата.
-function makeRoot({ mode, tgUrl = '', visible = true, sheet = false }) {
+function makeRoot({ mode, tgUrl = '', visible = true, sheet = false, legacySheet = false }) {
   const root = new FakeEl({ attrs: { 'data-support-menu': '' }, visible });
   const cfg = new FakeEl();
   cfg.textContent = JSON.stringify({
@@ -91,8 +92,12 @@ function makeRoot({ mode, tgUrl = '', visible = true, sheet = false }) {
   if (sheet) {
     // крестик, пункты — внутри шторки (списка): так их видит и root, и list
     const close = new FakeEl({ visible, name: 'close' });
+    // сама шторка (role=dialog, tabindex=-1) — на неё ставится фокус при открытии
+    const sheetEl = new FakeEl({ visible, name: 'sheet' });
     root.parts['[data-support-close]'] = close;
-    list.parts = { '[data-support-close]': close, chat, tg: tgLink };
+    list.parts = { '[data-support-sheet]': sheetEl, '[data-support-close]': close, chat, tg: tgLink };
+    // своя разметка владельца без data-support-sheet
+    if (legacySheet) { delete list.parts['[data-support-sheet]']; }
     list.focusables = [close, chat].concat(tgUrl ? [tgLink] : []);
   }
   return root;
@@ -199,6 +204,9 @@ const SHEET_CLOSE_MS = 300;
     const list = roots[index].parts['[data-support-list]'];
     if (target === 'escape') {
       document.dispatch('keydown', { key: 'Escape' });
+    } else if (target === 'outside') {
+      // клик по странице мимо меню
+      document.dispatch('click', { target: { name: 'page' } });
     } else if (target === 'overlay') {
       list.dispatch('click', { target: list });
     } else if (target === 'tab' || target === 'shiftTab') {

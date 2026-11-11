@@ -12,14 +12,14 @@
    hidden в разметке, а не только в CSS: статика без версии в адресе, и со старым CSS из кэша
    спиннер стоял бы рядом с иконкой. #}
 {% macro spinner() %}<span class="support-menu__spinner" hidden><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M19 10C19 14.9706 14.9706 19 10 19C5.02944 19 1 14.9706 1 10C1 5.02944 5.02944 1 10 1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{% endmacro %}
-{# Пункты выбора — общие для шторки и выпадающего списка. Ошибка чата — под «Написать в чат». #}
+{# Пункты выбора («Написать в чат» / «Связаться в Telegram») — общие для шторки и выпадающего списка. Ошибка чата — под «Написать в чат». #}
 {% macro options() %}
   <button type="button" class="support-menu__item" data-support-chat>{{ chat_icon() }}{{ spinner() }}<span class="support-menu__item-text"><span>Написать в чат</span><span class="support-menu__status" data-support-status hidden></span></span></button>
-  <a class="support-menu__item" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">{{ tg_icon() }}<span>Telegram</span></a>
+  <a class="support-menu__item" href="{{ support.tg_url | e }}" target="_blank" rel="noopener noreferrer">{{ tg_icon() }}<span>Связаться в Telegram</span></a>
 {% endmacro %}
 {% set header = support_variant == "header" %}
 {% if support and support.mode != "none" %}
-<link rel="stylesheet" href="{{ sub_statics }}styles/support-menu.css">
+<link rel="stylesheet" href="{{ sub_statics }}styles/support-menu.css?v={{ static_v }}">
 <div class="support-menu{{ ' support-menu--header' if header else ' support-menu--floating' }}" data-support-menu>
   <script type="application/json" data-support-config>{{ support | tojson }}</script>
   {% if support.mode == "telegram" %}
@@ -34,7 +34,7 @@
       {# Шторка снизу: затемнение — сам список (клик по нему закрывает), содержимое — .support-menu__sheet.
          Без id: на index.html шапок три, и шторка в каждой. #}
       <div class="support-menu__list support-menu__list--sheet" data-support-list hidden>
-        <div class="support-menu__sheet" role="dialog" aria-modal="true" aria-label="Как хотите связаться">
+        <div class="support-menu__sheet" role="dialog" aria-modal="true" aria-label="Как хотите связаться" tabindex="-1" data-support-sheet>
           <div class="support-menu__sheet-head">
             <h2 class="support-menu__sheet-title">Как хотите связаться</h2>
             <button type="button" class="support-menu__close" data-support-close aria-label="Закрыть">{{ close_icon(24, "") }}</button>
@@ -65,5 +65,5 @@
     </div>
   {% endif %}
 </div>
-{% if not header %}<script defer src="{{ sub_statics }}scripts/support-menu.js"></script>{% endif %}
+{% if not header %}<script defer src="{{ sub_statics }}scripts/support-menu.js?v={{ static_v }}"></script>{% endif %}
 {% endif %}

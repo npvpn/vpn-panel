@@ -16,11 +16,15 @@
 [aria-expanded="true"] > .support-menu__swap .support-menu__icon:not(.support-menu__icon--close) { opacity: 0; transform: rotate(90deg) scale(.5); }
 [aria-expanded="true"] > .support-menu__swap .support-menu__icon--close { opacity: 1; transform: none; }
 
-/* Выпадающий выбор: подложка --surface-2, скругление 24, поля 16, между пунктами 8. */
-.support-menu__list { order: -1; display: flex; flex-direction: column; gap: 8px; min-width: 240px; box-sizing: border-box; padding: 16px; border-radius: 24px; background: var(--surface-2); }
+/* Выпадающий выбор: скругление 24, поля 16, между пунктами 8. Белая подложка с тенью,
+   пункты серые: серое на сером терялось на фоне страницы — открытое по ?support=open
+   меню не замечали (как в вебе). */
+.support-menu__list { order: -1; display: flex; flex-direction: column; gap: 8px; min-width: 240px; box-sizing: border-box; padding: 16px; border-radius: 24px; background: var(--surface); }
+.support-menu__list:not(.support-menu__list--sheet) { box-shadow: 0 8px 32px rgba(0, 0, 0, .16); }
 .support-menu__list[hidden] { display: none; }
-.support-menu__item { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 12px 16px; border: 0; border-radius: 20px; background: var(--surface); color: var(--text-primary); font-family: var(--font-family); font-size: 14px; font-weight: 600; line-height: 20px; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color .15s; }
-.support-menu__item:hover { background: var(--border); }
+.support-menu__item { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 12px 16px; border: 0; border-radius: 20px; background: var(--control-secondary-bg); color: var(--text-primary); font-family: var(--font-family); font-size: 14px; font-weight: 600; line-height: 20px; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color .15s; }
+.support-menu__item:hover { background: var(--control-secondary-hover-bg); }
+.support-menu__item:active { background: var(--control-secondary-pressed-bg); }
 .support-menu__item:disabled { opacity: .5; cursor: default; }
 /* NPVPN-2256: пока грузится чат — спиннер на месте иконки «Написать в чат», как в вебе;
    синий, как на странице «Пожалуйста, подождите». */
@@ -47,6 +51,8 @@
 .support-menu__sheet { box-sizing: border-box; width: 100%; padding: 24px 16px max(42px, env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; background: var(--surface); animation: support-menu-sheet-in .3s ease-out; transition: transform .3s ease-out; }
 .support-menu__list--sheet.is-closing { opacity: 0; pointer-events: none; }
 .support-menu__list--sheet.is-closing .support-menu__sheet { transform: translateY(100%); }
+/* фокус при открытии — на самой шторке (tabindex="-1"), рамка ей не нужна */
+.support-menu__sheet:focus { outline: none; }
 @keyframes support-menu-fade-in { from { opacity: 0; } }
 @keyframes support-menu-sheet-in { from { transform: translateY(100%); } }
 .support-menu__sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
