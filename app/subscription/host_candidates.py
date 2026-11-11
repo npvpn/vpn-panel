@@ -35,6 +35,7 @@ def prepare_candidates(
     bs=None,
     stub=None,
     subset=None,
+    panel_bot_count: int | None = None,
 ) -> list[dict]:
     bs = bs or BsContext.empty()
     stub = stub or ZERO_STUB
@@ -63,7 +64,11 @@ def prepare_candidates(
             format_variables.update({"TRANSPORT": inbound["network"]})
             for host in hosts_by_tag.get(tag, []):
                 allowed_bot_usernames = host.get("bot_usernames") or []
-                if not host_allowed_for_bot(allowed_bot_usernames, user_bot_username):
+                if not host_allowed_for_bot(
+                    allowed_bot_usernames,
+                    user_bot_username,
+                    panel_bot_count=panel_bot_count,
+                ):
                     continue
 
                 if host.get("is_disabled"):

@@ -165,6 +165,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
     пин, который тут же молча не сработает.
     """
     user_bot_username = dbuser.bot_username
+    panel_bot_count = crud.count_bots(db)
     visible_tags = _visible_inbound_tags(dbuser)
     hosts = (
         db.query(ProxyHost)
@@ -184,7 +185,7 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
         if not classify(host)
         and addresses_from_nodes(host)
         and visible_nodes(host)
-        and host_allowed_for_bot(host.bot_usernames, user_bot_username)
+        and host_allowed_for_bot(host.bot_usernames, user_bot_username, panel_bot_count=panel_bot_count)
         and host.inbound_tag in visible_tags
     ]
 
@@ -239,6 +240,7 @@ class _HistoryScope:
 def _build_scope(db: Session, user_id: int, first_day: int, last_day: int) -> _HistoryScope:
     dbuser = db.query(User).filter(User.id == user_id).first()
     user_bot_username = dbuser.bot_username if dbuser else None
+    panel_bot_count = crud.count_bots(db)
     # reconstruct вызывается только для валидированного юзера (роутер гарантирует
     # существование через get_validated_user) — dbuser is None защитный краевой случай,
     # а не ожидаемый путь. При нём фильтр по инбаундам не применяем вовсе
@@ -248,13 +250,13 @@ def _build_scope(db: Session, user_id: int, first_day: int, last_day: int) -> _H
     visible_tags = _visible_inbound_tags(dbuser) if dbuser else set()
     all_hosts = db.query(ProxyHost).order_by(ProxyHost.id).all()
     # Та же логика, что и в рендере подписки и в list_pinnable_hosts: пустой
-    # bot_usernames = хост доступен всем ботам, отсеивать не надо. Плюс два фильтра
-    # выше (is_disabled, инбаунды юзера, C2/M3) — см. докстринг reconstruct.
+    # bot_usernames значит «никому», кроме соло-панели и панели с одним ботом,
+    # где это решает panel_bot_count. Плюс фильтры is_disabled и инбаундов юзера.
     hosts = [
         host
         for host in all_hosts
         if not host.is_disabled
-        and host_allowed_for_bot(host.bot_usernames, user_bot_username)
+        and host_allowed_for_bot(host.bot_usernames, user_bot_username, panel_bot_count=panel_bot_count)
         and (dbuser is None or host.inbound_tag in visible_tags)
     ]
     classify = composition_classifier(db)

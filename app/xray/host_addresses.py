@@ -65,14 +65,19 @@ def host_has_bs_node(host) -> bool:
     return any(node.is_bs for node in visible_nodes(host))
 
 
-def host_allowed_for_bot(bot_usernames: list[str], user_bot_username: str | None) -> bool:
-    """Хост доступен этому юзеру, если привязан к его боту.
+def host_allowed_for_bot(
+    bot_usernames: list[str],
+    user_bot_username: str | None,
+    *,
+    panel_bot_count: int | None = None,
+) -> bool:
+    """Хост доступен этому пользователю.
 
-    NPVPN-2044: единственное правило — «виден тому, кому привязан». Прежний
-    фолбэк «пустой bot_usernames значит всем» убран, и колонка видимости тоже:
-    флаг `shared` был тем же костылём под другим именем — помеченный им хост
-    продолжал автоматически уезжать каждому новому боту, то есть ровно то
-    поведение, от которого уходили. Пустая привязка теперь значит «никому».
+    panel_bot_count is None или >= 2 — NPVPN-2044: только явная привязка.
+    Пустой bot_usernames значит «никому», пользователь без бота хост не видит.
+    Прежний фолбэк «пустой список = всем» убран: помеченный им хост уезжал
+    каждому новому боту. 0 — соло-панель: хост виден пользователю без бота.
+    1 — единственный бот видит все хосты; пользователь без бота не видит.
 
     Единый предикат для ТРЁХ вызывающих (NPVPN-2072, I4): рендера подписки
     (`app/subscription/share.py`), восстановления истории (`reconstruct`) и
@@ -82,4 +87,8 @@ def host_allowed_for_bot(bot_usernames: list[str], user_bot_username: str | None
     условия по share.py и остальным местам дал Critical-находку раньше в этой
     фиче, а share.py — горячий путь подписки и не должен тянуть сервисный слой.
     """
+    if panel_bot_count == 0:
+        return not user_bot_username
+    if panel_bot_count == 1:
+        return bool(user_bot_username)
     return bool(user_bot_username) and user_bot_username in bot_usernames

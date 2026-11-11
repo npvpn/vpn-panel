@@ -94,6 +94,38 @@ class BotSettingsResponse(BotSettingsPayload):
     managed: ManagedStateResponse | None = None
 
 
+SUBSCRIPTION_PROFILE_KEYS: tuple[str, ...] = (
+    "sub_support_url",
+    "sub_profile_title",
+    "sub_profile_url",
+    "sub_subscription_domain",
+    "sub_update_interval",
+    "web_url",
+    "show_ads",
+    "sub_device_limit_hard_mode",
+    "bs_extra_reset_pool_on_prolong",
+)
+
+
+class SubscriptionProfilePayload(BaseModel):
+    sub_support_url: str = ""
+    sub_profile_title: str = ""
+    sub_profile_url: str = ""
+    sub_subscription_domain: str = ""
+    sub_update_interval: str = ""
+    web_url: str = ""
+    show_ads: bool = True
+    sub_device_limit_hard_mode: bool = False
+    bs_extra_reset_pool_on_prolong: bool = False
+
+    @field_validator("sub_subscription_domain", mode="before")
+    @classmethod
+    def validate_subscription_domain(cls, value: Any):
+        from app.subscription.subscription_url import normalize_subscription_domain
+
+        return normalize_subscription_domain(value)
+
+
 class BotAdminSyncUpdate(BaseModel):
     enabled: bool
 

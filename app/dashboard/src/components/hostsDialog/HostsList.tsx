@@ -134,6 +134,8 @@ export const HostsList: FC<Props> = ({
 
   const lastColumnWidthsRef = useRef<HostColumnWidths | null>(null);
 
+  const showBotColumn = bots.length >= 2;
+
   const columnWidths = useMemo(() => {
     const DRAG = 32;
     const ENABLED = 56;
@@ -143,9 +145,9 @@ export const HostsList: FC<Props> = ({
     const next: HostColumnWidths = {
       drag: DRAG,
       inbound: Math.round(flexTotal * 0.16),
-      remark: Math.round(flexTotal * 0.36),
-      address: Math.round(flexTotal * 0.3),
-      bot: Math.round(flexTotal * 0.18),
+      remark: Math.round(flexTotal * (showBotColumn ? 0.36 : 0.46)),
+      address: Math.round(flexTotal * (showBotColumn ? 0.3 : 0.38)),
+      bot: showBotColumn ? Math.round(flexTotal * 0.18) : 0,
       enabled: ENABLED,
       actions: ACTIONS,
     };
@@ -165,7 +167,7 @@ export const HostsList: FC<Props> = ({
 
     lastColumnWidthsRef.current = next;
     return next;
-  }, [tableWidth]);
+  }, [showBotColumn, tableWidth]);
 
   const form = useFormContext<z.infer<typeof hostsFormSchema>>();
 
@@ -368,7 +370,7 @@ export const HostsList: FC<Props> = ({
               <col style={{ width: `${columnWidths.inbound}px` }} />
               <col style={{ width: `${columnWidths.remark}px` }} />
               <col style={{ width: `${columnWidths.address}px` }} />
-              <col style={{ width: `${columnWidths.bot}px` }} />
+              {showBotColumn && <col style={{ width: `${columnWidths.bot}px` }} />}
               <col style={{ width: `${columnWidths.enabled}px` }} />
               <col style={{ width: `${columnWidths.actions}px` }} />
             </colgroup>
@@ -387,9 +389,11 @@ export const HostsList: FC<Props> = ({
                 <Th {...thBorder} w={`${columnWidths.address}px`}>
                   Address
                 </Th>
-                <Th {...thBorder} w={`${columnWidths.bot}px`}>
-                  {t("hostsDialog.columnBot")}
-                </Th>
+                {showBotColumn && (
+                  <Th {...thBorder} w={`${columnWidths.bot}px`}>
+                    {t("hostsDialog.columnBot")}
+                  </Th>
+                )}
                 <Th
                   {...thBorder}
                   w={`${columnWidths.enabled}px`}

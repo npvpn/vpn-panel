@@ -80,6 +80,7 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
     useDashboard.getState().filters.search || ""
   );
   const [bots, setBots] = useState<Bot[]>([]);
+  const [botsLoaded, setBotsLoaded] = useState(false);
   const [selectedBotId, setSelectedBotId] = useState<number | null>(null);
 
   const botOptions = useMemo<BotOption[]>(
@@ -108,7 +109,10 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
 
   useEffect(() => {
     fetch<Bot[]>("/bots")
-      .then(setBots)
+      .then((items) => {
+        setBots(items);
+        setBotsLoaded(true);
+      })
       .catch(() => setBots([]));
   }, []);
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,6 +179,7 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       </GridItem>
       <GridItem colSpan={2} order={{ base: 1, md: 2 }}>
         <HStack justifyContent="flex-end" alignItems="center" h="full">
+          {(!botsLoaded || bots.length > 0) && (
           <FormControl
             w={{ base: "auto", lg: "220px" }}
             flex={{ base: 1, lg: "none" }}
@@ -194,6 +199,7 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
               menuPosition="fixed"
             />
           </FormControl>
+          )}
           <IconButton
             aria-label="refresh users"
             disabled={loading}

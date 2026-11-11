@@ -105,9 +105,13 @@ export const NodeForm: NodeFormType = ({
   // ботов в карточке ноды не было — переиспользуем эндпоинт /bots, тот же,
   // что HostsDialog уже тянет для вкладки «По ботам».
   const [bots, setBots] = useState<Bot[]>([]);
+  const [botsLoaded, setBotsLoaded] = useState(false);
   useEffect(() => {
     fetch<Bot[]>("/bots")
-      .then(setBots)
+      .then((items) => {
+        setBots(items);
+        setBotsLoaded(true);
+      })
       .catch(() => setBots([]));
   }, []);
 
@@ -322,6 +326,7 @@ export const NodeForm: NodeFormType = ({
             <FormLabel m={0}>{t("nodes.isBsNode")}</FormLabel>
           </Checkbox>
         </FormControl>
+        {(!botsLoaded || bots.length > 0) && (
         <FormControl py={1}>
           <FormLabel>{t("nodes.ownerBotId")}</FormLabel>
           <Controller
@@ -345,6 +350,7 @@ export const NodeForm: NodeFormType = ({
             )}
           />
         </FormControl>
+        )}
         {inboundTags.length > 0 && (
           <FormControl py={1}>
             <FormLabel>{t("nodes.inbounds")}</FormLabel>

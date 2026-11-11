@@ -11,12 +11,12 @@ import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
 import { Bot, BotSettings } from "types/Bot";
 import { PanelSettings } from "types/PanelSettings";
+import { isSingleSubscription, isSoloPanel, previewHostList } from "utils/botAudience";
 import { NodeType } from "../../contexts/NodesContext";
 import {
   flattenHosts,
   HappPreviewHost,
   HappPreviewScenario,
-  hostsForBot,
   previewAnnounce,
   previewServers,
   substitutePlaceholders,
@@ -82,6 +82,7 @@ export const HappSubscriptionPreview: FC<Props> = ({
 }) => {
   const { t } = useTranslation();
   const [bots, setBots] = useState<Bot[]>([]);
+  const [botsLoaded, setBotsLoaded] = useState(false);
   const [botUsername, setBotUsername] = useState("");
   const [hostsByInbound, setHostsByInbound] = useState<
     Record<string, HappPreviewHost[]>
@@ -94,6 +95,7 @@ export const HappSubscriptionPreview: FC<Props> = ({
       .then((items) => {
         setBots(items);
         setBotUsername((current) => current || items[0]?.username || "");
+        setBotsLoaded(true);
       })
       .catch(() => setBots([]));
     fetch<Record<string, HappPreviewHost[]>>("/hosts")
@@ -104,13 +106,20 @@ export const HappSubscriptionPreview: FC<Props> = ({
       .catch(() => setNodes([]));
   }, []);
 
+  const solo = botsLoaded && isSoloPanel(bots.length);
+  const singleSubscription = botsLoaded && isSingleSubscription(bots.length);
+
   useEffect(() => {
-    if (!botUsername) {
+    if (!botsLoaded) return;
+    if (!solo && !botUsername) {
       setBotSettings(null);
       return;
     }
     let cancelled = false;
-    fetch<BotSettings>(`/bots/${botUsername}/settings`)
+    const request = solo
+      ? fetch<BotSettings>("/settings/subscription")
+      : fetch<BotSettings>(`/bots/${botUsername}/settings`);
+    request
       .then((data) => {
         if (!cancelled) setBotSettings(data);
       })
@@ -120,7 +129,7 @@ export const HappSubscriptionPreview: FC<Props> = ({
     return () => {
       cancelled = true;
     };
-  }, [botUsername]);
+  }, [botUsername, botsLoaded, solo]);
 
   const bsNodeIds = useMemo(
     () =>
@@ -132,8 +141,18 @@ export const HappSubscriptionPreview: FC<Props> = ({
     [nodes]
   );
   const botHosts = useMemo(
-    () => hostsForBot(flattenHosts(hostsByInbound), botUsername, bsNodeIds),
-    [hostsByInbound, botUsername, bsNodeIds]
+    () =>
+      previewHostList(
+        flattenHosts(hostsByInbound),
+        botsLoaded ? bots.length : 2,
+        botUsername
+      ).map(
+        (host) => ({
+          ...host,
+          isBs: (host.node_ids || []).some((id) => bsNodeIds.has(id)),
+        })
+      ),
+    [bots.length, botsLoaded, hostsByInbound, botUsername, bsNodeIds]
   );
   const servers = useMemo(
     () =>
@@ -159,6 +178,7 @@ export const HappSubscriptionPreview: FC<Props> = ({
         <Text fontWeight="bold">{t("panelSettings.happPreview")}</Text>
       </HStack>
       <HStack spacing={2}>
+        {!singleSubscription && (
         <FormControl>
           <FormLabel fontSize="xs" mb={1}>
             {t("panelSettings.previewBot")}
@@ -179,6 +199,7 @@ export const HappSubscriptionPreview: FC<Props> = ({
             ))}
           </Select>
         </FormControl>
+        )}
         {onScenarioChange && (
           <HappScenarioSelect value={scenario} onChange={onScenarioChange} />
         )}
@@ -202,7 +223,7 @@ export const HappSubscriptionPreview: FC<Props> = ({
               <div className="happ-preview-title">{title}</div>
               <div className="happ-preview-meta">
                 24.09.2026 10:24 | Автообновление · {interval} ч.
-                {selectedBot ? ` · @${selectedBot.username}` : ""}
+                {selectedBot && !singleSubscription ? ` · @${selectedBot.username}` : ""}
               </div>
             </div>
             <span className="happ-preview-actions">

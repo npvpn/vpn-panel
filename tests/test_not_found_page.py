@@ -51,6 +51,8 @@ def not_found(monkeypatch):
         monkeypatch.setattr(crud_module, "get_user", lambda db, username: None, raising=False)
     if not hasattr(crud_module, "get_bots"):
         monkeypatch.setattr(crud_module, "get_bots", lambda db: [], raising=False)
+    if not hasattr(crud_module, "get_global_setting"):
+        monkeypatch.setattr(crud_module, "get_global_setting", lambda db, key: None, raising=False)
 
     spec = importlib.util.spec_from_file_location(
         "app.subscription.not_found", _ROOT / "app" / "subscription" / "not_found.py"
@@ -141,6 +143,7 @@ def test_user_found_without_own_bot_gives_no_link(not_found, monkeypatch):
 def test_no_bots_uses_env_defaults(not_found, monkeypatch):
     monkeypatch.setattr(not_found.crud, "get_user", lambda db, username: None)
     monkeypatch.setattr(not_found.crud, "get_bots", lambda db: [])
+    monkeypatch.setattr(not_found.crud, "get_global_setting", lambda db, key: None)
     received_raw = []
 
     def _fallback(raw):
@@ -155,6 +158,21 @@ def test_no_bots_uses_env_defaults(not_found, monkeypatch):
     # а не просто проброс произвольного значения через стаб.
     assert received_raw == [None]
     assert ctx["home_url"] == "https://t.me/env"
+
+
+def test_no_bots_prefers_saved_subscription_profile(not_found, monkeypatch):
+    monkeypatch.setattr(not_found.crud, "get_user", lambda db, username: None)
+    monkeypatch.setattr(not_found.crud, "get_bots", lambda db: [])
+    monkeypatch.setattr(
+        not_found.crud,
+        "get_global_setting",
+        lambda db, key: {"web_url": "https://solo.example", "show_ads": False},
+    )
+
+    ctx = not_found.build_not_found_page_context(db=object(), token="whatever-long-token")
+
+    assert ctx["home_url"] == "https://solo.example"
+    assert ctx["show_ads"] is False
 
 
 def test_unsafe_url_scheme_gives_no_link(not_found, monkeypatch):

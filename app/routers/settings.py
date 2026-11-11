@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app.db import Session, get_db
 from app.models.admin import Admin
+from app.models.bot import SubscriptionProfilePayload
 from app.models.settings import (
     DEFAULT_CLIENT_APPS,
     DEFAULT_PANEL_SETTINGS,
@@ -11,6 +12,7 @@ from app.models.settings import (
 )
 from app.services import client_apps as client_apps_service
 from app.services import panel_settings as panel_settings_service
+from app.services import subscription_profile as subscription_profile_service
 from app.utils import responses
 
 router = APIRouter(tags=["Settings"], prefix="/api", responses={401: responses._401})
@@ -68,3 +70,22 @@ def get_default_panel_settings(
 ):
     del admin
     return DEFAULT_PANEL_SETTINGS
+
+
+@router.get("/settings/subscription", response_model=SubscriptionProfilePayload)
+def get_subscription_profile(
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.check_sudo_admin),
+):
+    del admin
+    return subscription_profile_service.get_subscription_profile(db)
+
+
+@router.put("/settings/subscription", response_model=SubscriptionProfilePayload)
+def update_subscription_profile(
+    payload: SubscriptionProfilePayload,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.check_sudo_admin),
+):
+    del admin
+    return subscription_profile_service.save_subscription_profile(db, payload)
