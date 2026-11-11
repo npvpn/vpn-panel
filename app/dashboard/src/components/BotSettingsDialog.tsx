@@ -155,12 +155,10 @@ export const BotSettingsDialog: FC = () => {
     setBotTitle("");
     setBotSearch("");
     replaceSettings(emptySettings);
-    Promise.all([
-      fetchBots(),
-      fetch<BotSettings>("/bots/default-settings").then(setDefaultSettings),
-    ])
-      .then(([bots]) => {
-        if (!bots) {
+    Promise.allSettled([
+      fetchBots().then((loadedBots) => {
+        if (!loadedBots) {
+          setBotsLoaded(false);
           toast({
             title: t("core.generalErrorMessage"),
             status: "error",
@@ -170,14 +168,15 @@ export const BotSettingsDialog: FC = () => {
           });
           return;
         }
-        if (bots.length === 1) {
-          setSelectedBot(bots[0].username);
-        }
-      })
-      .finally(() => {
         setBotsLoaded(true);
-        setLoading(false);
-      });
+        if (loadedBots.length === 1) {
+          setSelectedBot(loadedBots[0].username);
+        }
+      }),
+      fetch<BotSettings>("/bots/default-settings")
+        .then(setDefaultSettings)
+        .catch(() => undefined),
+    ]).finally(() => setLoading(false));
   }, [isEditingBotSettings]);
 
   useEffect(() => {
@@ -471,9 +470,16 @@ export const BotSettingsDialog: FC = () => {
         setHasDraft(false);
         return fetchBots();
       })
-      .then((bots) => {
-        if (bots.length === 1) {
-          setSelectedBot(bots[0].username);
+      .then((loadedBots) => {
+        if (!loadedBots) {
+          setSelectedBot("");
+          setBotUsername("");
+          setBotTitle("");
+          setBotSearch("");
+          return;
+        }
+        if (loadedBots.length === 1) {
+          setSelectedBot(loadedBots[0].username);
         } else {
           setSelectedBot("");
           setBotUsername("");
