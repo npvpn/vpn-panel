@@ -27,3 +27,22 @@ from app.xray.host_addresses import host_allowed_for_bot
 )
 def test_host_allowed_for_bot(bot_usernames, viewer, expected):
     assert host_allowed_for_bot(bot_usernames, viewer) is expected
+
+
+@pytest.mark.parametrize(
+    ("bot_usernames", "viewer", "panel_bot_count", "expected"),
+    [
+        ([], None, 0, True),
+        (["AppleGurruBot"], None, 0, True),
+        ([], "AppleGurruBot", 0, False),
+        ([], "AppleGurruBot", 1, True),
+        (["other"], "AppleGurruBot", 1, True),
+        ([], None, 1, False),
+        ([], "AppleGurruBot", 2, False),
+        (["AppleGurruBot"], None, 2, False),
+        (["AppleGurruBot"], "vpnZabBot", 2, False),
+        (["AppleGurruBot"], "AppleGurruBot", 2, True),
+    ],
+)
+def test_host_allowed_follows_panel_bot_count(bot_usernames, viewer, panel_bot_count, expected):
+    assert host_allowed_for_bot(bot_usernames, viewer, panel_bot_count=panel_bot_count) is expected
