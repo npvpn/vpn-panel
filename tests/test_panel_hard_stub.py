@@ -35,6 +35,8 @@ def test_save_without_hard_mode_keeps_stored_value():
         save_panel_settings(db, PanelSettingsPayload(sub_device_limit_hard_mode=True))
         saved = save_panel_settings(db, PanelSettingsPayload())
         assert saved["sub_device_limit_hard_mode"] is True
+        turned_off = save_panel_settings(db, PanelSettingsPayload(sub_device_limit_hard_mode=False))
+        assert turned_off["sub_device_limit_hard_mode"] is False
 
 
 def test_user_with_bot_takes_hard_mode_from_panel_settings():
