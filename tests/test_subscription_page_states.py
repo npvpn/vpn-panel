@@ -100,6 +100,16 @@ def test_regular_page_keeps_settings():
     assert "state-fallback" not in html
 
 
+def test_apple_region_notice_only_on_apple_tabs():
+    """NPVPN-2362: на iOS и Mac до кнопок скачивания — ссылка на инструкцию смены региона App Store."""
+    html = _render("index.html")
+    notice = re.search(r'<template x-if="([^"]*)">\s*<div class="setup-notice">(.*?)</template>', html, re.S)
+    assert notice, "нет подсказки о смене региона"
+    assert notice.group(1) == "currentPlatform === 'ios' || currentPlatform === 'macos'"
+    assert 'href="https://happ.info/ru/apple-region/"' in notice.group(2)
+    assert html.index('class="setup-notice"') < html.index('class="app-chips"')
+
+
 def test_expired_fallback_without_pay_leads_to_cabinet():
     fallback = _fallback(_render("expired.html"))
     assert "Оплатить" not in fallback

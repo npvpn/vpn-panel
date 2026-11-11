@@ -569,6 +569,64 @@
     margin-top: -8px;
 }
 
+/* подсказка до кнопок скачивания (NPVPN-2362), как в вебе: подложка как у кнопок-приложений,
+   жёлтый значок (на мобилке над текстом — текст во всю ширину, меньше строк; на ПК слева),
+   суть жирным, что делать — с новой строки, один цвет текста; ссылка синяя с иконкой */
+.setup-notice {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 16px;
+    background: var(--surface);
+}
+
+.setup-notice__icon {
+    flex-shrink: 0;
+}
+
+.setup-notice__body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.setup-notice__title {
+    display: block;
+    font-weight: 600;
+}
+
+.setup-notice__text {
+    margin: 0;
+    font-family: var(--font-family);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 143%;
+    letter-spacing: -0.04em;
+    color: var(--text-primary);
+}
+
+.setup-notice__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-family);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 143%;
+    letter-spacing: -0.04em;
+    color: var(--blue);
+    text-decoration: none;
+}
+
+.setup-notice__link:hover {
+    opacity: .7;
+}
+
 /* кнопки-приложения: между ними 4 на мобилке, 8 на ПК */
 .app-chips {
     display: flex;
@@ -678,6 +736,11 @@
 @media (min-width: 1024px) {
     .app-chips {
         gap: 8px;
+    }
+
+    .setup-notice {
+        flex-direction: row;
+        gap: 12px;
     }
 
     .setup-card__actions {
@@ -1490,13 +1553,13 @@
         margin-bottom: 80px;
     }
 
-    /* по центру между табами и низом экрана: высота — экран минус поля .wrapper (40 * 2), нижний
-       отступ .page-content (80), шапка (≈45 + 24) и табы (40 + 24), без лишней прокрутки; блок
-       кончается на 80 выше края — сдвиг на 28 ставит QR посередине. Подпись о платформе — под прокруткой. */
+    /* сразу под табами (от табов 24 + 24, как в вебе): по центру экрана сверху оставалось
+       слишком много пустоты (NPVPN-2362) */
     .qr-wrapper {
-        min-height: calc(100vh - 293px);
-        min-height: calc(100dvh - 293px);
-        transform: translate(-135px, 28px);
+        min-height: 0;
+        justify-content: flex-start;
+        padding-top: 24px;
+        transform: translateX(-135px);
         gap: 24px;
     }
 

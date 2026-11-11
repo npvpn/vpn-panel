@@ -692,6 +692,30 @@ get alternativeApps() {
                 <section class="setup-card">
                   <h3 class="setup-card__title">Скачайте приложение</h3>
 
+                  {# NPVPN-2362: приложения недоступны в российском App Store — до кнопок скачивания
+                     ведём на инструкцию Happ по смене региона Apple ID (скриншоты, видео, обновляют сами).
+                     Тот же текст, что в вебе (src/constants/instructionsInfo.ts). #}
+                  <template x-if="currentPlatform === 'ios' || currentPlatform === 'macos'">
+                    <div class="setup-notice">
+                      <svg class="setup-notice__icon" width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="var(--yellow)"/><path d="M16 14.5V22.5" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/><circle cx="16" cy="10" r="1.6" fill="#FFFFFF"/></svg>
+                      <div class="setup-notice__body">
+                        <p class="setup-notice__text">
+                          <strong class="setup-notice__title">Приложения недоступны в&nbsp;российском App&nbsp;Store</strong>
+                          Смените регион Apple&nbsp;ID на&nbsp;Казахстан или Беларусь, и&nbsp;они появятся.
+                        </p>
+                        <a
+                          class="setup-notice__link"
+                          href="https://happ.info/ru/apple-region/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <span>Инструкция по смене региона</span>
+                          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M15 10.8333V15.8333C15 16.7538 14.2538 17.5 13.3333 17.5H4.16667C3.24619 17.5 2.5 16.7538 2.5 15.8333V6.66667C2.5 5.74619 3.24619 5 4.16667 5H9.16667" stroke="currentColor" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 2.5H17.5V7.5" stroke="currentColor" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.33325 11.6667L17.4999 2.5" stroke="currentColor" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </a>
+                      </div>
+                    </div>
+                  </template>
+
                   <div class="app-chips" x-show="primaryApps.length">
                     <template x-for="app in primaryApps" :key="app.id">
                       <a

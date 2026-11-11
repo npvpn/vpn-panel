@@ -3,6 +3,8 @@
     --blue: #007aff;
     --red: #ef3124;
     --green: #2fc26e;
+    /* значок предупреждения (как в вебе) */
+    --yellow: #ffae00;
     --white: #ffffff;
     --black: #141413;
     --light-gray: #f6f6f6;
@@ -47,6 +49,10 @@
 
 /* DARK THEME */
 :root[data-theme='dark'] {
+    /* ссылки и значки в тёмной теме — светлее, как в вебе: #007aff на тёмном фоне даёт
+       контраст ~3,5:1, этот — ~5,4:1 */
+    --blue: #4da3ff;
+    --yellow: #ffc94d;
     --text-primary: #ffffff;
     --text-secondary: #cfcfcf;
     --light-gray: #343434;
