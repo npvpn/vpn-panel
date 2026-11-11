@@ -42,19 +42,39 @@ export const SubscriptionProfileForm: FC = () => {
   const { t } = useTranslation();
   const toast = useToast();
   const [profile, setProfile] = useState<SubscriptionProfile>(EMPTY);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     fetch<SubscriptionProfile>("/settings/subscription")
-      .then((data) => setProfile({ ...EMPTY, ...data }))
-      .catch(() => setProfile(EMPTY));
-  }, []);
+      .then((data) => {
+        if (cancelled) return;
+        setProfile({ ...EMPTY, ...data });
+        setLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoaded(false);
+        toast({
+          title: t("core.generalErrorMessage"),
+          status: "error",
+          duration: 2500,
+          isClosable: true,
+          position: "top",
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [t, toast]);
 
   const update = (patch: Partial<SubscriptionProfile>) => {
     setProfile((current) => ({ ...current, ...patch }));
   };
 
   const save = () => {
+    if (!loaded) return;
     setSaving(true);
     fetch<SubscriptionProfile>("/settings/subscription", {
       method: "PUT",
@@ -181,7 +201,13 @@ export const SubscriptionProfileForm: FC = () => {
           {t("botSettings.subDeviceLimitHardModeHint")}
         </FormHelperText>
       </FormControl>
-      <Button alignSelf="flex-end" colorScheme="primary" onClick={save} isLoading={saving}>
+      <Button
+        alignSelf="flex-end"
+        colorScheme="primary"
+        onClick={save}
+        isLoading={saving}
+        isDisabled={!loaded}
+      >
         {t("core.save")}
       </Button>
     </VStack>
