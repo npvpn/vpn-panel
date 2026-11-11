@@ -67,6 +67,7 @@ export const BotSettingsDialog: FC = () => {
   const toast = useToast();
   const [bots, setBots] = useState<Bot[]>([]);
   const [botsLoaded, setBotsLoaded] = useState(false);
+  const [botsFailed, setBotsFailed] = useState(false);
   const [selectedBot, setSelectedBot] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -125,11 +126,13 @@ export const BotSettingsDialog: FC = () => {
     return fetch<Bot[]>("/bots")
       .then((items) => {
         setBots(items);
+        setBotsFailed(false);
         return items;
       })
       .catch(() => {
         setBots([]);
-        return [];
+        setBotsFailed(true);
+        return null;
       });
   };
 
@@ -145,6 +148,7 @@ export const BotSettingsDialog: FC = () => {
       return;
     }
     setBotsLoaded(false);
+    setBotsFailed(false);
     setLoading(true);
     setSelectedBot("");
     setBotUsername("");
@@ -156,6 +160,16 @@ export const BotSettingsDialog: FC = () => {
       fetch<BotSettings>("/bots/default-settings").then(setDefaultSettings),
     ])
       .then(([bots]) => {
+        if (!bots) {
+          toast({
+            title: t("core.generalErrorMessage"),
+            status: "error",
+            duration: 2500,
+            isClosable: true,
+            position: "top",
+          });
+          return;
+        }
         if (bots.length === 1) {
           setSelectedBot(bots[0].username);
         }
@@ -478,7 +492,7 @@ export const BotSettingsDialog: FC = () => {
       .finally(() => setDeleting(false));
   };
 
-  const soloPanel = botsLoaded && isSoloPanel(bots.length);
+  const soloPanel = botsLoaded && !botsFailed && isSoloPanel(bots.length);
 
   return (
     <Modal
