@@ -456,6 +456,8 @@
   "panelSettings.resetNew": "Will be",
   "panelSettings.resetConfirm": "Reset",
   "panelSettings.emptyValue": "(empty)",
+  "panelSettings.switchOn": "On",
+  "panelSettings.switchOff": "Off",
   "panelSettings.discardTitle": "Close without saving?",
   "panelSettings.discardHint": "Unsaved changes will be lost.",
   "panelSettings.discard": "Close without saving",

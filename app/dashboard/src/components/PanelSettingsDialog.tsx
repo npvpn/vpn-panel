@@ -484,6 +484,18 @@ export const PanelSettingsDialog: FC = () => {
         to: [{ short: String(target.bs_monthly_limit / GB_IN_BYTES) }],
       });
     }
+    if (
+      settings.sub_device_limit_hard_mode !== target.sub_device_limit_hard_mode
+    ) {
+      const flag = (value: boolean) =>
+        t(value ? "panelSettings.switchOn" : "panelSettings.switchOff");
+      rows.push({
+        tab: "subscription",
+        label: t("botSettings.subDeviceLimitHardMode"),
+        from: [{ short: flag(settings.sub_device_limit_hard_mode) }],
+        to: [{ short: flag(target.sub_device_limit_hard_mode) }],
+      });
+    }
     if (isJwtDirty(settings, target)) {
       rows.push({
         tab: "jwt",

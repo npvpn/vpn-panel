@@ -456,6 +456,8 @@
   "panelSettings.resetNew": "Станет",
   "panelSettings.resetConfirm": "Сбросить",
   "panelSettings.emptyValue": "(пусто)",
+  "panelSettings.switchOn": "Включено",
+  "panelSettings.switchOff": "Выключено",
   "panelSettings.discardTitle": "Закрыть без сохранения?",
   "panelSettings.discardHint": "Несохранённые изменения будут потеряны.",
   "panelSettings.discard": "Закрыть без сохранения",
