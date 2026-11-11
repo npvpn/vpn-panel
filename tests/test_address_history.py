@@ -870,5 +870,5 @@ def test_range_does_not_scale_queries_with_days(db, monkeypatch):
         event.remove(db.bind, "before_cursor_execute", count)
 
     assert week == quarter, f"запросы выросли с длиной диапазона: {week} -> {quarter}"
-    # Includes one additional batch query for active client templates.
-    assert quarter <= 11, f"слишком много запросов на диапазон: {quarter}"
+    # +1 за активные шаблоны клиента, +1 за число ботов (режим соло/один/много).
+    assert quarter <= 12, f"слишком много запросов на диапазон: {quarter}"

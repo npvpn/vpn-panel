@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import ValidationError
 
+from app import xray
 from app.db import Session, get_db
 from app.models.admin import Admin
 from app.models.managed import ManagedPushRequest, ManagedStateResponse
@@ -22,7 +23,7 @@ def push_managed_bot(
     if key not in svc.MANAGED_BOT_SECTIONS:
         raise HTTPException(status_code=404, detail="unknown managed key")
     try:
-        return svc.apply_managed_bot_push(
+        state = svc.apply_managed_bot_push(
             db,
             key,
             source_bot_id,
@@ -30,6 +31,8 @@ def push_managed_bot(
             version=payload.version,
             source=payload.source,
         )
+        xray.hosts.update()
+        return state
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors())
     except svc.AdminSyncDisabledError:

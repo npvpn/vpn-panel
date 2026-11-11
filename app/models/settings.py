@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 CLIENT_APPS_KEY = "client_apps"
 PANEL_SETTINGS_KEY = "panel"
+SUBSCRIPTION_PROFILE_KEY = "subscription_profile"
 
 SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS: tuple[str, ...] = (
     "sub_client_note",

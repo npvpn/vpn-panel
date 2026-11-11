@@ -477,17 +477,21 @@ def process_inbounds_and_tags(
             if isinstance(conf, V2rayJsonConfig)
             else (lambda _host: {})
         )
+    hosts_by_tag = xray.hosts
+    if not hosts_by_tag:
+        hosts_by_tag.update()
     candidates = prepare_candidates(
         inbounds,
         proxies,
         format_variables,
         inbounds_by_tag=xray.config.inbounds_by_tag,
-        hosts_by_tag=xray.hosts,
+        hosts_by_tag=hosts_by_tag,
         is_json=isinstance(conf, V2rayJsonConfig),
         template_for=template_for,
         bs=bs,
         stub=stub,
         subset=subset,
+        panel_bot_count=getattr(xray, "panel_bot_count", None),
     )
     bs_usage_label = None
 

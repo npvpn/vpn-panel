@@ -842,7 +842,7 @@ export const HostAdvancedOptions = memo(
                   spacingY={3}
                   w="full"
                 >
-                {bots.length > 0 && (
+                {bots.length >= 2 && (
                   <FormControl
                     isInvalid={!!accordionErrors?.bot_usernames}
                     gridColumn={{ md: "1 / -1" }}

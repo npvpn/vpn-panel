@@ -5,10 +5,9 @@
 
 1. По токену: он разбирается (подпись валидна) даже когда пользователь уже пересоздан
    или переименован — тогда запись в базе есть и бот известен точно.
-2. Одноботовая панель: пользователя нет, но и выбирать не из чего. Ноль ботов —
-   классический одиночный Marzban, где ссылка живёт в env.
-3. Мультиботовая панель: угадывать нечего, ссылки нет и кнопки не будет. Через
-   apply_bot_settings_fallback(None) здесь идти НЕЛЬЗЯ — он подставит env BOT_URL,
+2. Ноль ботов — общий профиль подписки панели. Один бот — его настройки.
+3. Несколько ботов и неизвестный токен: угадывать нечего, ссылки нет и кнопки не будет.
+   Через apply_bot_settings_fallback(None) здесь идти НЕЛЬЗЯ — он подставит env BOT_URL,
    и пользователь уедет в чужого бота.
 """
 
@@ -22,6 +21,7 @@ from fastapi.responses import HTMLResponse
 from app import logger
 from app.db import Session, crud
 from app.models.bot import apply_bot_settings_fallback
+from app.models.settings import SUBSCRIPTION_PROFILE_KEY
 from app.templates import render_template
 from app.utils.jwt import get_subscription_payload
 from config import subscription_statics_url
@@ -72,9 +72,11 @@ def _resolve_bot_settings_for_token(db: Session, token: str) -> dict[str, Any] |
                 # проваливаемся дальше на ступени 2/3.
 
         bots = crud.get_bots(db)
-        if len(bots) <= 1:
-            bot = bots[0] if bots else None
-            raw = bot.settings.data if bot is not None and bot.settings else None
+        if len(bots) == 0:
+            return apply_bot_settings_fallback(crud.get_global_setting(db, SUBSCRIPTION_PROFILE_KEY))
+        if len(bots) == 1:
+            bot = bots[0]
+            raw = bot.settings.data if bot.settings else None
             return apply_bot_settings_fallback(raw)
         # Ботов несколько, а точного совпадения нет: угадывать нечего, кнопки
         # не будет. apply_bot_settings_fallback(None) сюда специально не идёт —

@@ -167,6 +167,9 @@ def apply_managed_bot_push(
         raise ManagedBotConflictError("bot_username_conflict")
 
     if bot is None:
+        from app.db import crud
+
+        crud.bind_all_hosts_to_only_bot(db)
         bot = Bot(
             username=normalized["username"],
             title=normalized["title"],

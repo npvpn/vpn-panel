@@ -41,6 +41,10 @@ nodes: dict[int, XRayNode] = {}
 # Обновляется через operations.refresh_master_inbounds(db).
 master_inbound_tags: list[str] = []
 
+# Число ботов на момент последней сборки кэша хостов. /sub читает его из памяти,
+# без отдельного запроса. None — кэш ещё не собирали, предикат строгий.
+panel_bot_count: int | None = None
+
 # list(...) — снимок на момент вызова: refresh_master_inbounds мутирует список
 # in-place (master_inbound_tags[:] = ...), а хук может читаться из потока
 # APScheduler (core_health_check) параллельно с PUT-обновлением.
@@ -53,10 +57,12 @@ if TYPE_CHECKING:
 
 @DictStorage
 def hosts(storage: dict):
+    global panel_bot_count
     from app.db import GetDB, crud
 
     storage.clear()
     with GetDB() as db:
+        panel_bot_count = crud.count_bots(db)
         for inbound_tag in config.inbounds_by_tag:
             inbound_hosts: Sequence[ProxyHost] = crud.get_hosts(db, inbound_tag)
 

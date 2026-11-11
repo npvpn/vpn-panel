@@ -280,6 +280,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [devices, setDevices] = useState<UserDevice[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
+  const [botsLoaded, setBotsLoaded] = useState(false);
   const botOptions = useMemo<BotOption[]>(
     () =>
       bots.map((bot) => ({
@@ -301,7 +302,10 @@ export const UserDialog: FC<UserDialogProps> = () => {
 
   useEffect(() => {
     fetch<Bot[]>("/bots")
-      .then(setBots)
+      .then((items) => {
+        setBots(items);
+        setBotsLoaded(true);
+      })
       .catch(() => setBots([]));
   }, []);
 
@@ -912,6 +916,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
                           </FormErrorMessage>
                         </FormControl>
 
+                        {(!botsLoaded || bots.length > 0) && (
                         <FormControl
                           mb={"10px"}
                           isInvalid={!!form.formState.errors.bot_username}
@@ -967,6 +972,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
                             }
                           </FormErrorMessage>
                         </FormControl>
+                        )}
                       </Flex>
                       {error && (
                         <Alert
