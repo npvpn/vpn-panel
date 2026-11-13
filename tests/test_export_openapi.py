@@ -39,3 +39,6 @@ def test_export_openapi_writes_admin_token(tmp_path: Path) -> None:
     assert schema["info"]["title"] == "MarzbanAPI"
     token = schema["paths"]["/api/admin/token"]["post"]
     assert token["operationId"]
+    activity = schema["paths"]["/api/users/activity"]["post"]
+    assert activity["security"] == [{"OAuth2PasswordBearer": []}]
+    assert schema["components"]["schemas"]["UserActivityRequest"]["properties"]["usernames"]["maxItems"] == 500
