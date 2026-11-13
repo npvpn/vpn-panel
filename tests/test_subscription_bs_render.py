@@ -25,9 +25,7 @@ import pytest
 import config as panel_config
 
 _ROOT = pathlib.Path(__file__).parent.parent
-_original_lightweight_modules = {
-    name: sys.modules.get(name) for name in ("app.utils.system", "app.templates", "app.templates.filters")
-}
+_original_lightweight_modules = {name: sys.modules.get(name) for name in ("app.utils.system", "app.templates.filters")}
 
 
 def _stub_module(name: str, attrs: dict) -> types.ModuleType:
@@ -1002,8 +1000,9 @@ def test_managed_strategy_with_empty_legacy_pool_does_not_break_subscription(xra
     assert "working.example" in _proxy_addresses(conf.config[-1])
 
 
-# Заглушки нужны только этому модулю. Другие файлы должны импортировать настоящие
-# app.utils.system/app.templates при collection независимо от порядка тестов.
+# app.templates остаётся лёгким Jinja-рендером: test_v2ray_extra при collection
+# создаёт в sys.modules заглушку с render_template=None, и её восстановление
+# ломает последующие тесты сервисов шаблонов. Остальные заглушки восстанавливаем.
 for _module_name, _original_module in _original_lightweight_modules.items():
     if _original_module is None:
         sys.modules.pop(_module_name, None)
