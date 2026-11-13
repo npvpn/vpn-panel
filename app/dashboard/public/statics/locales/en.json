@@ -41,6 +41,8 @@
   "header.nodesUsageTotal": "Total: {{value}}",
   "hostsDialog.addHost": "Add host",
   "hostsDialog.advancedOptions": "Settings",
+  "hostsDialog.placeholder": "Placeholder",
+  "hostsDialog.placeholderHint": "Information host: only its name appears in subscriptions; the connection does not work",
   "hostsDialog.errors.fixRemarkAddressInList": "Error in the remark or address — fix it in the hosts list.",
   "hostsDialog.alpn.default": "Not set (client decides)",
   "hostsDialog.fingerprint.default": "Same as inbound",

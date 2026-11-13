@@ -320,6 +320,78 @@ def test_host_order_in_list_matters():
     assert _same([a, b], [b, a]) is False
 
 
+def test_placeholder_payload_ignores_invalid_hidden_json_and_keeps_binding():
+    result = _run(
+        {
+            "op": "groupHosts",
+            "inboundTags": ["VLESS"],
+            "hosts": [
+                {
+                    "host_id": 42,
+                    "inbound_tag": "VLESS",
+                    "remark": "Information",
+                    "is_placeholder": True,
+                    "bot_usernames": ["mine"],
+                    "finalmask": "{invalid",
+                    "xhttp_extra": "{invalid",
+                }
+            ],
+        }
+    )
+
+    assert result["payload"]["VLESS"] == [
+        {
+            "id": 42,
+            "order": 0,
+            "remark": "Information",
+            "is_placeholder": True,
+            "bot_usernames": ["mine"],
+        }
+    ]
+
+
+def test_switching_placeholder_back_before_save_keeps_connection_draft():
+    """Флаг меняет только payload на момент сохранения, не черновик формы."""
+    draft = {
+        "host_id": 42,
+        "inbound_tag": "VLESS",
+        "remark": "Austria",
+        "address": "edge.example",
+        "port": 443,
+        "node_ids": [7, 9],
+        "bot_usernames": ["mine"],
+        "finalmask": '{"tcp":[{"type":"noop","settings":{}}]}',
+        "xhttp_extra": '{"headers":{"X-Test":"value"}}',
+    }
+
+    placeholder = _run({"op": "groupHosts", "inboundTags": ["VLESS"], "hosts": [{**draft, "is_placeholder": True}]})
+    restored = _run({"op": "groupHosts", "inboundTags": ["VLESS"], "hosts": [{**draft, "is_placeholder": False}]})
+
+    assert placeholder["payload"]["VLESS"] == [
+        {
+            "id": 42,
+            "order": 0,
+            "remark": "Austria",
+            "is_placeholder": True,
+            "bot_usernames": ["mine"],
+        }
+    ]
+    assert restored["payload"]["VLESS"] == [
+        {
+            "id": 42,
+            "order": 0,
+            "remark": "Austria",
+            "address": "edge.example",
+            "port": 443,
+            "node_ids": [7, 9],
+            "bot_usernames": ["mine"],
+            "finalmask": {"tcp": [{"type": "noop", "settings": {}}]},
+            "xhttp_extra": {"headers": {"X-Test": "value"}},
+            "is_placeholder": False,
+        }
+    ]
+
+
 @pytest.mark.parametrize("network", ["tcp", "grpc", "ws"])
 def test_inbound_change_keeps_host_identity_and_clears_xhttp_extra(network):
     """Смена транспорта меняет только inbound и очищает несовместимый Extra."""

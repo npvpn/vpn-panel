@@ -58,6 +58,7 @@ import {
 } from "./hostsDialog/UnsavedChanges";
 import { HostsList } from "./hostsDialog/HostsList";
 import { AddHostForm, EMPTY_HOST } from "./hostsDialog/AddHostForm";
+import { groupHosts } from "./hostsDialog/hostPayload";
 import {
   BotHostsTab,
   BotTabFilters,
@@ -85,35 +86,6 @@ function flattenHosts(hosts: HostsDict | null | undefined) {
   );
 
   return items.sort((a, b) => a.order - b.order || 0);
-}
-
-function groupHosts(
-  hosts: z.infer<typeof hostsFormSchema>["hosts"],
-  inboundTags: string[]
-): HostsDict {
-  const payload: HostsDict = Object.fromEntries(
-    inboundTags.map((tag) => [tag, [] as any[]])
-  );
-
-  hosts.forEach((host, index) => {
-    const { inbound_tag, host_id, template_injection, ...rest } = host;
-
-    if (!payload[inbound_tag]) {
-      payload[inbound_tag] = [];
-    }
-
-    const finalmaskText = rest.finalmask ?? "";
-    payload[inbound_tag].push({
-      ...rest,
-      // Назад бэкенду — под именем id; без него хост будет пересоздан.
-      ...(typeof host_id === "number" ? { id: host_id } : {}),
-      order: index,
-      xhttp_extra: rest.xhttp_extra ? JSON.parse(rest.xhttp_extra) : null,
-      finalmask: finalmaskText.trim() ? JSON.parse(finalmaskText) : null,
-    });
-  });
-
-  return payload;
 }
 
 export const HostsDialog: FC = () => {

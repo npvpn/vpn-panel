@@ -301,15 +301,16 @@ def add_host(db: Session, inbound_tag: str, host: ProxyHostModify) -> list[Proxy
     Returns:
         List[ProxyHost]: Updated list of hosts for the inbound.
     """
-    balancing_fields = _prepare_host_balancing(db, host)
+    balancing_fields = {} if host.is_placeholder else _prepare_host_balancing(db, host)
     inbound = get_or_create_inbound(db, inbound_tag)
     bots = _get_bots_by_usernames(db, host.bot_usernames)
-    nodes = _get_nodes_by_ids(db, host.node_ids)
+    nodes = [] if host.is_placeholder else _get_nodes_by_ids(db, host.node_ids)
     order = host.order if host.order is not None else _max_host_order(db) + 1
     inbound.hosts.append(
         ProxyHost(
             remark=host.remark,
-            address=host.address,
+            address="" if host.is_placeholder else host.address,
+            is_placeholder=host.is_placeholder,
             port=host.port,
             path=host.path,
             sni=host.sni,
@@ -379,15 +380,23 @@ def update_hosts(
     incoming_id_set = set(incoming_ids)
     if source_ids is None:
         source_ids = {id_ for (id_,) in db.query(ProxyHost.id).all()} - (set(existing) - incoming_id_set)
-    balancing_fields = [
-        _prepare_host_balancing(db, host, existing.get(host.id), source_ids=source_ids) for host in modified_hosts
+    placeholder_flags = [
+        host.is_placeholder
+        if host.id is None or "is_placeholder" in host.model_fields_set
+        else bool(existing[host.id].is_placeholder)
+        for host in modified_hosts
     ]
-    for host, order, balance in zip(modified_hosts, orders, balancing_fields):
+    balancing_fields = [
+        {} if is_placeholder else _prepare_host_balancing(db, host, existing.get(host.id), source_ids=source_ids)
+        for host, is_placeholder in zip(modified_hosts, placeholder_flags)
+    ]
+    for host, order, balance, is_placeholder in zip(modified_hosts, orders, balancing_fields, placeholder_flags):
         target = existing[host.id] if host.id is not None else ProxyHost(inbound=inbound)
         for key, value in balance.items():
             setattr(target, key, value)
         target.remark = host.remark
-        target.address = host.address
+        target.is_placeholder = is_placeholder
+        target.address = "" if is_placeholder else host.address
         target.port = host.port
         target.path = host.path
         target.sni = host.sni
@@ -412,13 +421,20 @@ def update_hosts(
                 setattr(target, _not_null_flag, _value)
         target.xhttp_extra = host.xhttp_extra
         target.order = order
-        target.client_config_id = host.client_config_id
+        target.client_config_id = None if is_placeholder else host.client_config_id
         target.address_subset_enabled = host.address_subset_enabled
         target.address_subset_size = host.address_subset_size
         target.address_rotation_days = host.address_rotation_days
         target.bots = _get_bots_by_usernames(db, host.bot_usernames)
-        _apply_rental_marks(db, target, host.rented_bot_usernames)
-        target.nodes = _get_nodes_by_ids(db, host.node_ids)
+        _apply_rental_marks(db, target, [] if is_placeholder else host.rented_bot_usernames)
+        target.nodes = [] if is_placeholder else _get_nodes_by_ids(db, host.node_ids)
+        if is_placeholder:
+            target.host_injection = None
+            target.balancing = None
+            target.balancer_nodes = []
+            target.balancer_nodes_source = "host"
+            target.is_disabled = False
+            target.is_hidden = False
         if host.id is None:
             db.add(target)
 
