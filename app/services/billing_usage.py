@@ -57,7 +57,7 @@ def collect_bot_usage(db: Session, period_from: datetime, period_to: datetime) -
             .select_from(host_bot_association)
             .join(Bot, Bot.id == host_bot_association.c.bot_id)
             .join(ProxyHost, ProxyHost.id == host_bot_association.c.host_id)
-            .where(host_bot_association.c.rented_at.isnot(None))
+            .where(host_bot_association.c.rented_at.isnot(None), ProxyHost.is_placeholder.is_(False))
             .options(selectinload(ProxyHost.nodes), selectinload(ProxyHost.balancer_nodes))
         )
         .unique()

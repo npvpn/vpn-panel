@@ -19,6 +19,39 @@ JSON_STUB_ADDRESS = "198.18.0.1"
 JSON_STUB_PORT = 443
 
 
+def add_information_placeholder(conf, remark: str) -> None:
+    """Информационный хост: валидный профиль с заведомо нерабочим endpoint.
+
+    Тип протокола выбирается по возможностям формата подписки, а не по
+    реальному инбаунду хоста. Для JSON используем тот же VLESS-профиль,
+    что и у уже существующих заглушек статуса подписки.
+    """
+    from app.subscription.clash import ClashConfiguration, ClashMetaConfiguration
+    from app.subscription.outline import OutlineConfiguration
+
+    protocol = "vless"
+    settings = {"id": JSON_STUB_ID, "flow": ""}
+    if isinstance(conf, OutlineConfiguration):
+        protocol = "shadowsocks"
+        settings = {"password": "disabled-placeholder", "method": "aes-256-gcm"}
+    elif isinstance(conf, ClashConfiguration) and not isinstance(conf, ClashMetaConfiguration):
+        protocol = "vmess"
+
+    inbound = {
+        "network": "ws",
+        "protocol": protocol,
+        "port": JSON_STUB_PORT,
+        "tls": "none",
+        "header_type": "",
+        "fragment_setting": "",
+        "noise_setting": "",
+        "path": "",
+        "host": "",
+        "sni": "",
+    }
+    conf.add(remark=remark, address=JSON_STUB_ADDRESS, inbound=inbound, settings=settings)
+
+
 def _vless_stub_link(
     remark: str,
     *,

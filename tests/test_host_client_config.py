@@ -4,6 +4,7 @@ import sys
 import types
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -70,6 +71,33 @@ def test_update_hosts_can_clear_client_config(db):
 
 def test_host_payload_defaults_to_no_profile():
     assert ProxyHostModify(remark="server", address="example.com").client_config_id is None
+
+
+def test_placeholder_requires_only_remark_and_persists(db):
+    from app.db import crud
+
+    payload = ProxyHostModify(remark="⬇️ Информация ⬇️", is_placeholder=True)
+    host = crud.update_hosts(db, "VLESS_TCP", [payload])[0]
+    assert host.is_placeholder is True
+    assert host.address == ""
+    assert ProxyHostModify.model_validate(host).is_placeholder is True
+
+
+def test_regular_host_still_requires_address():
+    with pytest.raises(ValidationError, match="address"):
+        ProxyHostModify(remark="server")
+
+
+def test_old_client_cannot_clear_placeholder_by_omitting_flag(db):
+    from app.db import crud
+
+    host = crud.update_hosts(db, "VLESS_TCP", [ProxyHostModify(remark="Info", is_placeholder=True)])[0]
+    old_payload = ProxyHostModify(id=host.id, remark="Updated", address="old.example")
+
+    updated = crud.update_hosts(db, "VLESS_TCP", [old_payload])[0]
+
+    assert updated.is_placeholder is True
+    assert updated.address == ""
 
 
 def _subset_payload() -> ProxyHostModify:

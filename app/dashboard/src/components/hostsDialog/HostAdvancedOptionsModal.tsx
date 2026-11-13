@@ -1,5 +1,6 @@
 import {
   Button,
+  Box,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -8,9 +9,11 @@ import {
   ModalHeader,
   ModalOverlay,
   Text,
+  Switch,
+  Tooltip,
 } from "@chakra-ui/react";
 import { FC, useEffect, useState } from "react";
-import { useFormContext } from "react-hook-form";
+import { Controller, useFormContext, useWatch } from "react-hook-form";
 import { z } from "zod";
 import {
   HostAdvancedOptions,
@@ -20,6 +23,7 @@ import { thinScrollbarSx } from "utils/thinScrollbar";
 import { isSameHostValues } from "./hostValues";
 import { hostItemSchema, hostsFormSchema } from "./schema";
 import { UnsavedChangesDialog, UnsavedChangesNote } from "./UnsavedChanges";
+import { RHFInput } from "./RHFInput";
 
 type HostValues = z.infer<typeof hostItemSchema>;
 type HostsForm = z.infer<typeof hostsFormSchema>;
@@ -50,6 +54,7 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
 }) => {
   const { t, index } = advancedOptionsProps;
   const form = useFormContext<HostsForm>();
+  const isPlaceholder = useWatch({ control: form.control, name: `hosts.${index}.is_placeholder` });
 
   const [snapshot, setSnapshot] = useState<HostValues | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -157,7 +162,33 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
             pb={2}
             sx={{ overscrollBehavior: "contain", ...thinScrollbarSx }}
           >
-            <HostAdvancedOptions {...advancedOptionsProps} />
+            <Box mb={3}>
+              <Controller
+                control={form.control}
+                name={`hosts.${index}.is_placeholder`}
+                render={({ field }) => (
+                  <Tooltip label={t("hostsDialog.placeholderHint")}>
+                    <Box as="label" display="inline-flex" alignItems="center" gap={2}>
+                      <Switch
+                        aria-label={t("hostsDialog.placeholder")}
+                        isChecked={field.value}
+                        onChange={(e) => field.onChange(e.target.checked)}
+                      />
+                      <Text>{t("hostsDialog.placeholder")}</Text>
+                    </Box>
+                  </Tooltip>
+                )}
+              />
+            </Box>
+            {isPlaceholder ? (
+              <RHFInput
+                label={t("hostsDialog.remark")}
+                registerProps={form.register(`hosts.${index}.remark`)}
+                error={form.formState.errors.hosts?.[index]?.remark}
+              />
+            ) : (
+              <HostAdvancedOptions {...advancedOptionsProps} />
+            )}
           </ModalBody>
           <ModalFooter gap={2}>
             {snapshot && (

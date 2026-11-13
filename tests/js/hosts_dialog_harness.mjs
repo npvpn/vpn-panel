@@ -17,6 +17,7 @@ import { isSameHostValues } from "../../app/dashboard/src/components/hostsDialog
 import * as botBindings from "../../app/dashboard/src/components/hostsDialog/botBindings.ts";
 import * as hostsFilter from "../../app/dashboard/src/components/hostsDialog/hostsFilter.ts";
 import { changeHostInbound } from "../../app/dashboard/src/components/hostsDialog/hostInbound.ts";
+import { groupHosts } from "../../app/dashboard/src/components/hostsDialog/hostPayload.ts";
 
 const { orderBotTabRows, selectVisibleHosts } = hostsFilter;
 
@@ -25,6 +26,8 @@ let result;
 
 if (scenario.op === "changeInbound") {
   result = { host: changeHostInbound(scenario.host, scenario.tag, scenario.network), original: scenario.host };
+} else if (scenario.op === "groupHosts") {
+  result = { payload: groupHosts(scenario.hosts, scenario.inboundTags) };
 } else if (scenario.op === "same") {
   result = { same: isSameHostValues(scenario.a, scenario.b) };
 } else if (scenario.op === "visible") {

@@ -32,6 +32,7 @@ export const EMPTY_HOST: z.infer<typeof hostItemSchema> = {
   path: null,
   address: "",
   remark: "",
+  is_placeholder: false,
   mux_enable: false,
   allowinsecure: false,
   is_disabled: false,
@@ -87,6 +88,10 @@ export const AddHostForm: FC<Props> = ({
 
   const form = useForm<z.infer<typeof hostsFormSchema>>({
     resolver: zodResolver(hostsFormSchema),
+    // При переключении в информационный хост часть полей размонтируется.
+    // Черновик должен сохраниться до явного сохранения всей формы: пользователь
+    // может включить флаг, проверить remark и сразу вернуть обычный хост.
+    shouldUnregister: false,
     defaultValues: {
       hosts: [{ ...EMPTY_HOST, inbound_tag: initialTag }],
     },
@@ -107,10 +112,11 @@ export const AddHostForm: FC<Props> = ({
   });
 
   const remark = useWatch({ control: form.control, name: "hosts.0.remark" });
+  const isPlaceholder = useWatch({ control: form.control, name: "hosts.0.is_placeholder" });
 
   const accordionErrors = form.formState.errors.hosts?.[0];
 
-  const hasAdvancedErrors = hasAdvancedFieldErrors(accordionErrors, true);
+  const hasAdvancedErrors = !isPlaceholder && hasAdvancedFieldErrors(accordionErrors, true);
 
   const handleAdd = form.handleSubmit((data) => {
     onAdded(data.hosts[0]);
@@ -185,20 +191,38 @@ export const AddHostForm: FC<Props> = ({
               }}
             />
 
-            <RHFInput
-              label="Address"
-              hideLabel
-              registerProps={form.register(`${HOST_KEY}.0.address`)}
-              error={accordionErrors?.address}
-              placeholder="{SERVER_IP}"
-              rightElement={<HostInfoPopover t={t} />}
-              formControlProps={{ flex: "1.5", minW: "140px" }}
-              inputProps={{
-                size: "sm",
-                borderRadius: "4px",
-                "aria-label": "Address",
-              }}
+            <Controller
+              control={form.control}
+              name="hosts.0.is_placeholder"
+              render={({ field }) => (
+                <Tooltip label={t("hostsDialog.placeholderHint")}>
+                  <Box as="span" alignSelf="center">
+                    <Switch
+                      aria-label={t("hostsDialog.placeholder")}
+                      isChecked={field.value}
+                      onChange={(e) => field.onChange(e.target.checked)}
+                    />
+                  </Box>
+                </Tooltip>
+              )}
             />
+
+            {!isPlaceholder && (
+              <RHFInput
+                label="Address"
+                hideLabel
+                registerProps={form.register(`${HOST_KEY}.0.address`)}
+                error={accordionErrors?.address}
+                placeholder="{SERVER_IP}"
+                rightElement={<HostInfoPopover t={t} />}
+                formControlProps={{ flex: "1.5", minW: "140px" }}
+                inputProps={{
+                  size: "sm",
+                  borderRadius: "4px",
+                  "aria-label": "Address",
+                }}
+              />
+            )}
 
             <Flex
               flexShrink={0}
@@ -207,24 +231,27 @@ export const AddHostForm: FC<Props> = ({
               h="32px"
               alignSelf="center"
             >
-              <Controller
-                control={form.control}
-                name={`${HOST_KEY}.0.is_disabled`}
-                render={({ field }) => (
-                  <Tooltip label={t("hostsDialog.injection.visibilityHint")}>
-                    <Box as="span">
-                      <Switch
-                        aria-label={t("hostsDialog.injection.enabled")}
-                        colorScheme="primary"
-                        isChecked={!field.value}
-                        onChange={(e) => field.onChange(!e.target.checked)}
-                      />
-                    </Box>
-                  </Tooltip>
-                )}
-              />
+              {!isPlaceholder && (
+                <Controller
+                  control={form.control}
+                  name={`${HOST_KEY}.0.is_disabled`}
+                  render={({ field }) => (
+                    <Tooltip label={t("hostsDialog.injection.visibilityHint")}>
+                      <Box as="span">
+                        <Switch
+                          aria-label={t("hostsDialog.injection.enabled")}
+                          colorScheme="primary"
+                          isChecked={!field.value}
+                          onChange={(e) => field.onChange(!e.target.checked)}
+                        />
+                      </Box>
+                    </Tooltip>
+                  )}
+                />
+              )}
 
-              <Tooltip
+              {!isPlaceholder && (
+                <Tooltip
                 label={t("hostsDialog.advancedOptions")}
                 placement="top"
               >
@@ -254,7 +281,8 @@ export const AddHostForm: FC<Props> = ({
                     />
                   )}
                 </Box>
-              </Tooltip>
+                </Tooltip>
+              )}
 
               <Button
                 type="button"

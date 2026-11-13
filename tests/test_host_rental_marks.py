@@ -98,6 +98,20 @@ def test_rental_mark_is_set_for_listed_bots_only(db, seeded):
     assert marked == [apple_id]
 
 
+def test_converting_host_to_placeholder_removes_rental_and_endpoint(db, seeded):
+    crud.update_hosts(db, TAG, [_payload(seeded, rented_bot_usernames=["AppleGurruBot"])])
+    placeholder = _payload(
+        seeded, is_placeholder=True, address="ignored.example", rented_bot_usernames=["AppleGurruBot"]
+    )
+
+    host = crud.update_hosts(db, TAG, [placeholder])[0]
+
+    assert host.is_placeholder is True
+    assert host.address == ""
+    assert host.rented_bot_usernames == []
+    assert host.bot_usernames == ["AppleGurruBot", "vpnZabBot"]
+
+
 def test_rental_mark_is_kept_on_resave(db, seeded):
     """Дата аренды не должна переставляться при каждом сохранении формы:
     иначе «арендует с такого числа» превратится в «арендует с сегодня»."""

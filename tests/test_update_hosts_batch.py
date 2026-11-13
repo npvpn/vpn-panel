@@ -339,6 +339,35 @@ def test_http_move_uses_existing_payload_and_returns_new_inbound(api, db, catalo
     assert cached == [True]
 
 
+def test_http_get_hosts_keeps_placeholders_for_editor_and_filters_partner_list(api, db, catalog):
+    client, _ = api
+    placeholder = ProxyHost(
+        inbound=catalog.source,
+        remark="Information",
+        address="",
+        is_placeholder=True,
+        alpn=ProxyHostALPN.none,
+        fingerprint=ProxyHostFingerprint.none,
+    )
+    db.add(placeholder)
+    db.commit()
+
+    editor_response = client.get("/api/hosts")
+    partner_response = client.get("/api/hosts?exclude_placeholders=true")
+
+    assert editor_response.status_code == 200, editor_response.text
+    assert partner_response.status_code == 200, partner_response.text
+    assert {host["id"] for host in editor_response.json()["SOURCE"]} == {
+        catalog.moving.id,
+        catalog.staying.id,
+        placeholder.id,
+    }
+    assert {host["id"] for host in partner_response.json()["SOURCE"]} == {
+        catalog.moving.id,
+        catalog.staying.id,
+    }
+
+
 @pytest.mark.parametrize("failure", ["duplicate", "unknown", "node", "inbound", "client_config"])
 def test_http_invalid_batch_keeps_database_and_cache(api, db, catalog, failure):
     """HTTP-ошибка не публикует частичное состояние в БД/кэш."""
