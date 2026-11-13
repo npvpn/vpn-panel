@@ -508,6 +508,11 @@ def process_inbounds_and_tags(
     for item in candidates:
         if item["host"].get("is_hidden"):
             continue
+        if item.get("is_placeholder"):
+            from app.subscription.sub_stub import add_information_placeholder
+
+            add_information_placeholder(conf, item["remark"])
+            continue
         if item["injection"] is not None:
             if not isinstance(conf, V2rayJsonConfig):
                 continue

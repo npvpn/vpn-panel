@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import importlib
 import importlib.util
 import json
 import pathlib
@@ -24,6 +25,7 @@ import pytest
 import config as panel_config
 
 _ROOT = pathlib.Path(__file__).parent.parent
+_original_lightweight_modules = {name: sys.modules.get(name) for name in ("app.utils.system", "app.templates.filters")}
 
 
 def _stub_module(name: str, attrs: dict) -> types.ModuleType:
@@ -98,7 +100,11 @@ for _name, _cls in {
 }.items():
     setattr(_subscription_pkg, _name, _cls)
 
-from app.subscription import share  # noqa: E402
+# DB-тесты при collection иногда оставляют временный `app.subscription.share`
+# без process_inbounds_and_tags. Этому файлу нужен настоящий модуль.
+if not hasattr(sys.modules.get("app.subscription.share"), "process_inbounds_and_tags"):
+    sys.modules.pop("app.subscription.share", None)
+share = importlib.import_module("app.subscription.share")
 
 BS_TAG = "VLESS_TCP"
 BS_NODE_ID = 7
@@ -240,6 +246,44 @@ def _render(conf, bs: BsContext, stub: StubEndpoint = ZERO_STUB, subset=None, bs
 
 def _xhttp_inbound(extra: dict) -> dict:
     return {**_inbound(), "network": "xhttp", "xhttp_extra": extra}
+
+
+def test_information_placeholder_keeps_remark_and_uses_dead_endpoint(xray_stub):
+    host = _host("real.example", remark="⬇️ Информация ⬇️")
+    host["is_placeholder"] = True
+    xray_stub([host])
+    conf = _FakeConf()
+
+    _render(conf, BsContext.empty())
+
+    assert len(conf.calls) == 1
+    call = conf.calls[0]
+    assert call["remark"] == "⬇️ Информация ⬇️"
+    assert call["address"] == "198.18.0.1"
+    assert call["inbound"]["protocol"] == "vless"
+    assert call["inbound"]["port"] == 443
+
+
+@pytest.mark.parametrize(
+    "conf_factory",
+    [
+        V2rayShareLink,
+        V2rayJsonConfig,
+        ClashConfiguration,
+        ClashMetaConfiguration,
+        SingBoxConfiguration,
+        OutlineConfiguration,
+    ],
+    ids=["v2ray", "v2ray_json", "clash", "clash_meta", "singbox", "outline"],
+)
+def test_information_placeholder_renders_in_supported_formats(xray_stub, conf_factory):
+    host = _host(remark="Information")
+    host["is_placeholder"] = True
+    xray_stub([host])
+
+    rendered = _render(conf_factory(), BsContext.empty())
+
+    assert "Information" in str(rendered)
 
 
 def test_host_finalmask_reaches_subscription_inbound(xray_stub):
@@ -624,11 +668,18 @@ def test_is_bs_host_renders_without_error_in_real_non_v2ray_formats(xray_stub, c
 _fake_crud = types.SimpleNamespace(
     get_blocked_bs_node_ids=lambda db, user_id: set(db["blocked"]),
 )
+_original_db = sys.modules.get("app.db")
+_original_db_models = sys.modules.get("app.db.models")
 _stub_module("app.db", {"Session": dict, "crud": _fake_crud})
 _stub_module("app.db.models", {"User": types.SimpleNamespace})
 
 from app.subscription import bs_context_builder  # noqa: E402
 from app.subscription.bs_context_builder import build_bs_context  # noqa: E402
+
+if _original_db is None:
+    sys.modules.pop("app.db", None)
+if _original_db_models is None:
+    sys.modules.pop("app.db.models", None)
 
 BS_SETTINGS = {"sub_bs_limit_server_text": ["Лимит БС исчерпан"]}
 
@@ -947,3 +998,13 @@ def test_managed_strategy_with_empty_legacy_pool_does_not_break_subscription(xra
     conf = _v2ray_json_conf()
     _render(conf, BsContext.empty())
     assert "working.example" in _proxy_addresses(conf.config[-1])
+
+
+# app.templates остаётся лёгким Jinja-рендером: test_v2ray_extra при collection
+# создаёт в sys.modules заглушку с render_template=None, и её восстановление
+# ломает последующие тесты сервисов шаблонов. Остальные заглушки восстанавливаем.
+for _module_name, _original_module in _original_lightweight_modules.items():
+    if _original_module is None:
+        sys.modules.pop(_module_name, None)
+    else:
+        sys.modules[_module_name] = _original_module

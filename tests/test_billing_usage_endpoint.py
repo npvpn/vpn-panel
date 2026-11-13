@@ -157,6 +157,17 @@ def test_service_binding_is_not_counted_as_rented(db, seeded):
     assert "Служебный" not in rows[0]["rented_host_remarks"]
 
 
+def test_placeholder_is_not_billed_even_with_stale_rental_mark(db, seeded):
+    host = db.query(ProxyHost).filter(ProxyHost.remark == "🇪🇺 [Белый список] #1").one()
+    host.is_placeholder = True
+    db.commit()
+
+    rows = collect_bot_usage(db, datetime(2026, 9, 1), datetime(2026, 10, 1))
+
+    assert rows[0]["rented_hosts"] == 0
+    assert rows[0]["rented_host_remarks"] == []
+
+
 def test_bot_without_anything_is_absent_from_response(db, seeded):
     """Бот без данных не приходит с нулями: отличать «ноль» от «нет записи»
     должен вызывающий, иначе ноль прочтётся как «трафика не было»."""

@@ -18,7 +18,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { NodeType } from "contexts/NodesContext";
 import { memo, ReactNode, useMemo, useState } from "react";
-import { Controller, useFormContext } from "react-hook-form";
+import { Controller, useFormContext, useWatch } from "react-hook-form";
 import { Bot } from "types/Bot";
 import {
   DuplicateIcon,
@@ -177,6 +177,7 @@ export const HostRow = memo(function HostRow({
 }: HostRowProps) {
   const { register, control } =
     useFormContext<z.infer<typeof hostsFormSchema>>();
+  const isPlaceholder = useWatch({ control, name: `${HOST_KEY}.${index}.is_placeholder` });
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const inboundSelect = useMemo(
@@ -288,7 +289,22 @@ export const HostRow = memo(function HostRow({
                 )}
               </HStack>
 
-              {enableSwitch}
+              <Controller
+                control={control}
+                name={`${HOST_KEY}.${index}.is_placeholder`}
+                render={({ field }) => (
+                  <Tooltip label={t("hostsDialog.placeholderHint")}>
+                    <Box as="span">
+                      <Switch
+                        aria-label={t("hostsDialog.placeholder")}
+                        isChecked={field.value}
+                        onChange={(e) => field.onChange(e.target.checked)}
+                      />
+                    </Box>
+                  </Tooltip>
+                )}
+              />
+              {!isPlaceholder && enableSwitch}
             </HStack>
 
             <RHFInput
@@ -307,7 +323,8 @@ export const HostRow = memo(function HostRow({
               }}
             />
 
-            <RHFInput
+            {!isPlaceholder && (
+              <RHFInput
               label="Address"
               registerProps={register(`${HOST_KEY}.${index}.address`)}
               error={accordionErrors?.address}
@@ -321,7 +338,8 @@ export const HostRow = memo(function HostRow({
                 size: "sm",
                 borderRadius: "4px",
               }}
-            />
+              />
+            )}
           </VStack>
 
           <VStack
@@ -336,7 +354,7 @@ export const HostRow = memo(function HostRow({
             borderColor="gray.100"
             _dark={{ borderColor: "gray.600" }}
           >
-            {advancedOptionsButton}
+            {!isPlaceholder && advancedOptionsButton}
 
             <Tooltip label="Duplicate" placement="left">
               <IconButton
@@ -451,7 +469,7 @@ export const HostRow = memo(function HostRow({
               textAlign="center"
               isTruncated
             >
-              {address || "—"}
+          {isPlaceholder ? t("hostsDialog.placeholder") : address || "—"}
             </Text>
           </Tooltip>
         </Td>
@@ -489,7 +507,7 @@ export const HostRow = memo(function HostRow({
       </>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [columnWidths, inboundSelect, remark, address, botBadgeLabel, botBadgeTooltip]
+    [columnWidths, inboundSelect, remark, address, isPlaceholder, botBadgeLabel, botBadgeTooltip]
   );
 
   const renderTableLayout = () => (
@@ -502,7 +520,7 @@ export const HostRow = memo(function HostRow({
         textAlign="center"
         w={columnWidths ? `${columnWidths.enabled}px` : undefined}
       >
-        {enableSwitch}
+        {!isPlaceholder && enableSwitch}
       </Td>
 
       <Td

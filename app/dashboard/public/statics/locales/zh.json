@@ -39,6 +39,8 @@
   "header.nodesUsageTotal": "合计：{{value}}",
   "hostsDialog.addHost": "添加主机",
   "hostsDialog.advancedOptions": "高级选项",
+  "hostsDialog.placeholder": "Placeholder",
+  "hostsDialog.placeholderHint": "Information host: only its name appears in subscriptions; the connection does not work",
   "hostsDialog.errors.fixRemarkAddressInList": "名称或地址有误——请在主机列表中修改。",
   "hostsDialog.alpn.default": "未设置（由客户端决定）",
   "hostsDialog.fingerprint.default": "与 inbound 相同",

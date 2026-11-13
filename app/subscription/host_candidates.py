@@ -68,6 +68,16 @@ def prepare_candidates(
 
                 if host.get("is_disabled"):
                     continue
+                if host.get("is_placeholder"):
+                    candidates.append(
+                        {
+                            "order": host.get("order", 0),
+                            "host": host,
+                            "is_placeholder": True,
+                            "remark": host["remark"].format_map(format_variables),
+                        }
+                    )
+                    continue
                 try:
                     injection = resolve_host_injection(host.get("host_injection"), template_for(host))
                 except ValueError:

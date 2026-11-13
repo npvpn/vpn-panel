@@ -107,6 +107,14 @@ def test_unavailable_source_is_not_injected(monkeypatch, changes):
     assert len(endpoints(conf)) == 1
 
 
+def test_information_placeholder_is_not_an_injection_source(monkeypatch):
+    conf, _ = scenario(monkeypatch, source_changes={1: {"is_placeholder": True, "is_hidden": False}})
+
+    assert len(endpoints(conf)) == 1
+    assert endpoints(conf)[0]["settings"]["vnext"][0]["port"] == 9443
+    assert conf.config[0]["outbounds"][0]["settings"]["vnext"][0]["address"] == "198.18.0.1"
+
+
 def test_bs_source_excluded_and_all_blocked_stub(monkeypatch):
     bs = BsContext(frozenset({1}), "BS limit")
     conf, _ = scenario(monkeypatch, bs=bs, source_changes={2: {"node_ids": [2]}})
