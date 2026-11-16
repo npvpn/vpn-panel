@@ -757,6 +757,12 @@
     width: 200px;
     height: 200px;
     flex-shrink: 0;
+    /* до готовности кода и логотипа место занято, но пусто — появляются вместе (NPVPN-2368) */
+    visibility: hidden;
+}
+
+.qr-code--ready {
+    visibility: visible;
 }
 
 #qrcode-main img,

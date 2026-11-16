@@ -17,8 +17,11 @@
     <link rel="preload" href="{{ sub_statics }}fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="{{ sub_statics }}fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="icon" href="data:,">
-    <script defer src="/statics/vendor/js/alpinejs.js"></script>
+    {# qrcode.min.js — строго до Alpine (NPVPN-2368): defer-скрипты выполняются по порядку, а Alpine
+       стартует сразу после своего и рисует QR в init(). Подключённый после Alpine QRCode иногда не
+       успевал загрузиться — «QRCode is not defined», вместо кода один логотип до перезагрузки. #}
     <script defer src="/statics/vendor/js/qrcode.min.js"></script>
+    <script defer src="/statics/vendor/js/alpinejs.js"></script>
     <script defer src="{{ sub_statics }}scripts/cabinet-link.js?v={{ static_v }}"></script>
     {# Опрос статуса — по состоянию, как было на отдельных страницах: обычная перезагружается при
        достижении лимита и отзыве токена, «лимит» — когда устройство освободилось, «истекла» — при
@@ -94,7 +97,9 @@
           toastTimer: null,
 
           selectedClient: null,
-
+          // QR и логотип — разные элементы: код рисуется на canvas сразу, логотип грузится по сети.
+          // Блок показываем, когда готовы оба, иначе один из них появлялся раньше другого (NPVPN-2368)
+          qrReady: false,
 
           selectClient(app) {
               this.selectedClient = app.id;
@@ -219,6 +224,11 @@
                     height: 200,
                     correctLevel: QRCode.CorrectLevel.H
                   });
+                  // decode() ждёт загрузки логотипа (или сразу выполняется, если он уже загружен);
+                  // если логотип не загрузился — показываем код без него, а не пустое место
+                  const logo = qrMainContainer.parentElement.querySelector('.qr-code__logo');
+                  const logoReady = logo ? logo.decode() : Promise.resolve();
+                  logoReady.catch(() => {}).then(() => { this.qrReady = true; });
                 }
               });
 
@@ -679,7 +689,7 @@ get alternativeApps() {
                 <p class="qr-title">Отсканируйте для подключения другого устройства</p>
                 {# QR с логотипом «VPN» по центру — как реферальный QR бота (src/utils/ref_qr.py, та же
                    картинка): уровень коррекции H восстанавливает закрытый логотипом центр (~8% площади; 56px — с запасом, 60+ на плотном коде уже не всегда читается) #}
-                <div class="qr-code">
+                <div class="qr-code" :class="{ 'qr-code--ready': qrReady }">
                   <div id="qrcode-main"></div>
                   <img class="qr-code__logo" src="{{ sub_statics }}assets/qr-logo.png?v={{ static_v }}" alt="" width="56" height="56">
                 </div>
