@@ -83,6 +83,20 @@ def test_placeholder_requires_only_remark_and_persists(db):
     assert ProxyHostModify.model_validate(host).is_placeholder is True
 
 
+def test_placeholder_can_be_disabled_for_all_its_bots(db):
+    """Инфо-хост не попадает в подписки, когда админ выключил его общим свитчем."""
+    from app.db import crud
+
+    host = crud.update_hosts(
+        db,
+        "VLESS_TCP",
+        [ProxyHostModify(remark="⬇️ Информация ⬇️", is_placeholder=True, is_disabled=True)],
+    )[0]
+
+    assert host.is_placeholder is True
+    assert host.is_disabled is True
+
+
 def test_regular_host_still_requires_address():
     with pytest.raises(ValidationError, match="address"):
         ProxyHostModify(remark="server")

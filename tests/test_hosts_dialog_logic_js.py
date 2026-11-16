@@ -345,6 +345,7 @@ def test_placeholder_payload_ignores_invalid_hidden_json_and_keeps_binding():
             "order": 0,
             "remark": "Information",
             "is_placeholder": True,
+            "is_disabled": False,
             "bot_usernames": ["mine"],
         }
     ]
@@ -373,6 +374,7 @@ def test_switching_placeholder_back_before_save_keeps_connection_draft():
             "order": 0,
             "remark": "Austria",
             "is_placeholder": True,
+            "is_disabled": False,
             "bot_usernames": ["mine"],
         }
     ]
@@ -390,6 +392,57 @@ def test_switching_placeholder_back_before_save_keeps_connection_draft():
             "is_placeholder": False,
         }
     ]
+
+
+def test_placeholder_payload_keeps_enabled_state():
+    """Выключенная заглушка должна дойти до CRUD, иначе сохранение включает её обратно."""
+    result = _run(
+        {
+            "op": "groupHosts",
+            "inboundTags": ["VLESS"],
+            "hosts": [
+                {
+                    "host_id": 42,
+                    "inbound_tag": "VLESS",
+                    "remark": "Information",
+                    "is_placeholder": True,
+                    "is_disabled": True,
+                }
+            ],
+        }
+    )
+
+    assert result["payload"]["VLESS"] == [
+        {
+            "id": 42,
+            "order": 0,
+            "remark": "Information",
+            "is_placeholder": True,
+            "is_disabled": True,
+            "bot_usernames": [],
+        }
+    ]
+
+
+def test_placeholder_controls_are_available_in_the_expected_layouts():
+    """Новая заглушка начинается с флага, сохранённая выключается общим свитчем."""
+    components = Path(__file__).parents[1] / "app/dashboard/src/components/hostsDialog"
+    add_form = (components / "AddHostForm.tsx").read_text()
+    host_row = (components / "HostRow.tsx").read_text()
+
+    assert add_form.index('name="hosts.0.is_placeholder"') < add_form.index("<Select")
+
+    table_start = host_row.index("const renderTableLayout")
+    table_end = host_row.index("  return (", table_start)
+    table_layout = host_row[table_start:table_end]
+    assert "{enableSwitch}" in table_layout
+    assert "!isPlaceholder && enableSwitch" not in table_layout
+
+    card_start = host_row.index("const renderCardLayout")
+    card_end = host_row.index("  const dataCells", card_start)
+    card_layout = host_row[card_start:card_end]
+    assert "{enableSwitch}" in card_layout
+    assert "!isPlaceholder && enableSwitch" not in card_layout
 
 
 @pytest.mark.parametrize("network", ["tcp", "grpc", "ws"])

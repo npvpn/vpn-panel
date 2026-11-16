@@ -152,6 +152,22 @@ export const AddHostForm: FC<Props> = ({
       >
         {inboundTag ? (
           <Flex wrap="wrap" gap={2} align="flex-start">
+            <Controller
+              control={form.control}
+              name="hosts.0.is_placeholder"
+              render={({ field }) => (
+                <Tooltip label={t("hostsDialog.placeholderHint")}>
+                  <Box as="span" alignSelf="center">
+                    <Switch
+                      aria-label={t("hostsDialog.placeholder")}
+                      isChecked={field.value}
+                      onChange={(e) => field.onChange(e.target.checked)}
+                    />
+                  </Box>
+                </Tooltip>
+              )}
+            />
+
             <FormControl w="160px" flexShrink={0}>
               <Select
                 size="sm"
@@ -189,22 +205,6 @@ export const AddHostForm: FC<Props> = ({
                 borderRadius: "4px",
                 "aria-label": "Remark",
               }}
-            />
-
-            <Controller
-              control={form.control}
-              name="hosts.0.is_placeholder"
-              render={({ field }) => (
-                <Tooltip label={t("hostsDialog.placeholderHint")}>
-                  <Box as="span" alignSelf="center">
-                    <Switch
-                      aria-label={t("hostsDialog.placeholder")}
-                      isChecked={field.value}
-                      onChange={(e) => field.onChange(e.target.checked)}
-                    />
-                  </Box>
-                </Tooltip>
-              )}
             />
 
             {!isPlaceholder && (

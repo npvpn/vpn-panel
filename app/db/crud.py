@@ -433,7 +433,6 @@ def update_hosts(
             target.balancing = None
             target.balancer_nodes = []
             target.balancer_nodes_source = "host"
-            target.is_disabled = False
             target.is_hidden = False
         if host.id is None:
             db.add(target)

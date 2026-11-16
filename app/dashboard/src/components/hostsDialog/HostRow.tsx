@@ -304,7 +304,7 @@ export const HostRow = memo(function HostRow({
                   </Tooltip>
                 )}
               />
-              {!isPlaceholder && enableSwitch}
+              {enableSwitch}
             </HStack>
 
             <RHFInput
@@ -520,7 +520,7 @@ export const HostRow = memo(function HostRow({
         textAlign="center"
         w={columnWidths ? `${columnWidths.enabled}px` : undefined}
       >
-        {!isPlaceholder && enableSwitch}
+        {enableSwitch}
       </Td>
 
       <Td

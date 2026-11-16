@@ -30,6 +30,7 @@ export function groupHosts(
         order: index,
         remark: host.remark,
         is_placeholder: true,
+        is_disabled: host.is_disabled ?? false,
         bot_usernames: host.bot_usernames ?? [],
       });
       return;
