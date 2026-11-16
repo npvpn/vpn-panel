@@ -21,6 +21,7 @@ from app.xray.config import XRayConfig
 from app.xray.node_config import inline_local_certificates
 
 logger = logging.getLogger("app.xray.node")
+_NO_PENDING_CONTROL_SESSION = object()
 from config import (
     XRAY_NODE_CERT_FETCH_TIMEOUT,
     XRAY_NODE_GRPC_READY_RETRIES,
@@ -145,6 +146,9 @@ class ReSTXRayNode:
         self._api = None
         self._started = False
         self._grpc_lock = threading.Lock()
+        self._control_session_lock = threading.Lock()
+        self._pending_control_session = _NO_PENDING_CONTROL_SESSION
+        self._publishing_control_session = False
 
         # Реальный набор тегов инбаундов ноды; заполняется после успешного
         # start/restart (NPVPN-1779), None до первого коннекта.
@@ -199,13 +203,37 @@ class ReSTXRayNode:
         self._control_session_listener = listener
 
     def _publish_control_session(self, session_id: str | None) -> None:
+        with self._control_session_lock:
+            self._pending_control_session = session_id
+        self._retry_pending_control_session()
+
+    def _retry_pending_control_session(self) -> None:
         listener = getattr(self, "_control_session_listener", None)
         if listener is None:
             return
-        try:
-            listener(session_id)
-        except Exception:
-            logger.exception("[node.session] failed to persist control session (%s)", self._node_tag())
+        with self._control_session_lock:
+            if self._publishing_control_session:
+                return
+            self._publishing_control_session = True
+
+        while True:
+            with self._control_session_lock:
+                session_id = self._pending_control_session
+                if session_id is _NO_PENDING_CONTROL_SESSION:
+                    self._publishing_control_session = False
+                    return
+            try:
+                listener(session_id)
+            except Exception:
+                logger.exception("[node.session] failed to persist control session (%s)", self._node_tag())
+                with self._control_session_lock:
+                    if self._pending_control_session is session_id:
+                        self._publishing_control_session = False
+                        return
+            else:
+                with self._control_session_lock:
+                    if self._pending_control_session is session_id:
+                        self._pending_control_session = _NO_PENDING_CONTROL_SESSION
 
     def adopt_control_session(self, session_id: str) -> None:
         if self._session_id or not session_id:
@@ -299,6 +327,7 @@ class ReSTXRayNode:
             raise NodeAPIError(0, str(e))
 
         if res.status_code == 200:
+            self._retry_pending_control_session()
             return data
         else:
             raise NodeAPIError(res.status_code, data["detail"])

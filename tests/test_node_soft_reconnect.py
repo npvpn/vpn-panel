@@ -1,6 +1,7 @@
 """Soft reconnect: keep REST session across transient network blips."""
 
 import sys
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,7 +22,7 @@ _stubs = {
 for name, mod in _stubs.items():
     sys.modules.setdefault(name, mod)
 
-from app.xray.node import NodeAPIError, ReSTXRayNode
+from app.xray.node import _NO_PENDING_CONTROL_SESSION, NodeAPIError, ReSTXRayNode
 
 # Other test modules import real xray_api.types during collection. The local
 # stub is only needed while importing node.py and must not leak to them.
@@ -41,7 +42,10 @@ def _make_node() -> ReSTXRayNode:
     node._keyfile = MagicMock()
     node._started = False
     node._api = None
-    node._grpc_lock = __import__("threading").Lock()
+    node._grpc_lock = threading.Lock()
+    node._control_session_lock = threading.Lock()
+    node._pending_control_session = _NO_PENDING_CONTROL_SESSION
+    node._publishing_control_session = False
     node.session = MagicMock()
     node._rest_api_url = "https://10.0.0.1:62050"
     return node
@@ -209,6 +213,113 @@ def test_make_request_uses_full_timeout_for_body_upload():
     assert node.make_request("/restart", timeout=90, config="{}") == {"ok": True}
     _, kwargs = node.session.post.call_args
     assert kwargs["timeout"] == 90
+
+
+def test_failed_session_publication_retries_after_successful_ping():
+    node = _make_node()
+    stored = {"session_id": "old-session"}
+    attempts = []
+
+    def persist(session_id):
+        attempts.append(session_id)
+        if len(attempts) == 1:
+            raise RuntimeError("database unavailable")
+        stored["session_id"] = session_id
+
+    node.set_control_session_listener(persist)
+    node._publish_control_session(node._session_id)
+    assert stored["session_id"] == "old-session"
+
+    response = MagicMock(status_code=200)
+    response.json.return_value = {}
+    node.session.post.return_value = response
+    assert node.make_request("/ping", timeout=5) == {}
+    assert stored["session_id"] == node._session_id
+
+    node.make_request("/ping", timeout=5)
+    assert attempts == [node._session_id, node._session_id]
+
+
+def test_try_restore_retries_failed_session_publication():
+    node = _make_node()
+    stored = {"session_id": "old-session"}
+    attempts = 0
+
+    def persist(session_id):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("database unavailable")
+        stored["session_id"] = session_id
+
+    node.set_control_session_listener(persist)
+    node._publish_control_session(node._session_id)
+
+    response = MagicMock(status_code=200)
+    response.json.side_effect = [{}, {"started": True}]
+    node.session.post.return_value = response
+    with patch.object(node, "_setup_api"):
+        assert node.try_restore() is True
+
+    assert stored["session_id"] == node._session_id
+    assert attempts == 2
+
+
+def test_failed_session_clear_waits_for_successful_rest_call():
+    node = _make_node()
+    stored = {"session_id": node._session_id}
+    attempts = 0
+
+    def persist(session_id):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("database unavailable")
+        stored["session_id"] = session_id
+
+    node.set_control_session_listener(persist)
+    node._publish_control_session(None)
+
+    response = MagicMock(status_code=503)
+    response.json.return_value = {"detail": "unavailable"}
+    node.session.post.return_value = response
+    with pytest.raises(NodeAPIError):
+        node.make_request("/ping", timeout=5)
+    assert stored["session_id"] == node._session_id
+    assert attempts == 1
+
+    response.status_code = 200
+    response.json.return_value = {}
+    node.make_request("/ping", timeout=5)
+    assert stored["session_id"] is None
+    assert attempts == 2
+
+
+def test_newer_session_publication_wins_over_inflight_write():
+    node = _make_node()
+    entered = threading.Event()
+    resume = threading.Event()
+    stored = {"session_id": None}
+
+    def persist(session_id):
+        if session_id == "old-session":
+            entered.set()
+            if not resume.wait(5):
+                raise TimeoutError("old publication was not released")
+        stored["session_id"] = session_id
+
+    node.set_control_session_listener(persist)
+    old_thread = threading.Thread(target=node._publish_control_session, args=("old-session",))
+    old_thread.start()
+    try:
+        assert entered.wait(5)
+        node._publish_control_session("new-session")
+    finally:
+        resume.set()
+        old_thread.join(5)
+
+    assert not old_thread.is_alive()
+    assert stored["session_id"] == "new-session"
 
 
 def test_connect_publishes_new_session_and_release_local_does_not():
