@@ -15,6 +15,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.models.node import NodeStatus
+
 
 @pytest.fixture(name="pipeline")
 def pipeline_fixture(monkeypatch):
@@ -257,3 +259,104 @@ def test_job_keeps_bs_owner_billable_wiring(pipeline, monkeypatch):
         job.record_user_usages()
     actual = {call.args[1]: call.args[2:] for call in record_bs.call_args_list}
     assert actual == {1: (1, True), 2: (1.5, False)}
+
+
+@pytest.mark.parametrize("kind", ["user", "node"])
+def test_queued_retired_collection_does_not_reset_or_write(pipeline, monkeypatch, kind):
+    """Изменение ноды после snapshot отменяет ещё не начавшийся reset."""
+    from concurrent.futures import Future
+
+    from app.utils.usage_runtime import UsageState
+
+    job, _engine = pipeline
+    state = UsageState()
+    monkeypatch.setattr(job, "usage_state", state)
+
+    class Stats(API):
+        def get_outbounds_stats(self, **kwargs):
+            self.calls += 1
+            return []
+
+    remote = Stats(1)
+    monkeypatch.setattr(job, "xray", SimpleNamespace(api=Stats(None), nodes={1: Node(remote)}))
+
+    class RetiringExecutor:
+        def __init__(self):
+            self.count = 0
+
+        def submit(self, collect):
+            self.count += 1
+            if self.count == 2:
+                state.retire_node(1)
+            result = Future()
+            try:
+                result.set_result(collect())
+            except Exception as exc:
+                result.set_exception(exc)
+            return result
+
+    monkeypatch.setattr(job, "get_usage_executor", RetiringExecutor)
+    getattr(job, f"record_{kind}_usages")()
+    assert remote.calls == 0
+
+
+@pytest.mark.parametrize("action", ["edit", "delete"])
+def test_node_mutation_is_busy_until_collected_delta_is_written(pipeline, monkeypatch, action):
+    """Изменять владельца/коэффициент между reset и SQL нельзя."""
+    from unittest.mock import Mock
+
+    from fastapi import BackgroundTasks, HTTPException
+
+    from app.utils.usage_runtime import UsageState
+    from tests.test_node_operation_routes import load_route
+
+    job, _engine = pipeline
+    route, operations = load_route(monkeypatch)
+    state = UsageState()
+    monkeypatch.setattr(job, "usage_state", state)
+    # Keep the read model and lifecycle service on the same process registry.
+    monkeypatch.setattr(route.node_lifecycle, "usage_state", state)
+    from app.xray.node_operations import NodeOperationScheduler
+    from tests.test_node_operations import Executor
+
+    monkeypatch.setattr(operations, "get_node_scheduler", lambda: NodeOperationScheduler(Executor(), Mock(), Mock()))
+    monkeypatch.setattr(operations, "remove_node", Mock())
+    reset_finished, release_write = threading.Event(), threading.Event()
+    monkeypatch.setattr(job, "xray", SimpleNamespace(api=API(None), nodes={1: Node(API(1))}))
+    original = job._record_user_node
+
+    def write(params, node_id, *args):
+        if node_id == 1:
+            reset_finished.set()
+            assert release_write.wait(3)
+        return original(params, node_id, *args)
+
+    monkeypatch.setattr(job, "_record_user_node", write)
+    errors = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        monkeypatch.setattr(job, "get_usage_executor", lambda: executor)
+
+        def run():
+            try:
+                job.record_user_usages()
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        try:
+            assert reset_finished.wait(2), errors
+            node = SimpleNamespace(id=1, name="node1", status=NodeStatus.disabled)
+            route.crud.update_node.return_value = node
+            with pytest.raises(HTTPException) as exc:
+                if action == "edit":
+                    route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+                else:
+                    route.remove_node(node, Mock(), Mock())
+            assert exc.value.status_code == 409
+            route.crud.update_node.assert_not_called()
+            route.crud.remove_node.assert_not_called()
+        finally:
+            release_write.set()
+            thread.join(4)
+    assert not errors and not thread.is_alive()

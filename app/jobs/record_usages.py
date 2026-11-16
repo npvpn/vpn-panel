@@ -421,7 +421,13 @@ def record_user_usages():
             logger.exception("[record_user_usages] unable to load metadata before collecting deltas")
             return
         admin_cache = {}
-        tasks = ((node_id, lambda api=api: get_users_stats(api)) for node_id, (api, _factor) in apis.items())
+        tasks = (
+            (
+                node_id,
+                lambda node=node_id, api=api: usage_state.collect(node, tokens.get(node), lambda: get_users_stats(api)),
+            )
+            for node_id, (api, _factor) in apis.items()
+        )
         for node_id, outcome in completed_results(get_usage_executor(), tasks, limit=XRAY_THREAD_POOL_SIZE):
             if outcome.error is not None:
                 tick.failed = True
@@ -456,7 +462,15 @@ def record_node_usages():
             tick.failed = True
             logger.exception("[record_node_usages] unable to load metadata before collecting deltas")
             return
-        tasks = ((node_id, lambda api=api: get_outbounds_stats(api)) for node_id, (api, _factor) in apis.items())
+        tasks = (
+            (
+                node_id,
+                lambda node=node_id, api=api: usage_state.collect(
+                    node, tokens.get(node), lambda: get_outbounds_stats(api)
+                ),
+            )
+            for node_id, (api, _factor) in apis.items()
+        )
         for node_id, outcome in completed_results(get_usage_executor(), tasks, limit=XRAY_THREAD_POOL_SIZE):
             if outcome.error is not None:
                 tick.failed = True

@@ -87,3 +87,80 @@ def test_snapshot_uses_only_ready_cached_transports():
     active, inactive = Node(), Node(False)
     snapshot = module.ready_apis({1: active, 2: inactive})
     assert snapshot == {1: (active._api, 1.5)}
+
+
+def test_accounting_leases_exclude_mutation_until_both_kinds_finish():
+    """Два вида статистики независимо удерживают lifecycle до SQL."""
+    import pytest
+
+    module = runtime()
+    state = module.UsageState()
+    epoch = state.observe_nodes({1: "one"})[1]
+    user = state.acquire_collection(1, epoch)
+    node = state.acquire_collection(1, epoch)
+    user()
+    user()  # cleanup may be called defensively more than once
+    with pytest.raises(module.UsageBusyError), state.mutation(1):
+        raise AssertionError("mutation started before outbound write")
+    node()
+    with state.mutation(1):
+        assert 1 not in state.observe_nodes({1: "one"})
+        with pytest.raises(module.StaleObservationError):
+            state.acquire_collection(1, epoch)
+    fresh = state.observe_nodes({1: "one"})[1]
+    assert fresh != epoch
+
+
+def test_collection_failure_releases_lease_and_old_epoch_never_resets():
+    """Ошибки RPC освобождают guard, старый transport не сбрасывается."""
+    import pytest
+
+    module = runtime()
+    state = module.UsageState()
+    epoch = state.observe_nodes({1: "one"})[1]
+
+    def broken():
+        raise ConnectionError("offline")
+
+    with pytest.raises(ConnectionError):
+        state.collect(1, epoch, broken)
+    with state.mutation(1):
+        state.retire_node(1)
+    with pytest.raises(module.StaleObservationError):
+        state.collect(1, epoch, lambda: (_ for _ in ()).throw(AssertionError("stale reset")))
+    with pytest.raises(module.StaleObservationError):
+        state.acquire_collection(1, None)
+
+
+def test_abandoned_results_release_current_and_running_collection_leases():
+    """Закрытие consumer освобождает текущий и поздний готовый результаты."""
+    import pytest
+
+    module = runtime()
+    state = module.UsageState()
+    epochs = state.observe_nodes({1: "one", 2: "two"})
+    started, release = threading.Event(), threading.Event()
+
+    def slow():
+        started.set()
+        assert release.wait(3)
+        return []
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        tasks = [
+            (1, lambda: state.collect(1, epochs[1], lambda: [])),
+            (2, lambda: state.collect(2, epochs[2], slow)),
+        ]
+        results = module.completed_results(executor, tasks, limit=2)
+        try:
+            assert next(results)[0] == 1
+            assert started.wait(2)
+            results.close()
+            with state.mutation(1):
+                pass
+            with pytest.raises(module.UsageBusyError), state.mutation(2):
+                raise AssertionError("RPC still running")
+        finally:
+            release.set()
+    with state.mutation(2):
+        pass

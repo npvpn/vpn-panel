@@ -17,6 +17,12 @@ from typing import Any
 class CollectionResult:
     data: Any = None
     error: Exception | None = None
+    release: Callable[[], None] | None = None
+
+    def close(self):
+        if self.release is not None:
+            self.release()
+            self.release = None
 
 
 def ready_apis(nodes: dict) -> dict:
@@ -60,14 +66,26 @@ def completed_results(
             for future in done:
                 node_id = pending.pop(future)
                 try:
-                    result = CollectionResult(data=future.result())
+                    value = future.result()
+                    result = value if isinstance(value, CollectionResult) else CollectionResult(data=value)
                 except Exception as exc:
                     result = CollectionResult(error=exc)
-                yield node_id, result
+                try:
+                    yield node_id, result
+                finally:
+                    result.close()
             done.clear()
     finally:
+
+        def release_abandoned(future):
+            if not future.cancelled() and future.exception() is None:
+                value = future.result()
+                if isinstance(value, CollectionResult):
+                    value.close()
+
         for future in pending:
             future.cancel()
+            future.add_done_callback(release_abandoned)
 
 
 # Registry owns timestamps and bounded-cardinality counters; no DB/network on scrape.
@@ -86,6 +104,10 @@ class StaleObservationError(RuntimeError):
     """Lifecycle изменился во время чтения metadata; delta ещё не сброшена."""
 
 
+class UsageBusyError(RuntimeError):
+    """Нельзя менять ноду до записи уже сброшенной delta."""
+
+
 class UsageState:
     def __init__(
         self, *, periods: dict[str, int] | None = None, workers: int = 20, clock: Callable[[], float] = time.time
@@ -98,6 +120,8 @@ class UsageState:
         self._epochs: dict[int, int] = {}
         self._generation = 0
         self._revision = 0
+        self._collecting: Counter = Counter()
+        self._mutating: set[int] = set()
         self._stamps: dict[tuple[int, str], UsageStamp] = {}
         self._errors: Counter = Counter()
         self._ticks: Counter = Counter()
@@ -112,6 +136,50 @@ class UsageState:
         with self._lock:
             return self._revision
 
+    def acquire_collection(self, node_id: int | None, epoch: int | None) -> Callable[[], None]:
+        # Core has no editable Node metadata. Remote reset and SQL share a lease;
+        # no registry mutex is held across network or database work.
+        with self._lock:
+            if node_id is not None and (
+                epoch is None or self._epochs.get(node_id) != epoch or node_id in self._mutating
+            ):
+                raise StaleObservationError()
+            self._collecting[node_id] += 1
+        released = False
+
+        def release():
+            nonlocal released
+            with self._lock:
+                if not released:
+                    self._collecting[node_id] -= 1
+                    if not self._collecting[node_id]:
+                        del self._collecting[node_id]
+                    released = True
+
+        return release
+
+    @contextmanager
+    def mutation(self, node_id: int):
+        with self._lock:
+            if self._collecting[node_id] or node_id in self._mutating:
+                raise UsageBusyError()
+            self._mutating.add(node_id)
+            self._revision += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._mutating.remove(node_id)
+                self._revision += 1
+
+    def collect(self, node_id: int | None, epoch: int | None, read: Callable) -> CollectionResult:
+        release = self.acquire_collection(node_id, epoch)
+        try:
+            return CollectionResult(data=read(), release=release)
+        except BaseException:
+            release()
+            raise
+
     def retire_node(self, node_id: int) -> None:
         with self._lock:
             self._revision += 1
@@ -124,6 +192,7 @@ class UsageState:
         with self._lock:
             if revision is not None and revision != self._revision:
                 raise StaleObservationError()
+            enabled = {node: name for node, name in enabled.items() if node not in self._mutating}
             if self._names != enabled:
                 self._revision += 1
             now = self.clock()
