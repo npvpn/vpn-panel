@@ -239,6 +239,17 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
     return Response(content=conf, media_type=plan.media_type, headers=ctx.response_headers)
 
 
+@router.get("/", include_in_schema=False)
+@router.get("", include_in_schema=False)
+def subscription_without_token(request: Request, db: Session = Depends(get_db)):
+    """Ссылка подписки с отрезанным токеном (/sub/): та же 404, что на неверный токен.
+
+    Без этого FastAPI отдаёт браузеру голый JSON {"detail": "Not Found"} — тупик
+    без кнопки и без подписи платформы (NPVPN-2374).
+    """
+    return render_not_found(request, db, "")
+
+
 @router.get("/{token}/")
 @router.get("/{token}", include_in_schema=False)
 def user_subscription(
@@ -363,7 +374,10 @@ def user_get_usage(
 def user_subscription_with_client_type(
     request: Request,
     token: str,
-    client_type: str = Path(..., regex="sing-box|clash-meta|clash|outline|v2ray|v2ray-json|incy"),
+    # Без regex в Path: неизвестный тип FastAPI отбил бы 422 с голым JSON
+    # ещё до нас, а браузеру нужна страница 404 (NPVPN-2374). Допустимые
+    # значения — ключи client_config, проверка ниже.
+    client_type: str = Path(..., description=f"One of: {', '.join(client_config)}"),
     db: Session = Depends(get_db),
     user_agent: str = Header(default=""),
     x_hwid: str | None = Header(default=None),
@@ -374,6 +388,16 @@ def user_subscription_with_client_type(
     """Provides a subscription link based on the specified client type (e.g., Clash, V2Ray)."""
     # Эндпоинт с явным client_type: схема похожа на /{token}, но план
     # рендера выбирается не по UA, а по параметру пути.
+    try:
+        plan = resolve_subscription_plan_by_client_type(
+            client_type,
+            client_config=client_config,
+            use_custom_json_default=USE_CUSTOM_JSON_DEFAULT,
+        )
+    except ValueError:
+        # Опечатка в типе клиента — тот же тупик, что и неверный токен
+        return render_not_found(request, db, token)
+
     dbuser, is_revoked, _ = resolve_subscription_context(token, db)
     if not dbuser:
         return render_not_found(request, db, token)
@@ -400,13 +424,11 @@ def user_subscription_with_client_type(
         x_device_model=x_device_model,
     )
 
-    try:
-        # Централизованный выбор формата/типов ответа по client_type.
-        plan = resolve_subscription_plan_by_client_type(
-            client_type,
-            client_config=client_config,
-            use_custom_json_default=USE_CUSTOM_JSON_DEFAULT,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Unknown client type") from exc
     return render_subscription(db, ctx, plan)
+
+
+# Последним: только то, что не подошло ни под один адрес выше
+# (/sub/<токен>/лишний/хвост). Иначе браузеру — голый JSON 404 (NPVPN-2374).
+@router.get("/{token}/{rest:path}", include_in_schema=False)
+def subscription_unknown_path(request: Request, token: str, rest: str, db: Session = Depends(get_db)):
+    return render_not_found(request, db, token)

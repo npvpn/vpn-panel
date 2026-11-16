@@ -263,7 +263,12 @@ scheduler.add_listener(_scheduler_job_listener, EVENT_JOB_ERROR | EVENT_JOB_MISS
 
 @app.on_event("startup")
 def on_startup():
-    paths = [f"{r.path}/" for r in app.routes]
+    from app.routers import subscription
+
+    # Ищем чужие маршруты на пути подписки. Собственный /sub роутера подписки
+    # (404 на ссылку без токена, NPVPN-2374) конфликтом не считается.
+    own_endpoints = {route.endpoint for route in subscription.router.routes}
+    paths = [f"{r.path}/" for r in app.routes if getattr(r, "endpoint", None) not in own_endpoints]
     paths.append("/api/")
     if f"/{XRAY_SUBSCRIPTION_PATH}/" in paths:
         raise ValueError(f"you can't use /{XRAY_SUBSCRIPTION_PATH}/ as subscription path it reserved for {app.title}")
