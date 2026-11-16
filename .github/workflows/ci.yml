@@ -11,6 +11,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Зависимости lock-файла содержат колёса для CPython 3.12/3.13;
+      # без пина uv скачивает текущий 3.14, для которого pydantic-core 2.27.2
+      # пытается собраться через неподдерживаемый PyO3.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: '3.12'

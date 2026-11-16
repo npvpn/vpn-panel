@@ -180,15 +180,19 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
                 )}
               />
             </Box>
-            {isPlaceholder ? (
+            {isPlaceholder && !advancedOptionsProps.hideRemarkAddress && (
               <RHFInput
                 label={t("hostsDialog.remark")}
                 registerProps={form.register(`hosts.${index}.remark`)}
                 error={form.formState.errors.hosts?.[index]?.remark}
               />
-            ) : (
-              <HostAdvancedOptions {...advancedOptionsProps} />
             )}
+            <HostAdvancedOptions
+              {...advancedOptionsProps}
+              hideRemarkAddress={
+                isPlaceholder || advancedOptionsProps.hideRemarkAddress
+              }
+            />
           </ModalBody>
           <ModalFooter gap={2}>
             {snapshot && (

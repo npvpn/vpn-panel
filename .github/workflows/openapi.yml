@@ -17,6 +17,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      # См. CI: uv без явного Python выбирает 3.14, который не поддерживает
+      # зафиксированный pydantic-core 2.27.2.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: '3.12'

@@ -354,7 +354,7 @@ export const HostRow = memo(function HostRow({
             borderColor="gray.100"
             _dark={{ borderColor: "gray.600" }}
           >
-            {!isPlaceholder && advancedOptionsButton}
+            {advancedOptionsButton}
 
             <Tooltip label="Duplicate" placement="left">
               <IconButton

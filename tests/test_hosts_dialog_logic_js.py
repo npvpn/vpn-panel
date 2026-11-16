@@ -425,10 +425,11 @@ def test_placeholder_payload_keeps_enabled_state():
 
 
 def test_placeholder_controls_are_available_in_the_expected_layouts():
-    """Новая заглушка начинается с флага, сохранённая выключается общим свитчем."""
+    """У заглушки доступны общий свитч, выбор ботов и настройки карточки."""
     components = Path(__file__).parents[1] / "app/dashboard/src/components/hostsDialog"
     add_form = (components / "AddHostForm.tsx").read_text()
     host_row = (components / "HostRow.tsx").read_text()
+    advanced_modal = (components / "HostAdvancedOptionsModal.tsx").read_text()
 
     assert add_form.index('name="hosts.0.is_placeholder"') < add_form.index("<Select")
 
@@ -443,6 +444,15 @@ def test_placeholder_controls_are_available_in_the_expected_layouts():
     card_layout = host_row[card_start:card_end]
     assert "{enableSwitch}" in card_layout
     assert "!isPlaceholder && enableSwitch" not in card_layout
+    assert "!isPlaceholder && advancedOptionsButton" not in card_layout
+
+    # В таблице у заглушки Remark редактируется в окне, а HostAdvancedOptions
+    # оставляет доступ к bot_usernames. В карточке Remark уже есть в строке,
+    # поэтому дубль поля не показываем.
+    assert "isPlaceholder ? (" not in advanced_modal
+    assert "{isPlaceholder && !advancedOptionsProps.hideRemarkAddress && (" in advanced_modal
+    assert "<HostAdvancedOptions" in advanced_modal
+    assert "isPlaceholder || advancedOptionsProps.hideRemarkAddress" in advanced_modal
 
 
 @pytest.mark.parametrize("network", ["tcp", "grpc", "ws"])
