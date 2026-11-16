@@ -15,6 +15,7 @@ from . import (
     subscription,
     system,
     user,
+    user_activity,
     user_template,
     xray_templates,
 )
@@ -33,6 +34,7 @@ routers: list[APIRouter] = [
     system.router,
     user_template.router,
     user.router,
+    user_activity.router,
     home.router,
     xray_templates.router,  # type: ignore[has-type]
 ]
