@@ -97,9 +97,6 @@
           toastTimer: null,
 
           selectedClient: null,
-          // QR и логотип — разные элементы: код рисуется на canvas сразу, логотип грузится по сети.
-          // Блок показываем, когда готовы оба, иначе один из них появлялся раньше другого (NPVPN-2368)
-          qrReady: false,
 
           selectClient(app) {
               this.selectedClient = app.id;
@@ -212,25 +209,51 @@
             { id: 'Linux', name: 'Linux', platform: 'linux' },
             { id: 'TV', name: 'TV', platform: 'androidtv' },
           ],
+          // QR с логотипом — одна картинка (NPVPN-2368). qrcode.js рисует код на canvas, а потом
+          // асинхронно подменяет его на <img>, и на время подмены код пропадает; логотип отдельным <img>
+          // поверх в это время был виден без кода. Поэтому код рисуем во временный контейнер, копируем
+          // в свой canvas вместе с логотипом и вставляем на страницу уже готовую картинку.
+          async renderQr() {
+            const target = document.getElementById('qrcode-main');
+            if (!target) return;
+            const scale = 2; // рисуем в 2× для чёткости на ретине, на экране — 200×200 (components.css)
+            const side = 200 * scale;
+            const draft = document.createElement('div');
+            new QRCode(draft, {
+              text: this.user.subscription_url,
+              width: side,
+              height: side,
+              correctLevel: QRCode.CorrectLevel.H
+            });
+            const drawn = draft.querySelector('canvas');
+            if (!drawn) {
+              // без canvas библиотека рисует таблицей — показываем как есть, без логотипа
+              target.replaceChildren(...draft.childNodes);
+              return;
+            }
+            // свой canvas, а не библиотечный: свой она позже прячет (display: none) при подмене на <img>
+            const canvas = document.createElement('canvas');
+            canvas.width = side;
+            canvas.height = side;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(drawn, 0, 0);
+            // уровень коррекции H восстанавливает закрытый логотипом центр: 56 из 200 (~8% площади) —
+            // с запасом, 60+ на плотном коде уже не всегда читается. Та же картинка, что в QR бота
+            const logo = new Image();
+            logo.src = '{{ sub_statics }}assets/qr-logo.png?v={{ static_v }}';
+            try {
+              await logo.decode();
+              const logoSide = 56 * scale;
+              const at = (side - logoSide) / 2;
+              ctx.drawImage(logo, at, at, logoSide, logoSide);
+            } catch (e) {
+              // логотип не загрузился — показываем код без него, а не пустое место
+            }
+            target.replaceChildren(canvas);
+          },
           init() {
             document.title = `${this.user.username} - Настройка VPN`;
-              this.$nextTick(() => {
-                const qrMainContainer = document.getElementById('qrcode-main');
-                if (qrMainContainer) {
-                  qrMainContainer.innerHTML = '';
-                  new QRCode(qrMainContainer, {
-                    text: this.user.subscription_url,
-                    width: 200,
-                    height: 200,
-                    correctLevel: QRCode.CorrectLevel.H
-                  });
-                  // decode() ждёт загрузки логотипа (или сразу выполняется, если он уже загружен);
-                  // если логотип не загрузился — показываем код без него, а не пустое место
-                  const logo = qrMainContainer.parentElement.querySelector('.qr-code__logo');
-                  const logoReady = logo ? logo.decode() : Promise.resolve();
-                  logoReady.catch(() => {}).then(() => { this.qrReady = true; });
-                }
-              });
+              this.$nextTick(() => this.renderQr());
 
               this.$watch('currentPlatform', () => {
                   this.selectedClient = null;
@@ -687,11 +710,10 @@ get alternativeApps() {
     
             <div x-show="selectedOs === 'QR'" class="qr-wrapper">
                 <p class="qr-title">Отсканируйте для подключения другого устройства</p>
-                {# QR с логотипом «VPN» по центру — как реферальный QR бота (src/utils/ref_qr.py, та же
-                   картинка): уровень коррекции H восстанавливает закрытый логотипом центр (~8% площади; 56px — с запасом, 60+ на плотном коде уже не всегда читается) #}
-                <div class="qr-code" :class="{ 'qr-code--ready': qrReady }">
+                {# QR с логотипом «VPN» по центру — одна картинка, рисует renderQr() (как реферальный QR
+                   бота, src/utils/ref_qr.py) #}
+                <div class="qr-code">
                   <div id="qrcode-main"></div>
-                  <img class="qr-code__logo" src="{{ sub_statics }}assets/qr-logo.png?v={{ static_v }}" alt="" width="56" height="56">
                 </div>
             </div>
     

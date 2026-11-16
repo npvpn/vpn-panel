@@ -751,18 +751,12 @@
     }
 }
 
-/* QR 200×200 с логотипом «VPN» по центру. */
+/* QR 200×200 с логотипом «VPN» по центру — одна картинка (renderQr, NPVPN-2368).
+   Canvas нарисован в 2×, на экране — 200×200. */
 .qr-code {
-    position: relative;
     width: 200px;
     height: 200px;
     flex-shrink: 0;
-    /* до готовности кода и логотипа место занято, но пусто — появляются вместе (NPVPN-2368) */
-    visibility: hidden;
-}
-
-.qr-code--ready {
-    visibility: visible;
 }
 
 #qrcode-main img,
@@ -770,16 +764,6 @@
     display: block;
     width: 200px;
     height: 200px;
-}
-
-.qr-code__logo {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 56px;
-    height: 56px;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
 }
 
 .qr-title {
