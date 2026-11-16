@@ -155,7 +155,9 @@ def test_soft_connect_adopts_saved_session_and_does_not_start_core():
         get_db.return_value.__exit__.return_value = None
         crud.get_node_by_id.return_value = dbnode
         xray_mod.nodes = {6: node}
-        operations._connect_node_impl(6, config=MagicMock(), force=False)
+        build = MagicMock()
+        operations._connect_node_impl(6, force=False, config_factory=build)
+        build.assert_not_called()
 
     node.adopt_control_session.assert_called_once_with("11111111-1111-1111-1111-111111111111")
     node.try_restore.assert_called_once()
@@ -238,7 +240,6 @@ def test_scenario_soft_outage_stays_connecting_then_stale_forces_hard():
         patch.object(operations, "GetDB") as get_db,
         patch.object(operations, "crud") as crud,
         patch.object(operations, "is_connect_stale", return_value=False),
-        patch.object(operations, "XRAY_NODE_CONNECT_STALE_TIMEOUT", 120),
     ):
         get_db.return_value.__enter__.return_value = MagicMock()
         get_db.return_value.__exit__.return_value = None

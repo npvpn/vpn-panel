@@ -11,14 +11,14 @@ from app import logger, xray
 from app.db import GetDB, crud
 from app.models.node import NodeStatus
 from app.models.user import UserResponse
-from app.utils.concurrency import threaded_function
+from app.utils.concurrency import get_node_executor, threaded_function
 from app.xray.node import XRayNode
 from app.xray.node_config import node_config_json, node_has_inbound
+from app.xray.node_operations import NodeOperationScheduler, OperationKind
 from config import (
     XRAY_NODE_CONNECT_CONCURRENCY,
     XRAY_NODE_CONNECT_RETRIES,
     XRAY_NODE_CONNECT_RETRY_DELAY,
-    XRAY_NODE_CONNECT_STALE_TIMEOUT,
 )
 from xray_api import XRay as XRayAPI
 from xray_api.types.account import Account, XTLSFlows
@@ -512,14 +512,45 @@ def _node_operation_lock(node_id: int):
         return _node_operation_locks[node_id]
 
 
+_node_scheduler = None
+_node_scheduler_lock = threading.Lock()
+
+
+def _execute_node_operation(node_id, kind, config_factory):
+    if kind == OperationKind.RESTART:
+        with _node_operation_lock(node_id):
+            return _restart_node_impl(node_id, config_factory=config_factory)
+    return _connect_node_impl(node_id, force=kind == OperationKind.HARD, config_factory=config_factory)
+
+
+def get_node_scheduler() -> NodeOperationScheduler:
+    global _node_scheduler
+    with _node_scheduler_lock:
+        if _node_scheduler is None:
+            _node_scheduler = NodeOperationScheduler(
+                get_node_executor(),
+                _execute_node_operation,
+                lambda: xray.config.include_db_users(),
+                concurrency=XRAY_NODE_CONNECT_CONCURRENCY,
+            )
+        return _node_scheduler
+
+
+def node_mutation(node_id):
+    return get_node_scheduler().mutation(node_id)
+
+
+def node_operation_snapshot():
+    if _node_scheduler is None:
+        return {"active": 0, "pending": 0, "oldest_pending_seconds": 0, "outcomes": {}}
+    return _node_scheduler.snapshot()
+
+
 def remove_node(node_id: int, *, invalidate_slot: bool = True):
-    """Drop in-memory node object (and optionally the connect slot).
+    """Remove local/remote transport after a protected lifecycle mutation.
 
-    ``invalidate_slot=True`` (default) for Edit/Delete/disable so a new connect can
-    acquire immediately and an old thread's finally will not clear the new owner's lock.
-
-    ``invalidate_slot=False`` when called from ``add_node`` during an in-flight connect:
-    otherwise we would clear our own slot and let health start a parallel HARD.
+    Admission cancels queued intents; running REST ownership is never stolen.
+    add_node uses invalidate_slot=False inside its existing worker lease.
     """
     with _node_lifecycle_lock(node_id):
         if invalidate_slot:
@@ -537,6 +568,8 @@ def remove_node(node_id: int, *, invalidate_slot: bool = True):
 
 
 def release_remote_nodes() -> None:
+    if _node_scheduler is not None:
+        _node_scheduler.shutdown(wait=True)
     logger.info("Releasing node control sessions without stopping remote Xray")
     for node in list(xray.nodes.values()):
         try:
@@ -620,7 +653,7 @@ global _connecting_nodes
 _connecting_nodes: set[int] = set()
 _connecting_started_at: dict[int, float] = {}
 # Monotonic owner token per node_id: release only clears the slot if the token still matches.
-# invalidate_connect_slot / stale reclaim bump the token so an old thread's finally cannot
+# Idle invalidation bumps the token so an old thread's finally cannot
 # drop a newer connect's lock (e.g. Edit → remove_node while a previous connect is in flight).
 _connecting_generation: dict[int, int] = {}
 _connecting_nodes_lock = threading.Lock()
@@ -629,15 +662,13 @@ _connect_semaphore = threading.Semaphore(max(1, XRAY_NODE_CONNECT_CONCURRENCY))
 
 def is_connect_in_progress(node_id: int) -> bool:
     with _connecting_nodes_lock:
-        return node_id in _connecting_nodes
+        return node_id in _connecting_nodes or (_node_scheduler is not None and _node_scheduler.pending(node_id))
 
 
-def is_connect_stale(node_id: int) -> bool:
-    with _connecting_nodes_lock:
-        if node_id not in _connecting_nodes:
-            return False
-        age = time.time() - _connecting_started_at.get(node_id, 0)
-        return age >= XRAY_NODE_CONNECT_STALE_TIMEOUT
+def is_connect_stale(_node_id: int) -> bool:
+    # Возраст не доказывает остановку sync-REST. Escalation допустим только
+    # после завершения предыдущей команды, по DB age в health-check.
+    return False
 
 
 def _cleanup_node_connection(node) -> None:
@@ -661,39 +692,24 @@ def _cleanup_node_connection(node) -> None:
 
 
 def invalidate_connect_slot(node_id: int) -> None:
-    """Drop in-flight connect ownership so a new connect can acquire immediately.
-
-    Used from remove_node (Edit/Delete): the old thread may still run, but its finally
-    must not clear the slot of a newer connect (generation check on release).
-    """
+    """Cancel waiting intents without releasing a live execution guard."""
+    if _node_scheduler is not None:
+        _node_scheduler.cancel_pending(node_id)
     with _connecting_nodes_lock:
+        if node_id in _connecting_nodes:
+            return
         _connecting_generation[node_id] = _connecting_generation.get(node_id, 0) + 1
         _connecting_nodes.discard(node_id)
         _connecting_started_at.pop(node_id, None)
 
 
 def _acquire_connect_slot(node_id: int, force: bool = False) -> int | None:
-    """Acquire exclusive connect ownership. Returns generation token, or None if busy.
-
-    Never starts a second connect in parallel (force included). A hung lock older than
-    XRAY_NODE_CONNECT_STALE_TIMEOUT may be reclaimed. ``force`` is kept for call-site
-    clarity only — it does not steal a live lock.
-    """
+    """Execution guard для прямого вызова; работающий владелец не отбирается."""
     now = time.time()
     with _connecting_nodes_lock:
         if node_id in _connecting_nodes:
-            started_at = _connecting_started_at.get(node_id, now)
-            age = now - started_at
-            if age >= XRAY_NODE_CONNECT_STALE_TIMEOUT:
-                logger.warning(f"[connect_node] reclaim stale lock node_id={node_id}, age={age:.1f}s (force={force})")
-                _connecting_generation[node_id] = _connecting_generation.get(node_id, 0) + 1
-                _connecting_nodes.discard(node_id)
-                _connecting_started_at.pop(node_id, None)
-            else:
-                logger.debug(
-                    f"[connect_node] skipped, already connecting node_id={node_id}, age={age:.1f}s force={force}"
-                )
-                return None
+            logger.debug("[connect.slot] node_id=%s busy, force=%s does not steal ownership", node_id, force)
+            return None
 
         gen = _connecting_generation.get(node_id, 0) + 1
         _connecting_generation[node_id] = gen
@@ -714,7 +730,7 @@ def _release_connect_slot(node_id: int, generation: int | None = None):
         _connecting_started_at.pop(node_id, None)
 
 
-def _connect_node_impl(node_id, config=None, force: bool = False):
+def _connect_node_impl(node_id, config=None, force: bool = False, *, config_factory=None):
     slot_gen = _acquire_connect_slot(node_id, force=force)
     if slot_gen is None:
         return
@@ -755,8 +771,16 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
                 logger.info(f"[connect_node] status update rejected for node_id={node_id}")
                 return
 
-        if config is None:
-            config = xray.config.include_db_users()
+        prepared_json = None
+
+        def prepare_config_json():
+            nonlocal config, prepared_json
+            if prepared_json is None:
+                if config is None:
+                    config = config_factory() if config_factory is not None else xray.config.include_db_users()
+                prepared_json = node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids)
+            return prepared_json
+
         # Background/health-check reconnects: one attempt per call; health check retries later.
         # Manual Reconnect (force=True): full in-process retry loop.
         retries = max(1, XRAY_NODE_CONNECT_RETRIES) if force else 1
@@ -774,7 +798,6 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
         for attempt in range(1, retries + 1):
             _connect_semaphore.acquire()
             try:
-                config_json = node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids)
                 path = "HARD" if force else "SOFT"
                 has_session = bool(getattr(node, "_session_id", None))
                 logger.debug(
@@ -784,6 +807,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
                 )
 
                 if force:
+                    config_json = prepare_config_json()
                     # HARD: first attempt (or no local session) → new REST session + /restart.
                     # Later retries keep session and only /restart — avoids takeover storm when
                     # /connect succeeded but /restart timed out on a large config upload.
@@ -825,7 +849,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
                                 f"try_restore=False → start() "
                                 f"( /connect only if session missing/invalid )"
                             )
-                            node.start(config_json=config_json)
+                            node.start(config_json=prepare_config_json())
                     except Exception as soft_exc:
                         if getattr(node, "_session_id", None):
                             # Session still remembered — do not escalate to error/hard /connect yet.
@@ -837,7 +861,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
                                 f"{type(soft_exc).__name__}: {soft_exc}; "
                                 f"keep session_id, status=connecting, retry later (no /connect)"
                             )
-                            return
+                            return False
                         logger.debug(
                             f"[connect_node] SOFT failed without session node_id={node_id} "
                             f'("{dbnode.name}"): {type(soft_exc).__name__}: {soft_exc}'
@@ -881,6 +905,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
             logger.warning(f'Unable to connect to "{dbnode.name}" node: {type(exc).__name__}: {exc}')
         else:
             logger.warning(f"Unable to connect node_id={node_id}: {type(exc).__name__}: {exc}")
+        return False
     finally:
         node_connect_lock.release()
         _release_connect_slot(node_id, slot_gen)
@@ -893,18 +918,21 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
             logger.debug(f"[connect_node] released lock for node_id={node_id}")
 
 
-@threaded_function
-def connect_node(node_id, config=None, force: bool = False):
-    _connect_node_impl(node_id, config, force)
+def connect_node(node_id, config=None, force: bool = False, *, manual: bool = False):
+    """config остаётся совместимым аргументом; snapshot свежий только при исполнении."""
+    kind = OperationKind.HARD if force else OperationKind.SOFT
+    return get_node_scheduler().request(node_id, kind, manual=manual)
 
 
-@threaded_function
-def restart_node(node_id, config=None):
-    with _node_operation_lock(node_id):
-        return _restart_node_impl(node_id, config)
+def restart_node(node_id, config=None, *, manual: bool = True):
+    return get_node_scheduler().request(node_id, OperationKind.RESTART, manual=manual)
 
 
-def _restart_node_impl(node_id, config=None):
+def connect_nodes(node_ids):
+    return get_node_scheduler().request_many([(node_id, OperationKind.SOFT) for node_id in node_ids])
+
+
+def _restart_node_impl(node_id, config=None, *, config_factory=None):
     node_inbound_tags = []
     cascade_kwargs = {"role": "direct"}
     blocked_user_ids = set()
@@ -927,7 +955,7 @@ def _restart_node_impl(node_id, config=None):
         logger.debug(
             f'[restart_node] node_id={node_id} ("{dbnode.name}"): not connected → fallback to SOFT connect_node'
         )
-        return connect_node(node_id, config)
+        return _connect_node_impl(node_id, config, config_factory=config_factory)
 
     try:
         logger.info(f'Restarting Xray core of "{dbnode.name}" node')
@@ -937,7 +965,7 @@ def _restart_node_impl(node_id, config=None):
         )
 
         if config is None:
-            config = xray.config.include_db_users()
+            config = config_factory() if config_factory is not None else xray.config.include_db_users()
 
         node.restart(config_json=node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids))
         node.inbound_tags = set(node_inbound_tags)
@@ -954,7 +982,8 @@ def _restart_node_impl(node_id, config=None):
         try:
             node.disconnect()
         except Exception:
-            pass
+            logger.exception("[restart_node] failed to disconnect node_id=%s", node_id)
+        return False
 
 
 __all__ = [

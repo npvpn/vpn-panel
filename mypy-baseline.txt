@@ -460,7 +460,6 @@ app/jobs/record_usages.py:0: error: Incompatible types in assignment (expression
 app/jobs/record_usages.py:0: error: Need type annotation for "deltas" (hint: "deltas: dict[<type>, <type>] = ...")  [var-annotated]
 app/jobs/record_usages.py:0: error: Incompatible types in assignment (expression has type "Update", variable has type "Insert")  [assignment]
 app/jobs/record_usages.py:0: error: Need type annotation for "params"  [var-annotated]
-app/jobs/record_usages.py:0: error: Incompatible types in assignment (expression has type "list[dict[str, Any]]", variable has type "defaultdict[str, Any]")  [assignment]
 app/telegram/handlers/admin.py:0: error: Library stubs not installed for "qrcode"  [import-untyped]
 app/telegram/handlers/admin.py:0: error: Item "None" of "Any | None" has no attribute "delete_message"  [union-attr]
 app/telegram/handlers/admin.py:0: error: Item "None" of "Any | None" has no attribute "message_handler"  [union-attr]

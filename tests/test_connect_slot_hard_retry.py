@@ -2,9 +2,11 @@
 
 import sys
 import threading
-import time
 import types
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
+
+from app.xray.node_operations import NodeOperationScheduler
 
 for _name, _module in list(sys.modules.items()):
     if _name.startswith("app.") and not hasattr(_module, "__file__") and not hasattr(_module, "__path__"):
@@ -42,32 +44,26 @@ def test_force_does_not_steal_live_connect_slot():
     assert not operations.is_connect_in_progress(149)
 
 
-def test_stale_lock_can_be_reclaimed():
+def test_stale_lock_cannot_be_reclaimed_before_worker_completion():
     _reset_slots()
-    gen1 = operations._acquire_connect_slot(149, force=False)
-    with operations._connecting_nodes_lock:
-        operations._connecting_started_at[149] = time.time() - operations.XRAY_NODE_CONNECT_STALE_TIMEOUT - 1
-
-    gen2 = operations._acquire_connect_slot(149, force=True)
-    assert gen2 is not None and gen2 != gen1
-    # Old owner must not clear the new lock.
+    gen1 = operations._acquire_connect_slot(149)
+    operations._connecting_started_at[149] = 0
+    assert operations._acquire_connect_slot(149, force=True) is None
     operations._release_connect_slot(149, gen1)
-    assert operations.is_connect_in_progress(149)
-    operations._release_connect_slot(149, gen2)
-    assert not operations.is_connect_in_progress(149)
-
-
-def test_invalidate_connect_slot_allows_new_owner():
+    assert operations._acquire_connect_slot(149, force=True) is not None
     _reset_slots()
-    gen1 = operations._acquire_connect_slot(149, force=False)
-    operations.invalidate_connect_slot(149)
-    assert not operations.is_connect_in_progress(149)
 
-    gen2 = operations._acquire_connect_slot(149, force=True)
-    assert gen2 is not None
-    operations._release_connect_slot(149, gen1)  # stale finally
+
+def test_invalidation_does_not_release_a_running_execution_guard():
+    _reset_slots()
+    gen1 = operations._acquire_connect_slot(149)
+    operations.invalidate_connect_slot(149)
     assert operations.is_connect_in_progress(149)
-    operations._release_connect_slot(149, gen2)
+    assert operations._acquire_connect_slot(149, force=True) is None
+    operations._release_connect_slot(149, gen1)
+    operations.invalidate_connect_slot(149)
+    assert operations._acquire_connect_slot(149, force=True) is not None
+    _reset_slots()
 
 
 def test_add_node_does_not_invalidate_connect_slot():
@@ -190,21 +186,25 @@ def test_manual_hard_reconnect_waits_for_active_soft_connect():
         crud.get_node_by_id.return_value = dbnode
         xray_mod.nodes = {149: node}
 
-        soft_thread = threading.Thread(target=operations._connect_node_impl, args=(149, MagicMock(), False))
-        hard_thread = threading.Thread(target=operations._connect_node_impl, args=(149, MagicMock(), True))
-        soft_thread.start()
-        assert soft_started.wait(5)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            controller = NodeOperationScheduler(
+                executor,
+                operations._execute_node_operation,
+                lambda: MagicMock(),
+                concurrency=1,
+            )
+            with patch.object(operations, "get_node_scheduler", return_value=controller):
+                soft = operations.connect_node(149)
+                assert soft_started.wait(5)
+                hard = operations.connect_node(149, force=True, manual=True)
+                try:
+                    assert not hard_connect_started.is_set()
+                    assert hard is not soft and not hard.done()
+                finally:
+                    allow_soft_finish.set()
+                soft.result(timeout=5)
+                hard.result(timeout=5)
 
-        operations.invalidate_connect_slot(149)
-        hard_thread.start()
-        try:
-            assert not hard_connect_started.wait(0.2)
-        finally:
-            allow_soft_finish.set()
-            soft_thread.join(5)
-            hard_thread.join(5)
-
-    assert not soft_thread.is_alive() and not hard_thread.is_alive()
     assert hard_connect_started.is_set()
 
 
@@ -245,8 +245,18 @@ def test_parallel_node_restarts_are_serialized():
         crud.get_node_by_id.return_value = dbnode
         xray_mod.nodes = {149: node}
 
-        first = threading.Thread(target=operations.restart_node.__wrapped__, args=(149, MagicMock()))
-        second = threading.Thread(target=operations.restart_node.__wrapped__, args=(149, MagicMock()))
+        first = threading.Thread(
+            target=lambda node_id, config: operations._execute_node_operation(
+                node_id, operations.OperationKind.RESTART, lambda: config
+            ),
+            args=(149, MagicMock()),
+        )
+        second = threading.Thread(
+            target=lambda node_id, config: operations._execute_node_operation(
+                node_id, operations.OperationKind.RESTART, lambda: config
+            ),
+            args=(149, MagicMock()),
+        )
         first.start()
         assert first_restart_started.wait(5)
         second.start()

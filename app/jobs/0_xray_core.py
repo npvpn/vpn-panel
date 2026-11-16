@@ -19,13 +19,9 @@ _error_reconnect_last: dict[int, float] = {}
 
 def _should_force_reconnect(node_id: int, status: NodeStatus, now: float) -> bool:
     if status == NodeStatus.connecting:
-        if xray.operations.is_connect_stale(node_id):
-            return True
         # Soft-defer leaves connecting without an active lock; escalate by DB age.
         age = xray.operations.connecting_age_seconds(node_id)
-        if age is not None and age >= XRAY_NODE_CONNECT_STALE_TIMEOUT:
-            return True
-        return False
+        return age is not None and age >= XRAY_NODE_CONNECT_STALE_TIMEOUT
     if status != NodeStatus.error:
         return False
     last_attempt = _error_reconnect_last.get(node_id, 0)
@@ -39,23 +35,12 @@ def core_health_check():
     config = None
     now = time.time()
 
-    # Отдаём ядру память, освободившуюся после ПРОШЛОЙ волны, до того как начнём
-    # аллоцировать новую (NPVPN-2120). Почему в начале тика, а не в конце: connect_node
-    # уходит в пул потоков, так что к моменту возврата из этой функции волна ещё живая
-    # и её конфиг никто не освободил — тримить там было бы нечего. К следующему тику
-    # (JOB_CORE_HEALTH_CHECK_INTERVAL) волна закончена и мусор собран.
+    # Возвращаем уже освобождённые арены прошлых работ. Snapshot активной
+    # команды живёт до её реального завершения, а не до следующего health tick.
     trim_malloc()
 
     def wave_config():
-        """Полный конфиг волны, собираемый не раньше, чем он реально понадобился.
-
-        include_db_users() материализует конфиг со всеми юзерами: на opl это 4-16
-        секунд и сотни мегабайт, с которых потом снимается по копии на ноду. Раньше
-        он строился до проверок _should_force_reconnect/is_connect_in_progress, то
-        есть и на тиках, где ни один реконнект в итоге не планировался. При нодах,
-        вечно висящих в connecting с живым локом (на opl таких два десятка), панель
-        собирала его вхолостую каждые JOB_CORE_HEALTH_CHECK_INTERVAL секунд.
-        """
+        """Snapshot только для локального core; ноды строят его после admission."""
         nonlocal config
         if config is None:
             config = xray.config.include_db_users()
@@ -74,10 +59,12 @@ def core_health_check():
     for dbnode in dbnodes:
         node_id = dbnode.id
 
-        if node_id not in xray.nodes:
-            xray.operations.add_node(dbnode)
-
-        node = xray.nodes[node_id]
+        node = xray.nodes.get(node_id)
+        if node is None:
+            if reconnects_scheduled < max_reconnects:
+                xray.operations.connect_node(node_id)
+                reconnects_scheduled += 1
+            continue
 
         if dbnode.status == NodeStatus.connected:
             if not node.connected:
@@ -91,7 +78,7 @@ def core_health_check():
                     f"[health] node_id={node_id} ({dbnode.name}): DB=connected but ping failed → "
                     f"schedule SOFT connect_node(force=False)"
                 )
-                xray.operations.connect_node(node_id, wave_config())
+                xray.operations.connect_node(node_id)
                 reconnects_scheduled += 1
                 continue
 
@@ -106,7 +93,7 @@ def core_health_check():
                     f"[health] node_id={node_id} ({dbnode.name}): session ok but core/API unhealthy "
                     f"({type(exc).__name__}: {exc}) → schedule restart_node (/restart)"
                 )
-                xray.operations.restart_node(node_id, wave_config())
+                xray.operations.restart_node(node_id, manual=False)
             continue
 
         if dbnode.status not in (NodeStatus.error, NodeStatus.connecting):
@@ -117,18 +104,15 @@ def core_health_check():
 
         force = _should_force_reconnect(node_id, dbnode.status, now)
 
-        # Do not stack a second live connect (soft or HARD) — that caused /connect takeover
-        # storms. Exception: lock is stale AND we need HARD → reclaim hung owner.
+        # Neither queued nor running work can be replaced by elapsed stale age.
         if xray.operations.is_connect_in_progress(node_id):
-            if not (force and xray.operations.is_connect_stale(node_id)):
-                continue
-            logger.warning(f"[health] node_id={node_id} ({dbnode.name}): stale connect lock → schedule HARD reclaim")
+            continue
 
         logger.debug(
             f"[health] node_id={node_id} ({dbnode.name}): status={dbnode.status.value} → "
             f"schedule {'HARD' if force else 'SOFT'} connect_node(force={force})"
         )
-        xray.operations.connect_node(node_id, wave_config(), force=force)
+        xray.operations.connect_node(node_id, force=force)
         reconnects_scheduled += 1
 
 
@@ -158,8 +142,7 @@ def start_core():
         for dbnode in dbnodes:
             crud.update_node_status(db, dbnode, NodeStatus.connecting)
 
-    for node_id in node_ids:
-        xray.operations.connect_node(node_id, config)
+    xray.operations.connect_nodes(node_ids)
 
     scheduler.add_job(
         core_health_check, "interval", seconds=JOB_CORE_HEALTH_CHECK_INTERVAL, coalesce=True, max_instances=1

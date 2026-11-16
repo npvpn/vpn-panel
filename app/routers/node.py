@@ -1,5 +1,7 @@
 import asyncio
 import time
+from concurrent.futures import CancelledError
+from contextlib import contextmanager
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket
 from sqlalchemy.exc import IntegrityError
@@ -19,8 +21,19 @@ from app.models.node import (
 )
 from app.models.proxy import ProxyHost
 from app.utils import responses
+from app.utils.usage_runtime import usage_state
+from app.xray.node_operations import NodeBusyError
 
 router = APIRouter(tags=["Node"], prefix="/api", responses={401: responses._401, 403: responses._403})
+
+
+@contextmanager
+def _node_mutation(node_id: int):
+    try:
+        with xray.operations.node_mutation(node_id):
+            yield
+    except NodeBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def add_host_if_needed(new_node: NodeCreate, db: Session):
@@ -142,7 +155,7 @@ def get_nodes(db: Session = Depends(get_db), _: Admin = Depends(Admin.check_sudo
     return crud.get_nodes(db)
 
 
-@router.put("/node/{node_id}", response_model=NodeResponse)
+@router.put("/node/{node_id}", response_model=NodeResponse, responses={409: responses._409})
 def modify_node(
     modified_node: NodeModify,
     bg: BackgroundTasks,
@@ -151,13 +164,16 @@ def modify_node(
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Update a node's details. Only accessible to sudo admins."""
-    updated_node = crud.update_node(db, dbnode, modified_node)
-    # remove_node → remote /disconnect (stops Xray). Reattach must be HARD:
-    # new session + /restart, not soft try_restore (session already wiped).
-    xray.operations.remove_node(updated_node.id)
-    if updated_node.status != NodeStatus.disabled:
-        bg.add_task(xray.operations.connect_node, node_id=updated_node.id, force=True)
-
+    with _node_mutation(dbnode.id):
+        updated_node = crud.update_node(db, dbnode, modified_node)
+        # remove_node → remote /disconnect (stops Xray). Reattach must be HARD:
+        # new session + /restart, not soft try_restore (session already wiped).
+        try:
+            xray.operations.remove_node(updated_node.id)
+        finally:
+            usage_state.retire_node(dbnode.id)
+        if updated_node.status != NodeStatus.disabled:
+            bg.add_task(xray.operations.connect_node, node_id=updated_node.id, force=True, manual=True)
     xray.hosts.update()
     logger.info(f'Node "{dbnode.name}" modified')
     return dbnode
@@ -165,27 +181,32 @@ def modify_node(
 
 @router.post("/node/{node_id}/reconnect")
 def reconnect_node(
-    bg: BackgroundTasks,
     dbnode: NodeResponse = Depends(get_node),
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Trigger a reconnection for the specified node. Only accessible to sudo admins."""
-    # Explicit nuclear reconnect: drop any in-flight soft/HARD ownership so force connect
-    # is not silently skipped while another thread holds the slot.
-    xray.operations.invalidate_connect_slot(dbnode.id)
-    bg.add_task(xray.operations.connect_node, node_id=dbnode.id, force=True)
+    future = xray.operations.connect_node(node_id=dbnode.id, force=True, manual=True)
+    if future.done():
+        try:
+            future.result()
+        except (NodeBusyError, CancelledError) as exc:
+            raise HTTPException(status_code=409, detail=str(NodeBusyError())) from exc
     return {"detail": "Reconnection task scheduled"}
 
 
-@router.delete("/node/{node_id}")
+@router.delete("/node/{node_id}", responses={409: responses._409})
 def remove_node(
     dbnode: NodeResponse = Depends(get_node),
     db: Session = Depends(get_db),
     admin: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Delete a node and remove it from xray in the background."""
-    crud.remove_node(db, dbnode)
-    xray.operations.remove_node(dbnode.id)
+    with _node_mutation(dbnode.id):
+        crud.remove_node(db, dbnode)
+        try:
+            xray.operations.remove_node(dbnode.id)
+        finally:
+            usage_state.retire_node(dbnode.id)
 
     xray.hosts.update()
     logger.info(f'Node "{dbnode.name}" deleted')
