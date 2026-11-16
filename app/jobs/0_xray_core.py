@@ -170,10 +170,4 @@ def start_core():
 def app_shutdown():
     logger.info("Stopping main Xray core")
     xray.core.stop()
-
-    logger.info("Stopping nodes Xray core")
-    for node in list(xray.nodes.values()):
-        try:
-            node.disconnect()
-        except Exception:
-            pass
+    xray.operations.release_remote_nodes()

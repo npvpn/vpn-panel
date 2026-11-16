@@ -2258,6 +2258,14 @@ def update_node_status(db: Session, dbnode: Node, status: NodeStatus, message: s
     return dbnode
 
 
+def set_node_control_session(db: Session, node_id: int, session_id: str | None) -> None:
+    dbnode = get_node_by_id(db, node_id)
+    if dbnode is None:
+        return
+    dbnode.control_session_id = session_id
+    db.commit()
+
+
 def get_bs_usage_totals(db: Session, user_id: int, yyyymm: str) -> int:
     """Агрегат БС-расхода юзера (сумма по is_bs-нодам) за текущий месяц в байтах."""
     from app.xray.bs_limit import aggregate_bs_usage

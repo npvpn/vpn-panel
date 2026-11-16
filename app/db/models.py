@@ -656,6 +656,9 @@ class Node(Base):
         server_default=NodeProtocol.rest.value,
     )
     xray_version = Column(String(32), nullable=True)
+    # REST control session survives panel process restarts. Only a successful
+    # remote /disconnect clears it; local transport cleanup must preserve it.
+    control_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     status = Column(Enum(NodeStatus), nullable=False, default=NodeStatus.connecting)
     last_status_change = Column(DateTime, default=datetime.utcnow)
     message = Column(String(1024), nullable=True)

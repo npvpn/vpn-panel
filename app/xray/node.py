@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from contextlib import contextmanager
 
 import grpc
@@ -130,7 +131,7 @@ class ReSTXRayNode:
         self.session.mount("https://", SANIgnoringAdaptor())
         self.session.cert = (self._certfile.name, self._keyfile.name)
 
-        self._session_id = None
+        self._session_id: str | None = None
         self._rest_api_url = f"https://{self.address.strip('/')}:{self.port}"
 
         self._ssl_context = ssl.create_default_context()
@@ -193,6 +194,28 @@ class ReSTXRayNode:
         self._started = False
         if recreate_session:
             self._recreate_session()
+
+    def set_control_session_listener(self, listener: Callable[[str | None], None]) -> None:
+        self._control_session_listener = listener
+
+    def _publish_control_session(self, session_id: str | None) -> None:
+        listener = getattr(self, "_control_session_listener", None)
+        if listener is None:
+            return
+        try:
+            listener(session_id)
+        except Exception:
+            logger.exception("[node.session] failed to persist control session (%s)", self._node_tag())
+
+    def adopt_control_session(self, session_id: str) -> None:
+        if self._session_id or not session_id:
+            return
+        self._session_id = session_id
+
+    def release_local(self) -> None:
+        """Close local transports without remote /disconnect or database clear."""
+        self._reset_local_state(recreate_session=False, close_grpc=True)
+        self.session.close()
 
     def _refresh_http_transport(self):
         """Recreate HTTP session without dropping REST session_id / node cert."""
@@ -372,6 +395,7 @@ class ReSTXRayNode:
         if self._session_id:
             try:
                 self.make_request("/disconnect", timeout=XRAY_NODE_REST_DISCONNECT_TIMEOUT)
+                self._publish_control_session(None)
             except NodeAPIError:
                 pass
         self._reset_local_state()
@@ -387,36 +411,56 @@ class ReSTXRayNode:
         )
         res = self.make_request("/connect", timeout=XRAY_NODE_REST_CONNECT_TIMEOUT)
         self._session_id = res["session_id"]
+        self._publish_control_session(self._session_id)
         logger.debug(f"[node.session] /connect ok ({self._node_tag()} {self._session_tag()})")
 
     def disconnect(self):
+        remote_cleared = False
         try:
             if self._session_id:
                 logger.debug(f"[node.session] POST /disconnect ({self._node_tag()} {self._session_tag()})")
                 self.make_request("/disconnect", timeout=XRAY_NODE_REST_DISCONNECT_TIMEOUT)
+                remote_cleared = True
         except NodeAPIError:
             pass
         finally:
             self._reset_local_state(close_grpc=True)
+        if remote_cleared:
+            self._publish_control_session(None)
 
     def get_version(self):
         res = self.make_request("/", timeout=XRAY_NODE_REST_INFO_TIMEOUT)
         return res.get("core_version")
 
+    def _ensure_peer_cert(self) -> None:
+        if getattr(self, "_node_cert", None):
+            return
+        cert = fetch_server_certificate(self.address, self.port, XRAY_NODE_CERT_FETCH_TIMEOUT)
+        self._close_temp_file(getattr(self, "_node_certfile", None))
+        certfile = string_to_temp_file(cert)
+        self._node_certfile = certfile
+        self._node_cert = cert
+        self.session.verify = certfile.name
+
     def try_restore(self) -> bool:
         """Reattach gRPC when REST session and Xray on the node are still alive.
 
         Returns True if session is valid and core is running (gRPC reattached).
-        Returns False if there is no usable session or core is down (caller may soft-start
-        or hard-connect). Raises NodeAPIError on transient transport errors so the caller
-        does not create a new session (/connect) during a network blip.
+        Returns False if there is no session or the core is down. A missing cached
+        certificate is fetched; certificate transport errors propagate with the
+        session intact so the caller does not open a new /connect session.
         """
         if not self._session_id:
             logger.debug(f"[node.restore] skip: no local session ({self._node_tag()})")
             return False
-        if not getattr(self, "_node_cert", None):
-            logger.debug(f"[node.restore] skip: no node cert cached ({self._node_tag()} {self._session_tag()})")
-            return False
+        try:
+            self._ensure_peer_cert()
+        except ConnectionError as exc:
+            logger.debug(
+                f"[node.restore] cert fetch failed ({self._node_tag()} {self._session_tag()}): "
+                f"{exc}; keep session_id, defer without /connect"
+            )
+            raise
 
         try:
             self.make_request("/ping", timeout=XRAY_NODE_REST_PING_TIMEOUT)
@@ -787,6 +831,15 @@ class XRayNode:
         raise NotImplementedError
 
     def disconnect(self) -> None:
+        raise NotImplementedError
+
+    def release_local(self) -> None:
+        raise NotImplementedError
+
+    def adopt_control_session(self, session_id: str) -> None:
+        raise NotImplementedError
+
+    def set_control_session_listener(self, listener: Callable[[str | None], None]) -> None:
         raise NotImplementedError
 
     def get_version(self) -> str | None:
