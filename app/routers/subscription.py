@@ -1,10 +1,13 @@
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Path, Request, Response
 from fastapi.responses import HTMLResponse
+from fastapi.routing import APIRoute
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
+from starlette.routing import BaseRoute
 
 from app import logger, xray
 from app.db import GetDB, Session, crud, get_db
@@ -64,6 +67,19 @@ client_config: dict[str, SubscriptionClientConfigEntry] = {
 }
 
 router = APIRouter(tags=["Subscription"], prefix=f"/{XRAY_SUBSCRIPTION_PATH}")
+
+
+def subscription_path_taken(routes: Iterable[BaseRoute]) -> bool:
+    """Занят ли путь подписки чужим маршрутом приложения (проверка при старте панели).
+
+    Собственные маршруты этого роутера не в счёт: /sub и /sub/ отдают 404 на
+    ссылку без токена (NPVPN-2374) и конфликтом не являются.
+    """
+    own_endpoints = {route.endpoint for route in router.routes if isinstance(route, APIRoute)}
+    # path есть у Route и Mount, но не объявлен в BaseRoute
+    paths = {f"{getattr(r, 'path', '')}/" for r in routes if getattr(r, "endpoint", None) not in own_endpoints}
+    paths.add("/api/")
+    return f"/{XRAY_SUBSCRIPTION_PATH}/" in paths
 
 
 def resolve_subscription_context(token: str, db: Session):
