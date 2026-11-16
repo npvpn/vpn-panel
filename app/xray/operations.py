@@ -494,6 +494,8 @@ def _cascade_kwargs(db, dbnode) -> dict:
 
 _node_lifecycle_locks: dict[int, _thread.RLock] = {}
 _node_lifecycle_locks_guard = threading.Lock()
+_node_operation_locks: dict[int, _thread.RLock] = {}
+_node_operation_locks_guard = threading.Lock()
 
 
 def _node_lifecycle_lock(node_id: int):
@@ -501,6 +503,13 @@ def _node_lifecycle_lock(node_id: int):
         if node_id not in _node_lifecycle_locks:
             _node_lifecycle_locks[node_id] = threading.RLock()
         return _node_lifecycle_locks[node_id]
+
+
+def _node_operation_lock(node_id: int):
+    with _node_operation_locks_guard:
+        if node_id not in _node_operation_locks:
+            _node_operation_locks[node_id] = threading.RLock()
+        return _node_operation_locks[node_id]
 
 
 def remove_node(node_id: int, *, invalidate_slot: bool = True):
@@ -710,6 +719,8 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
     if slot_gen is None:
         return
 
+    node_connect_lock = _node_operation_lock(node_id)
+    node_connect_lock.acquire()
     dbnode = None
     node = None
     last_exc = None
@@ -871,6 +882,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
         else:
             logger.warning(f"Unable to connect node_id={node_id}: {type(exc).__name__}: {exc}")
     finally:
+        node_connect_lock.release()
         _release_connect_slot(node_id, slot_gen)
         if dbnode:
             try:
@@ -888,6 +900,11 @@ def connect_node(node_id, config=None, force: bool = False):
 
 @threaded_function
 def restart_node(node_id, config=None):
+    with _node_operation_lock(node_id):
+        return _restart_node_impl(node_id, config)
+
+
+def _restart_node_impl(node_id, config=None):
     node_inbound_tags = []
     cascade_kwargs = {"role": "direct"}
     blocked_user_ids = set()
