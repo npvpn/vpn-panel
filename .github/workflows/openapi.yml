@@ -18,7 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --python 3.12 --all-groups
+        with:
+          python-version: '3.12'
+      - run: uv sync --all-groups
       - name: Install Xray
         run: |
           sudo apt-get update

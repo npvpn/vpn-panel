@@ -17,8 +17,12 @@
     <link rel="preload" href="{{ sub_statics }}fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="{{ sub_statics }}fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="icon" href="data:,">
-    <script defer src="/statics/vendor/js/alpinejs.js"></script>
+    {# qrcode.min.js и qr-code.js — строго до Alpine (NPVPN-2368): defer-скрипты выполняются по порядку,
+       а Alpine стартует сразу после своего и рисует QR в init(). Подключённый после Alpine QRCode иногда
+       не успевал загрузиться — «QRCode is not defined», вместо кода один логотип до перезагрузки. #}
     <script defer src="/statics/vendor/js/qrcode.min.js"></script>
+    <script defer src="{{ sub_statics }}scripts/qr-code.js?v={{ static_v }}"></script>
+    <script defer src="/statics/vendor/js/alpinejs.js"></script>
     <script defer src="{{ sub_statics }}scripts/cabinet-link.js?v={{ static_v }}"></script>
     {# Опрос статуса — по состоянию, как было на отдельных страницах: обычная перезагружается при
        достижении лимита и отзыве токена, «лимит» — когда устройство освободилось, «истекла» — при
@@ -94,7 +98,6 @@
           toastTimer: null,
 
           selectedClient: null,
-
 
           selectClient(app) {
               this.selectedClient = app.id;
@@ -209,18 +212,10 @@
           ],
           init() {
             document.title = `${this.user.username} - Настройка VPN`;
-              this.$nextTick(() => {
-                const qrMainContainer = document.getElementById('qrcode-main');
-                if (qrMainContainer) {
-                  qrMainContainer.innerHTML = '';
-                  new QRCode(qrMainContainer, {
-                    text: this.user.subscription_url,
-                    width: 200,
-                    height: 200,
-                    correctLevel: QRCode.CorrectLevel.H
-                  });
-                }
-              });
+              // QR с логотипом одной картинкой — scripts/qr-code.js (NPVPN-2368)
+              this.$nextTick(() => window.renderSubscriptionQr(
+                document.getElementById('qrcode-main'), this.user.subscription_url
+              ));
 
               this.$watch('currentPlatform', () => {
                   this.selectedClient = null;
@@ -677,11 +672,10 @@ get alternativeApps() {
     
             <div x-show="selectedOs === 'QR'" class="qr-wrapper">
                 <p class="qr-title">Отсканируйте для подключения другого устройства</p>
-                {# QR с логотипом «VPN» по центру — как реферальный QR бота (src/utils/ref_qr.py, та же
-                   картинка): уровень коррекции H восстанавливает закрытый логотипом центр (~8% площади; 56px — с запасом, 60+ на плотном коде уже не всегда читается) #}
+                {# QR с логотипом «VPN» по центру — одна картинка, рисует scripts/qr-code.js (как
+                   реферальный QR бота, src/utils/ref_qr.py) #}
                 <div class="qr-code">
-                  <div id="qrcode-main"></div>
-                  <img class="qr-code__logo" src="{{ sub_statics }}assets/qr-logo.png?v={{ static_v }}" alt="" width="56" height="56">
+                  <div id="qrcode-main" data-logo-src="{{ sub_statics }}assets/qr-logo.png?v={{ static_v }}"></div>
                 </div>
             </div>
     

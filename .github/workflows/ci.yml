@@ -12,6 +12,8 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
       # Node для тестов, исполняющих фронтовую логику: .ts-модули дашборда
       # (tests/test_hosts_dialog_logic_js.py) Node снимает с типов сам с 22.18.
       - uses: actions/setup-node@v4

@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from enum import Enum
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -381,6 +382,23 @@ class UserDigestEntry(BaseModel):
     username: str
     status: str
     expire: int | None = None
+
+
+class UserActivityRequest(BaseModel):
+    """Ограниченное чтение активности без полного объекта пользователя."""
+
+    usernames: list[Annotated[str, Field(min_length=1, max_length=32, pattern=r"^\S+$")]] = Field(
+        min_length=1, max_length=500
+    )
+
+
+class UserActivityResponse(BaseModel):
+    username: str
+    online_at: datetime | None
+
+
+class UsersActivityResponse(BaseModel):
+    users: list[UserActivityResponse]
 
 
 class UsersDigestResponse(BaseModel):

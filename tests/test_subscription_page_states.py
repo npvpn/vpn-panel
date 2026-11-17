@@ -100,6 +100,21 @@ def test_regular_page_keeps_settings():
     assert "state-fallback" not in html
 
 
+def test_qr_scripts_load_before_alpine():
+    """NPVPN-2368: Alpine рисует QR в init() сразу после своего defer-скрипта — qrcode.min.js и
+    qr-code.js должны выполниться раньше, иначе «QRCode is not defined» и вместо кода один логотип."""
+    html = _render("index.html")
+    order = [html.index(name) for name in ("vendor/js/qrcode.min.js", "scripts/qr-code.js", "vendor/js/alpinejs.js")]
+    assert order == sorted(order)
+
+
+def test_qr_block_has_logo_src_and_no_overlay_logo():
+    # логотип рисуется внутрь картинки кода, а не отдельным <img> поверх (NPVPN-2368)
+    html = _render("index.html")
+    assert 'id="qrcode-main" data-logo-src="/statics/subscription/assets/qr-logo.png?v=' in html
+    assert "qr-code__logo" not in html
+
+
 def test_apple_region_notice_only_on_apple_tabs():
     """NPVPN-2362: на iOS и Mac до кнопок скачивания — ссылка на инструкцию смены региона App Store."""
     html = _render("index.html")
