@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Path, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.routing import APIRoute
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
@@ -76,8 +76,11 @@ def subscription_path_taken(routes: Iterable[BaseRoute]) -> bool:
     ссылку без токена (NPVPN-2374) и конфликтом не являются.
     """
     own_endpoints = {route.endpoint for route in router.routes if isinstance(route, APIRoute)}
-    # path есть у Route и Mount, но не объявлен в BaseRoute
-    paths = {f"{getattr(r, 'path', '')}/" for r in routes if getattr(r, "endpoint", None) not in own_endpoints}
+    # path есть у Route и Mount, но не объявлен в BaseRoute. Слеш на конце
+    # нормализуем: маршрут "/sub/" иначе дал бы "/sub//" и конфликт не нашёлся бы
+    paths = {
+        f"{getattr(r, 'path', '').rstrip('/')}/" for r in routes if getattr(r, "endpoint", None) not in own_endpoints
+    }
     paths.add("/api/")
     return f"/{XRAY_SUBSCRIPTION_PATH}/" in paths
 
@@ -447,4 +450,13 @@ def user_subscription_with_client_type(
 # (/sub/<токен>/лишний/хвост). Иначе браузеру — голый JSON 404 (NPVPN-2374).
 @router.get("/{token}/{rest:path}", include_in_schema=False)
 def subscription_unknown_path(request: Request, token: str, rest: str, db: Session = Depends(get_db)):
+    # Слеш на конце (/sub/<токен>/v2ray/) раньше снимал redirect_slashes Starlette,
+    # но он срабатывает, только если не подошёл ни один маршрут, а этот подходит
+    # под всё. Снимаем сами, иначе рабочие ссылки со слешем получат 404.
+    # Адрес относительный: панель за nginx, схема соединения тут http
+    if rest.endswith("/"):
+        url = request.url.path.rstrip("/")
+        if request.url.query:
+            url = f"{url}?{request.url.query}"
+        return RedirectResponse(url, status_code=307)
     return render_not_found(request, db, token)
