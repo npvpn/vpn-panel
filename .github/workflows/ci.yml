@@ -45,7 +45,9 @@ jobs:
           # а не mypy. filter вернёт ненулевой код только на НОВЫХ ошибках.
           set +o pipefail
           # Overload notes change across mypy versions; only errors are debt.
-          uv run mypy app | uv run mypy-baseline filter --ignore-categories note
+          # Filter by message level, not baseline category: errors without an error
+          # code must remain visible and fail the check.
+          uv run mypy app | uv run python scripts/filter_mypy_notes.py | uv run mypy-baseline filter
       - name: Install Xray
         # tests/test_export_openapi.py импортирует приложение, а XRayCore
         # при импорте вызывает `xray version`. Без бинарника pytest падает

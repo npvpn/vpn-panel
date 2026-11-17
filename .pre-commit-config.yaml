@@ -20,7 +20,7 @@ repos:
         name: mypy (baseline)
         # --no-incremental: гоняем без .mypy_cache, чтобы локальный хук всегда совпадал
         # с чистым прогоном в CI (инкрементальный кэш + pydantic «уплывает» → ложные new/fixed).
-        entry: bash -c 'uv run mypy --no-incremental app | uv run mypy-baseline filter --ignore-categories note'
+        entry: bash -c 'uv run mypy --no-incremental app | uv run python scripts/filter_mypy_notes.py | uv run mypy-baseline filter'
         language: system
         types: [python]
         pass_filenames: false
