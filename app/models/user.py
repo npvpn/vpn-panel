@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 from enum import Enum
 from typing import Annotated
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -467,6 +468,10 @@ class UsersUsagesResponse(BaseModel):
 class UserBsExtraModify(BaseModel):
     delta_bytes: int | None = Field(None, ge=0, description="Инкремент бонуса в байтах")
     reset: bool = False
+    operation_id: UUID | None = Field(
+        default=None,
+        description="Идемпотентный ключ доставки купленного БС-пула",
+    )
 
     @field_validator("delta_bytes", mode="before")
     def cast_delta_bytes(cls, v):

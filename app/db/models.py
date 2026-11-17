@@ -387,6 +387,19 @@ class User(Base):
         )
 
 
+class PanelDeliveryReceipt(Base):
+    """Подтверждает единственное применение неидемпотентного panel-delivery шага."""
+
+    __tablename__ = "panel_delivery_receipts"
+
+    operation_id = Column(String(36), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    delta_bytes = Column(BigInteger, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User", passive_deletes=True)
+
+
 class UserDevice(Base):
     __tablename__ = "user_devices"
     __table_args__ = (UniqueConstraint("user_id", "hwid", name="uq_user_devices_user_id_hwid"),)
