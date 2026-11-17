@@ -21,7 +21,7 @@ if sys.modules.get("app.subscription.share") is _share_stub:
 def test_release_remote_nodes_does_not_disconnect():
     rest = MagicMock()
     rpyc = MagicMock(spec=["disconnect"])
-    with patch.object(operations, "xray") as xray_mod:
+    with patch.object(operations, "_node_scheduler", None), patch.object(operations, "xray") as xray_mod:
         xray_mod.nodes = {1: rest, 2: rpyc}
         operations.release_remote_nodes()
     rest.release_local.assert_called_once()
