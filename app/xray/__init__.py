@@ -74,6 +74,7 @@ def hosts(storage: dict):
                     # закреплении нод в AddressContext.pick.
                     "id": host.id,
                     "remark": host.remark,
+                    "is_placeholder": bool(host.is_placeholder),
                     "address": resolve_host_addresses(host),
                     # Привязанные ноды хоста: по ним определяется БС-признак и БС-блокировки
                     # (NPVPN-1652), адрес хоста для этого не годится — он может быть доменом.

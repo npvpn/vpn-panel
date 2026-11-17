@@ -64,6 +64,7 @@ def select_injected_hosts(
         for host in hosts
         if host.get("id") != recipient.get("id")
         and not host.get("is_disabled")
+        and not host.get("is_placeholder")
         and (group.selectFrom == "ALL" or bool(host.get("is_hidden")) == (group.selectFrom == "HIDDEN"))
     ]
     if isinstance(group.selector, IdSelector):

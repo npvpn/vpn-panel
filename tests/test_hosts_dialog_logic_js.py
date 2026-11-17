@@ -320,6 +320,153 @@ def test_host_order_in_list_matters():
     assert _same([a, b], [b, a]) is False
 
 
+def test_placeholder_payload_ignores_invalid_hidden_json_and_keeps_binding():
+    result = _run(
+        {
+            "op": "groupHosts",
+            "inboundTags": ["VLESS"],
+            "hosts": [
+                {
+                    "host_id": 42,
+                    "inbound_tag": "VLESS",
+                    "remark": "Information",
+                    "is_placeholder": True,
+                    "bot_usernames": ["mine"],
+                    "finalmask": "{invalid",
+                    "xhttp_extra": "{invalid",
+                }
+            ],
+        }
+    )
+
+    assert result["payload"]["VLESS"] == [
+        {
+            "id": 42,
+            "order": 0,
+            "remark": "Information",
+            "is_placeholder": True,
+            "is_disabled": False,
+            "bot_usernames": ["mine"],
+        }
+    ]
+
+
+def test_switching_placeholder_back_before_save_keeps_connection_draft():
+    """Флаг меняет только payload на момент сохранения, не черновик формы."""
+    draft = {
+        "host_id": 42,
+        "inbound_tag": "VLESS",
+        "remark": "Austria",
+        "address": "edge.example",
+        "port": 443,
+        "node_ids": [7, 9],
+        "bot_usernames": ["mine"],
+        "finalmask": '{"tcp":[{"type":"noop","settings":{}}]}',
+        "xhttp_extra": '{"headers":{"X-Test":"value"}}',
+    }
+
+    placeholder = _run({"op": "groupHosts", "inboundTags": ["VLESS"], "hosts": [{**draft, "is_placeholder": True}]})
+    restored = _run({"op": "groupHosts", "inboundTags": ["VLESS"], "hosts": [{**draft, "is_placeholder": False}]})
+
+    assert placeholder["payload"]["VLESS"] == [
+        {
+            "id": 42,
+            "order": 0,
+            "remark": "Austria",
+            "is_placeholder": True,
+            "is_disabled": False,
+            "bot_usernames": ["mine"],
+        }
+    ]
+    assert restored["payload"]["VLESS"] == [
+        {
+            "id": 42,
+            "order": 0,
+            "remark": "Austria",
+            "address": "edge.example",
+            "port": 443,
+            "node_ids": [7, 9],
+            "bot_usernames": ["mine"],
+            "finalmask": {"tcp": [{"type": "noop", "settings": {}}]},
+            "xhttp_extra": {"headers": {"X-Test": "value"}},
+            "is_placeholder": False,
+        }
+    ]
+
+
+def test_placeholder_payload_keeps_enabled_state():
+    """Выключенная заглушка должна дойти до CRUD, иначе сохранение включает её обратно."""
+    result = _run(
+        {
+            "op": "groupHosts",
+            "inboundTags": ["VLESS"],
+            "hosts": [
+                {
+                    "host_id": 42,
+                    "inbound_tag": "VLESS",
+                    "remark": "Information",
+                    "is_placeholder": True,
+                    "is_disabled": True,
+                }
+            ],
+        }
+    )
+
+    assert result["payload"]["VLESS"] == [
+        {
+            "id": 42,
+            "order": 0,
+            "remark": "Information",
+            "is_placeholder": True,
+            "is_disabled": True,
+            "bot_usernames": [],
+        }
+    ]
+
+
+def test_placeholder_controls_are_available_in_the_expected_layouts():
+    """У заглушки доступны общий свитч, выбор ботов и настройки карточки."""
+    components = Path(__file__).parents[1] / "app/dashboard/src/components/hostsDialog"
+    add_form = (components / "AddHostForm.tsx").read_text()
+    host_row = (components / "HostRow.tsx").read_text()
+    advanced_modal = (components / "HostAdvancedOptionsModal.tsx").read_text()
+
+    assert add_form.index('name="hosts.0.is_placeholder"') < add_form.index("<Select")
+
+    table_start = host_row.index("const renderTableLayout")
+    table_end = host_row.index("  return (", table_start)
+    table_layout = host_row[table_start:table_end]
+    assert "{enableSwitch}" in table_layout
+    assert "!isPlaceholder && enableSwitch" not in table_layout
+
+    card_start = host_row.index("const renderCardLayout")
+    card_end = host_row.index("  const dataCells", card_start)
+    card_layout = host_row[card_start:card_end]
+    assert "{enableSwitch}" in card_layout
+    assert "!isPlaceholder && enableSwitch" not in card_layout
+    assert "!isPlaceholder && advancedOptionsButton" not in card_layout
+
+    # В таблице у заглушки Remark редактируется в окне, а HostAdvancedOptions
+    # оставляет доступ к bot_usernames. В карточке Remark уже есть в строке,
+    # поэтому дубль поля не показываем.
+    assert "isPlaceholder ? (" not in advanced_modal
+    assert "{isPlaceholder && !advancedOptionsProps.hideRemarkAddress && (" in advanced_modal
+    assert "<HostAdvancedOptions" in advanced_modal
+    assert "isPlaceholder || advancedOptionsProps.hideRemarkAddress" in advanced_modal
+
+
+def test_placeholder_advanced_options_show_only_saved_fields():
+    components = Path(__file__).parents[1] / "app/dashboard/src/components/hostsDialog"
+    advanced_modal = (components / "HostAdvancedOptionsModal.tsx").read_text()
+    advanced_options = (components / "HostAdvancedOptions.tsx").read_text()
+
+    assert "isPlaceholder={isPlaceholder}" in advanced_modal
+    assert "index={isPlaceholder ? 2 : tabIndex}" in advanced_options
+    assert 'display={isPlaceholder && i !== 2 ? "none" : undefined}' in advanced_options
+    assert "{!isPlaceholder && (" in advanced_options
+    assert "name={`${hostKey}.${index}.bot_usernames`}" in advanced_options
+
+
 @pytest.mark.parametrize("network", ["tcp", "grpc", "ws"])
 def test_inbound_change_keeps_host_identity_and_clears_xhttp_extra(network):
     """Смена транспорта меняет только inbound и очищает несовместимый Extra."""

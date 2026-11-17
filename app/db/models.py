@@ -518,6 +518,7 @@ class ProxyHost(Base):
     id = Column(Integer, primary_key=True)
     remark = Column(String(256), unique=False, nullable=False)
     address = Column(String(256), unique=False, nullable=False)
+    is_placeholder = Column(Boolean, nullable=False, default=False, server_default="0")
     port = Column(Integer, nullable=True)
     path = Column(String(256), unique=False, nullable=True)
     sni = Column(String(1000), unique=False, nullable=True)

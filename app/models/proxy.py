@@ -181,7 +181,8 @@ class ProxyHost(BaseModel):
     # будет пересоздан и потеряет пины с отметкой аренды.
     id: int | None = None
     remark: str
-    address: str
+    address: str = ""
+    is_placeholder: bool = False
     port: int | None = Field(None, nullable=True)
     sni: str | None = Field(None, nullable=True)
     host: str | None = Field(None, nullable=True)
@@ -262,6 +263,12 @@ class ProxyHost(BaseModel):
         if v is not None and not isinstance(v, dict):
             raise ValueError("xhttp_extra must be a JSON object")
         return v
+
+    @model_validator(mode="after")
+    def validate_regular_address(self):
+        if not self.is_placeholder and "address" not in self.model_fields_set:
+            raise ValueError("address is required for a regular host")
+        return self
 
     @model_validator(mode="after")
     def validate_finalmask(self):

@@ -140,6 +140,7 @@ export type HostAdvancedOptionsProps = {
   // from a mobile card or the create-host row, so skip the duplicates there.
   hideRemarkAddress?: boolean;
   completeCatalog?: boolean;
+  isPlaceholder?: boolean;
 };
 
 export const HostAdvancedOptions = memo(
@@ -158,6 +159,7 @@ export const HostAdvancedOptions = memo(
     proxyFingerprint,
     hideRemarkAddress,
     completeCatalog,
+    isPlaceholder = false,
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
@@ -182,8 +184,10 @@ export const HostAdvancedOptions = memo(
     // и ошибки приходят в одном обновлении
     const { errors, submitCount } = useFormState({ control });
     const hostErrors = get(errors, `${hostKey}.${index}`);
-    const tabHasErrors = HOST_TABS.map((tab) =>
-      tab.fields.some((field) => !!hostErrors?.[field])
+    const tabHasErrors = HOST_TABS.map((tab, i) =>
+      isPlaceholder
+        ? i === 2 && !!hostErrors?.bot_usernames
+        : tab.fields.some((field) => !!hostErrors?.[field])
     );
 
     // Название и адрес скрыты там, где их правят в карточке или строке
@@ -223,20 +227,21 @@ export const HostAdvancedOptions = memo(
     );
 
     useEffect(() => {
+      if (isPlaceholder) return;
       // Видов документов больше нет (NPVPN-2024): каждый документ — полный
       // самодостаточный конфиг и может быть назначен хосту.
       listTemplates()
         .then((docs) => { setClientConfigs(docs); setTemplatesLoaded(true); })
         .catch(() => setClientConfigs([]));
-    }, []);
+    }, [isPlaceholder]);
 
     useEffect(() => {
-      if (!templatesLoaded) return;
+      if (isPlaceholder || !templatesLoaded) return;
       try {
         form.setValue(`${hostKey}.${index}.template_injection`, templateInjection(currentHost, clientConfigs));
         setTemplateError(false);
       } catch { setTemplateError(true); }
-    }, [templatesLoaded, clientConfigs, currentHost.client_config_id, hostKey, index]);
+    }, [isPlaceholder, templatesLoaded, clientConfigs, currentHost.client_config_id, hostKey, index]);
 
     return (
       <VStack key={index} align="stretch" spacing={3} w="full">
@@ -244,7 +249,7 @@ export const HostAdvancedOptions = memo(
         <Tabs
           variant="enclosed"
           colorScheme="primary"
-          index={tabIndex}
+          index={isPlaceholder ? 2 : tabIndex}
           onChange={setTabIndex}
         >
           <TabList
@@ -271,7 +276,7 @@ export const HostAdvancedOptions = memo(
             }}
           >
             {HOST_TABS.map((tab, i) => (
-              <Tab key={tab.labelKey} flexShrink={0}>
+              <Tab key={tab.labelKey} flexShrink={0} display={isPlaceholder && i !== 2 ? "none" : undefined}>
                 {t(tab.labelKey)}
                 {tabHasErrors[i] && (
                   <Box
@@ -1033,6 +1038,8 @@ export const HostAdvancedOptions = memo(
                     )}
                   </FormControl>
                 )}
+                {!isPlaceholder && (
+                <>
                 {nodes.filter((n) => n.id != null).length > 0 && (
                   <FormControl gridColumn={{ md: "1 / -1" }}>
                     <FormLabel>{t("hostsDialog.linkedNodes")}</FormLabel>
@@ -1232,6 +1239,8 @@ export const HostAdvancedOptions = memo(
                 </Box>
 
                 </Box>
+                </>
+                )}
               </SimpleGrid>
             </TabPanel>
             <TabPanel px={0}>

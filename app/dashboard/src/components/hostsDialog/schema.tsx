@@ -70,6 +70,7 @@ export const hostItemSchema = z
     inbound_tag: z.string().min(1),
     order: z.number().int(),
     remark: z.string().min(1, "hostsDialog.errors.remarkRequired"),
+    is_placeholder: z.boolean().default(false),
     address: z.string(),
     port: z
       .string()
@@ -95,26 +96,7 @@ export const hostItemSchema = z
     fingerprint: z.string(),
     use_sni_as_host: z.boolean().default(false),
     finalmask: z.string().nullable().optional().default(""),
-    xhttp_extra: z
-      .string()
-      .nullable()
-      .optional()
-      .refine(
-        (v) => {
-          if (!v) return true;
-          try {
-            const parsed = JSON.parse(v);
-            return (
-              typeof parsed === "object" &&
-              !Array.isArray(parsed) &&
-              parsed !== null
-            );
-          } catch {
-            return false;
-          }
-        },
-        { message: "hostsDialog.errors.invalidJson" }
-      ),
+    xhttp_extra: z.string().nullable().optional(),
     bot_usernames: z.array(z.string()).default([]),
     // NPVPN-2044: боты, которым хост отмечен арендованным. Подмножество
     // bot_usernames — бэкенд отвергает аренду без привязки.
@@ -153,6 +135,17 @@ export const hostItemSchema = z
       }),
   })
   .superRefine((data, ctx) => {
+    if (data.is_placeholder) return;
+    if (data.xhttp_extra) {
+      try {
+        const parsed = JSON.parse(data.xhttp_extra);
+        if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["xhttp_extra"], message: "hostsDialog.errors.invalidJson" });
+        }
+      } catch {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["xhttp_extra"], message: "hostsDialog.errors.invalidJson" });
+      }
+    }
     const maskIssue = finalmaskError(data.finalmask, data.fragment_setting);
     if (maskIssue) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["finalmask"], message: maskIssue });
