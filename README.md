@@ -1,6 +1,6 @@
 # npvpn panel
 
-[English](README-en.md) · [Релизы](https://github.com/npvpn/vpn-panel/releases) · [Docker Hub](https://hub.docker.com/r/npvpn/panel) · [Лицензия](LICENSE)
+[English](README-en.md) · [Релизы](https://github.com/npvpn/vpn-panel/releases) · [Docker Hub](https://hub.docker.com/r/npvpn/panel) · [API](#api) · [Лицензия](LICENSE)
 
 **npvpn panel** — форк Marzban, разработанный для реальных коммерческих VPN-проектов.  
 Панель оптимизирована под масштабируемые конфигурации, высокую производительность и удобное управление распределённой инфраструктурой.  
@@ -218,11 +218,9 @@ sudo bash -c "$(curl -sL https://github.com/npvpn/Marzban-scripts/raw/master/mar
 
 ## API
 
-Актуальная схема API ветки `master` публикуется при каждом её обновлении:
+Описание API в формате OpenAPI доступно в файле [openapi.json](https://github.com/npvpn/vpn-panel/releases/download/openapi/openapi.json). Его экспорт и публикация при каждом обновлении ветки `master` настроены в [workflow OpenAPI](.github/workflows/openapi.yml).
 
-[openapi.json](https://github.com/npvpn/vpn-panel/releases/download/openapi/openapi.json)
-
-На установленной панели схема этой версии доступна по адресу `/openapi.json`. Она совпадает с публикуемым файлом только при настройках по умолчанию. Если `MEMORY_PROFILING_ENABLED=true`, панель добавляет маршруты `/api/system/memory/*`, которых в публикуемом файле нет. Страницы `/docs` и `/redoc` включаются переменной `DOCS=true`.
+На запущенной панели схема её версии доступна по адресу `<адрес панели>/openapi.json`. Она совпадает с публикуемым файлом только при настройках по умолчанию. Если `MEMORY_PROFILING_ENABLED=true`, панель добавляет маршруты `/api/system/memory/*`, которых в публикуемом файле нет. Страницы `/docs` и `/redoc` включаются переменной `DOCS=true`.
 
 ---
 
