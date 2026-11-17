@@ -24,7 +24,9 @@ jobs:
       - name: Install dashboard dependencies for form contract tests
         working-directory: app/dashboard
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: uv sync --all-groups
+      # Docker and mypy use Python 3.12; newer runner Python may be incompatible
+      # with the pinned pydantic-core/PyO3 build.
+      - run: uv sync --python 3.12 --all-groups
       - name: ruff check
         run: uv run ruff check .
       - name: ruff format
@@ -42,7 +44,10 @@ jobs:
           # отключаем pipefail, чтобы итоговый статус определял mypy-baseline filter,
           # а не mypy. filter вернёт ненулевой код только на НОВЫХ ошибках.
           set +o pipefail
-          uv run mypy app | uv run mypy-baseline filter
+          # Overload notes change across mypy versions; only errors are debt.
+          # Filter by message level, not baseline category: errors without an error
+          # code must remain visible and fail the check.
+          uv run mypy app | uv run python scripts/filter_mypy_notes.py | uv run mypy-baseline filter
       - name: Install Xray
         # tests/test_export_openapi.py импортирует приложение, а XRayCore
         # при импорте вызывает `xray version`. Без бинарника pytest падает

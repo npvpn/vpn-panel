@@ -66,6 +66,8 @@ def test_fresh_sqlite_reaches_head(alembic_cfg):
     engine = _engine(alembic_cfg)
     try:
         assert _current_revision(engine) == heads[0]
+        columns = {col["name"] for col in sa.inspect(engine).get_columns("nodes")}
+        assert "control_session_id" in columns
     finally:
         engine.dispose()
 

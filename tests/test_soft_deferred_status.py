@@ -119,6 +119,51 @@ def test_soft_retry_skips_status_rewrite_when_already_connecting():
     change_status.assert_not_called()
 
 
+def test_soft_connect_adopts_saved_session_and_does_not_start_core():
+    dbnode = MagicMock()
+    dbnode.id = 6
+    dbnode.name = "nl-3"
+    dbnode.status = NodeStatus.connecting
+    dbnode.inbounds = []
+    dbnode.control_session_id = "11111111-1111-1111-1111-111111111111"
+
+    node = MagicMock()
+    node._session_id = None
+    node.try_restore.return_value = True
+    node.get_version.return_value = "26.2.6"
+
+    def adopt(session_id):
+        node._session_id = session_id
+
+    node.adopt_control_session.side_effect = adopt
+
+    with (
+        patch.object(operations, "_acquire_connect_slot", return_value=1),
+        patch.object(operations, "_release_connect_slot"),
+        patch.object(operations, "_connect_semaphore") as sem,
+        patch.object(operations, "GetDB") as get_db,
+        patch.object(operations, "crud") as crud,
+        patch.object(operations, "_change_node_status", return_value=True),
+        patch.object(operations, "xray") as xray_mod,
+        patch.object(operations, "node_config_json", return_value="{}"),
+        patch.object(operations, "_cascade_kwargs", return_value={"role": "direct"}),
+        patch.object(operations, "_blocked_user_ids", return_value=set()),
+    ):
+        sem.acquire = MagicMock()
+        sem.release = MagicMock()
+        get_db.return_value.__enter__.return_value = MagicMock()
+        get_db.return_value.__exit__.return_value = None
+        crud.get_node_by_id.return_value = dbnode
+        xray_mod.nodes = {6: node}
+        operations._connect_node_impl(6, config=MagicMock(), force=False)
+
+    node.adopt_control_session.assert_called_once_with("11111111-1111-1111-1111-111111111111")
+    node.try_restore.assert_called_once()
+    node.connect.assert_not_called()
+    node.start.assert_not_called()
+    node.restart.assert_not_called()
+
+
 def _run_soft_deferred(dbnode, node, status_calls):
     def capture_status(node_id, status, message=None, version=None):
         status_calls.append((node_id, status, version))

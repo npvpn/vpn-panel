@@ -1,3 +1,4 @@
+import _thread
 import threading
 import time
 from datetime import datetime
@@ -491,6 +492,26 @@ def _cascade_kwargs(db, dbnode) -> dict:
     return {"role": "direct"}
 
 
+_node_lifecycle_locks: dict[int, _thread.RLock] = {}
+_node_lifecycle_locks_guard = threading.Lock()
+_node_operation_locks: dict[int, _thread.RLock] = {}
+_node_operation_locks_guard = threading.Lock()
+
+
+def _node_lifecycle_lock(node_id: int):
+    with _node_lifecycle_locks_guard:
+        if node_id not in _node_lifecycle_locks:
+            _node_lifecycle_locks[node_id] = threading.RLock()
+        return _node_lifecycle_locks[node_id]
+
+
+def _node_operation_lock(node_id: int):
+    with _node_operation_locks_guard:
+        if node_id not in _node_operation_locks:
+            _node_operation_locks[node_id] = threading.RLock()
+        return _node_operation_locks[node_id]
+
+
 def remove_node(node_id: int, *, invalidate_slot: bool = True):
     """Drop in-memory node object (and optionally the connect slot).
 
@@ -500,38 +521,65 @@ def remove_node(node_id: int, *, invalidate_slot: bool = True):
     ``invalidate_slot=False`` when called from ``add_node`` during an in-flight connect:
     otherwise we would clear our own slot and let health start a parallel HARD.
     """
-    if invalidate_slot:
-        invalidate_connect_slot(node_id)
-    if node_id in xray.nodes:
-        try:
-            xray.nodes[node_id].disconnect()
-        except Exception:
-            pass
-        finally:
+    with _node_lifecycle_lock(node_id):
+        if invalidate_slot:
+            invalidate_connect_slot(node_id)
+        if node_id in xray.nodes:
             try:
-                del xray.nodes[node_id]
-            except KeyError:
+                xray.nodes[node_id].disconnect()
+            except Exception:
                 pass
+            finally:
+                try:
+                    del xray.nodes[node_id]
+                except KeyError:
+                    pass
+
+
+def release_remote_nodes() -> None:
+    logger.info("Releasing node control sessions without stopping remote Xray")
+    for node in list(xray.nodes.values()):
+        try:
+            release = getattr(node, "release_local", None)
+            if release is not None:
+                release()
+        except Exception:
+            logger.exception("Failed to release local node transport")
+
+
+def _persist_control_session(node_id: int, session_id: str | None) -> None:
+    with GetDB() as db:
+        crud.set_node_control_session(db, node_id, session_id)
 
 
 def add_node(dbnode: "DBNode"):
     # Replace local object only — do not invalidate the connect slot of the caller
     # (connect_node may already hold it after Edit wiped xray.nodes).
-    remove_node(dbnode.id, invalidate_slot=False)
+    node_id = int(dbnode.id)
+    with _node_lifecycle_lock(node_id):
+        remove_node(dbnode.id, invalidate_slot=False)
 
-    tls = get_tls()
-    node = XRayNode(
-        address=dbnode.address,
-        port=dbnode.port,
-        api_port=dbnode.api_port,
-        ssl_key=tls["key"],
-        ssl_cert=tls["certificate"],
-        protocol=dbnode.protocol,
-        usage_coefficient=dbnode.usage_coefficient,
-    )
-    xray.nodes[dbnode.id] = node
+        tls = get_tls()
+        node = XRayNode(
+            address=dbnode.address,
+            port=dbnode.port,
+            api_port=dbnode.api_port,
+            ssl_key=tls["key"],
+            ssl_cert=tls["certificate"],
+            protocol=dbnode.protocol,
+            usage_coefficient=dbnode.usage_coefficient,
+        )
+        xray.nodes[dbnode.id] = node
+        if hasattr(node, "set_control_session_listener"):
 
-    return node
+            def persist_session(session_id: str | None) -> None:
+                with _node_lifecycle_lock(node_id):
+                    if xray.nodes.get(node_id) is node:
+                        _persist_control_session(node_id, session_id)
+
+            node.set_control_session_listener(persist_session)
+
+        return node
 
 
 def _change_node_status(node_id: int, status: NodeStatus, message: str = None, version: str = None) -> bool:
@@ -671,11 +719,14 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
     if slot_gen is None:
         return
 
+    node_connect_lock = _node_operation_lock(node_id)
+    node_connect_lock.acquire()
     dbnode = None
     node = None
     last_exc = None
 
     node_inbound_tags = []
+    saved_session = None
     cascade_kwargs = {"role": "direct"}
     try:
         blocked_user_ids = set()
@@ -683,6 +734,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
             dbnode = crud.get_node_by_id(db, node_id)
             if dbnode:
                 # читаем в открытой сессии, чтобы не словить DetachedInstanceError
+                saved_session = dbnode.control_session_id if isinstance(dbnode.control_session_id, str) else None
                 node_inbound_tags = [i.tag for i in dbnode.inbounds]
                 cascade_kwargs = _cascade_kwargs(db, dbnode)
                 blocked_user_ids = _blocked_user_ids(db, node_id)
@@ -713,6 +765,11 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
             node = xray.nodes[dbnode.id]
         except KeyError:
             node = xray.operations.add_node(dbnode)
+
+        if not force and saved_session and not getattr(node, "_session_id", None):
+            adopt = getattr(node, "adopt_control_session", None)
+            if adopt is not None:
+                adopt(saved_session)
 
         for attempt in range(1, retries + 1):
             _connect_semaphore.acquire()
@@ -825,6 +882,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False):
         else:
             logger.warning(f"Unable to connect node_id={node_id}: {type(exc).__name__}: {exc}")
     finally:
+        node_connect_lock.release()
         _release_connect_slot(node_id, slot_gen)
         if dbnode:
             try:
@@ -842,6 +900,11 @@ def connect_node(node_id, config=None, force: bool = False):
 
 @threaded_function
 def restart_node(node_id, config=None):
+    with _node_operation_lock(node_id):
+        return _restart_node_impl(node_id, config)
+
+
+def _restart_node_impl(node_id, config=None):
     node_inbound_tags = []
     cascade_kwargs = {"role": "direct"}
     blocked_user_ids = set()

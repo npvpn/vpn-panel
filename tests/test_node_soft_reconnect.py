@@ -1,6 +1,7 @@
 """Soft reconnect: keep REST session across transient network blips."""
 
 import sys
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,7 +22,12 @@ _stubs = {
 for name, mod in _stubs.items():
     sys.modules.setdefault(name, mod)
 
-from app.xray.node import NodeAPIError, ReSTXRayNode
+from app.xray.node import _NO_PENDING_CONTROL_SESSION, NodeAPIError, ReSTXRayNode
+
+# Other test modules import real xray_api.types during collection. The local
+# stub is only needed while importing node.py and must not leak to them.
+if sys.modules.get("xray_api") is _stubs["xray_api"]:
+    del sys.modules["xray_api"]
 
 
 def _make_node() -> ReSTXRayNode:
@@ -32,9 +38,14 @@ def _make_node() -> ReSTXRayNode:
     node._session_id = "11111111-1111-1111-1111-111111111111"
     node._node_cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
     node._node_certfile = MagicMock()
+    node._certfile = MagicMock()
+    node._keyfile = MagicMock()
     node._started = False
     node._api = None
-    node._grpc_lock = __import__("threading").Lock()
+    node._grpc_lock = threading.Lock()
+    node._control_session_lock = threading.Lock()
+    node._pending_control_session = _NO_PENDING_CONTROL_SESSION
+    node._publishing_control_session = False
     node.session = MagicMock()
     node._rest_api_url = "https://10.0.0.1:62050"
     return node
@@ -81,6 +92,54 @@ def test_try_restore_reattaches_when_session_and_core_alive():
         assert node.try_restore() is True
         setup_api.assert_called_once()
         assert node._started is True
+
+
+def test_try_restore_fetches_cert_when_session_has_no_cached_cert():
+    node = _make_node()
+    node._node_cert = None
+    node._node_certfile = None
+
+    def fake_request(path, timeout, **params):
+        if path == "/ping":
+            return {}
+        if path == "/":
+            return {"started": True, "core_version": "1.8.0"}
+        raise AssertionError(path)
+
+    with (
+        patch("app.xray.node.fetch_server_certificate", return_value="CERT") as fetch,
+        patch("app.xray.node.string_to_temp_file", return_value=MagicMock(name="certfile")) as tmp,
+        patch.object(node, "make_request", side_effect=fake_request),
+        patch.object(node, "_setup_api"),
+        patch.object(node, "connect") as connect,
+    ):
+        assert node.try_restore() is True
+
+    args, _kwargs = fetch.call_args
+    assert args[0] == "10.0.0.1"
+    assert args[1] == 62050
+    assert isinstance(args[2], int)
+    tmp.assert_called_once_with("CERT")
+    connect.assert_not_called()
+    assert node._session_id == "11111111-1111-1111-1111-111111111111"
+
+
+def test_try_restore_raises_when_cert_fetch_fails_and_keeps_session():
+    node = _make_node()
+    node._node_cert = None
+    node._node_certfile = None
+
+    with (
+        patch("app.xray.node.fetch_server_certificate", side_effect=ConnectionError("timed out")),
+        patch.object(node, "connect") as connect,
+        patch.object(node, "make_request") as request,
+    ):
+        with pytest.raises(ConnectionError, match="timed out"):
+            node.try_restore()
+
+    connect.assert_not_called()
+    request.assert_not_called()
+    assert node._session_id == "11111111-1111-1111-1111-111111111111"
 
 
 def test_try_restore_false_when_core_down():
@@ -154,3 +213,173 @@ def test_make_request_uses_full_timeout_for_body_upload():
     assert node.make_request("/restart", timeout=90, config="{}") == {"ok": True}
     _, kwargs = node.session.post.call_args
     assert kwargs["timeout"] == 90
+
+
+def test_failed_session_publication_retries_after_successful_ping():
+    node = _make_node()
+    stored = {"session_id": "old-session"}
+    attempts = []
+
+    def persist(session_id):
+        attempts.append(session_id)
+        if len(attempts) == 1:
+            raise RuntimeError("database unavailable")
+        stored["session_id"] = session_id
+
+    node.set_control_session_listener(persist)
+    node._publish_control_session(node._session_id)
+    assert stored["session_id"] == "old-session"
+
+    response = MagicMock(status_code=200)
+    response.json.return_value = {}
+    node.session.post.return_value = response
+    assert node.make_request("/ping", timeout=5) == {}
+    assert stored["session_id"] == node._session_id
+
+    node.make_request("/ping", timeout=5)
+    assert attempts == [node._session_id, node._session_id]
+
+
+def test_try_restore_retries_failed_session_publication():
+    node = _make_node()
+    stored = {"session_id": "old-session"}
+    attempts = 0
+
+    def persist(session_id):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("database unavailable")
+        stored["session_id"] = session_id
+
+    node.set_control_session_listener(persist)
+    node._publish_control_session(node._session_id)
+
+    response = MagicMock(status_code=200)
+    response.json.side_effect = [{}, {"started": True}]
+    node.session.post.return_value = response
+    with patch.object(node, "_setup_api"):
+        assert node.try_restore() is True
+
+    assert stored["session_id"] == node._session_id
+    assert attempts == 2
+
+
+def test_failed_session_clear_waits_for_successful_rest_call():
+    node = _make_node()
+    stored = {"session_id": node._session_id}
+    attempts = 0
+
+    def persist(session_id):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("database unavailable")
+        stored["session_id"] = session_id
+
+    node.set_control_session_listener(persist)
+    node._publish_control_session(None)
+
+    response = MagicMock(status_code=503)
+    response.json.return_value = {"detail": "unavailable"}
+    node.session.post.return_value = response
+    with pytest.raises(NodeAPIError):
+        node.make_request("/ping", timeout=5)
+    assert stored["session_id"] == node._session_id
+    assert attempts == 1
+
+    response.status_code = 200
+    response.json.return_value = {}
+    node.make_request("/ping", timeout=5)
+    assert stored["session_id"] is None
+    assert attempts == 2
+
+
+def test_newer_session_publication_wins_over_inflight_write():
+    node = _make_node()
+    entered = threading.Event()
+    resume = threading.Event()
+    stored = {"session_id": None}
+
+    def persist(session_id):
+        if session_id == "old-session":
+            entered.set()
+            if not resume.wait(5):
+                raise TimeoutError("old publication was not released")
+        stored["session_id"] = session_id
+
+    node.set_control_session_listener(persist)
+    old_thread = threading.Thread(target=node._publish_control_session, args=("old-session",))
+    old_thread.start()
+    try:
+        assert entered.wait(5)
+        node._publish_control_session("new-session")
+    finally:
+        resume.set()
+        old_thread.join(5)
+
+    assert not old_thread.is_alive()
+    assert stored["session_id"] == "new-session"
+
+
+def test_connect_publishes_new_session_and_release_local_does_not():
+    node = _make_node()
+    node._session_id = None
+    seen = []
+    node.set_control_session_listener(seen.append)
+
+    with (
+        patch("app.xray.node.fetch_server_certificate", return_value="CERT"),
+        patch("app.xray.node.string_to_temp_file", return_value=MagicMock(name="certfile")),
+        patch.object(node, "make_request", return_value={"session_id": "22222222-2222-2222-2222-222222222222"}),
+    ):
+        node.connect()
+
+    assert seen == ["22222222-2222-2222-2222-222222222222"]
+    node.release_local()
+    assert seen == ["22222222-2222-2222-2222-222222222222"]
+
+
+def test_disconnect_publishes_clear_only_after_remote_success():
+    node = _make_node()
+    seen = []
+    node.set_control_session_listener(seen.append)
+
+    with patch.object(node, "make_request", return_value={"connected": False}):
+        node.disconnect()
+    assert seen == [None]
+
+    node._session_id = "11111111-1111-1111-1111-111111111111"
+    with patch.object(node, "make_request", side_effect=NodeAPIError(0, "timed out")):
+        node.disconnect()
+    assert seen == [None]
+
+
+def test_connect_clears_previous_session_after_successful_disconnect_even_if_new_connect_fails():
+    node = _make_node()
+    seen = []
+    node.set_control_session_listener(seen.append)
+
+    def request(path, timeout):
+        if path == "/disconnect":
+            return {"connected": False}
+        raise NodeAPIError(0, "connect failed")
+
+    with (
+        patch("app.xray.node.fetch_server_certificate", return_value="CERT"),
+        patch("app.xray.node.string_to_temp_file", return_value=MagicMock(name="certfile")),
+        patch.object(node, "make_request", side_effect=request),
+        pytest.raises(NodeAPIError, match="connect failed"),
+    ):
+        node.connect()
+
+    assert seen == [None]
+
+
+def test_release_local_closes_http_without_remote_disconnect():
+    node = _make_node()
+    with patch.object(node, "make_request") as request:
+        node.release_local()
+
+    node.session.close.assert_called_once()
+    request.assert_not_called()

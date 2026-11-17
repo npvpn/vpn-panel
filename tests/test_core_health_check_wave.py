@@ -43,7 +43,9 @@ def job(monkeypatch):
     Имя файла начинается с цифры, поэтому обычный import невозможен — только по пути.
     """
     app_pkg = sys.modules["app"]
-    monkeypatch.setattr(app_pkg, "app", MagicMock(), raising=False)
+    app_instance = MagicMock()
+    app_instance.on_event.side_effect = lambda _event: lambda func: func
+    monkeypatch.setattr(app_pkg, "app", app_instance, raising=False)
     monkeypatch.setattr(app_pkg, "xray", MagicMock(), raising=False)
 
     db_stub = types.ModuleType("app.db")
@@ -158,3 +160,10 @@ def test_previous_wave_memory_is_returned_to_kernel(job, monkeypatch):
     job.core_health_check()
 
     assert calls == ["trim"]
+
+
+def test_app_shutdown_releases_remote_nodes(job):
+    job.app_shutdown()
+
+    job.xray.core.stop.assert_called_once()
+    job.xray.operations.release_remote_nodes.assert_called_once()
