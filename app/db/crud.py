@@ -2467,6 +2467,9 @@ def modify_user_bs_extra(
         return reset_user_bs_extra_pool(db, dbuser)
     elif delta_bytes is not None:
         if operation_id is not None:
+            # Take the user X-lock before receipt's FK check takes an S-lock.
+            # Concurrent purchases then serialize without a lock-upgrade deadlock.
+            db.execute(select(User.id).where(User.id == dbuser.id).with_for_update())
             receipt = PanelDeliveryReceipt(
                 operation_id=str(operation_id),
                 user_id=cast(int, dbuser.id),
@@ -2477,12 +2480,12 @@ def modify_user_bs_extra(
                     db.add(receipt)
                     db.flush()
             except IntegrityError:
-                previous = db.get(PanelDeliveryReceipt, str(operation_id))
+                previous = db.get(PanelDeliveryReceipt, str(operation_id), with_for_update=True)
                 if previous is None:
                     raise
                 if previous.user_id != dbuser.id or previous.delta_bytes != int(delta_bytes):
                     raise ValueError("operation_id is already bound to another bs-extra change")
-                db.refresh(dbuser)
+                db.refresh(dbuser, with_for_update=True)
                 return dbuser
 
         from app.services.panel_settings import get_bs_monthly_limit
