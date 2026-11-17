@@ -56,13 +56,18 @@ def _app(sub) -> FastAPI:
 
 
 def _get(app: FastAPI, path: str) -> tuple[int, bytes]:
+    status, _, body = _request(app, path)
+    return status, body
+
+
+def _request(app: FastAPI, path: str, query: str = "") -> tuple[int, dict[bytes, bytes], bytes]:
     messages: list[dict] = []
     scope = {
         "type": "http",
         "method": "GET",
         "path": path,
         "raw_path": path.encode(),
-        "query_string": b"",
+        "query_string": query.encode(),
         "headers": [(b"accept", b"text/html"), (b"host", b"panel.test")],
         "scheme": "http",
         "server": ("panel.test", 80),
@@ -79,7 +84,7 @@ def _get(app: FastAPI, path: str) -> tuple[int, bytes]:
 
     asyncio.run(app(scope, receive, send))
     body = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.response.body")
-    return messages[0]["status"], body
+    return messages[0]["status"], dict(messages[0]["headers"]), body
 
 
 @pytest.mark.parametrize("path", ["/sub", "/sub/"])
@@ -116,6 +121,23 @@ def test_extra_path_tail_gets_not_found_page(sub):
     assert (status, body) == (404, f"not-found:{_TOKEN}".encode())
 
 
+@pytest.mark.parametrize(
+    ("path", "query", "location"),
+    [
+        (f"/sub/{_TOKEN}/v2ray/", "", f"/sub/{_TOKEN}/v2ray"),
+        (f"/sub/{_TOKEN}/info/", "", f"/sub/{_TOKEN}/info"),
+        (f"/sub/{_TOKEN}/usage/", "start=1", f"/sub/{_TOKEN}/usage?start=1"),
+    ],
+)
+def test_trailing_slash_redirects_to_known_route(sub, path, query, location):
+    # раньше это делал redirect_slashes Starlette; catch-all его перехватывал,
+    # и рабочая ссылка со слешем на конце получала 404
+    status, headers, _ = _request(_app(sub), path, query)
+
+    assert (status, headers[b"location"].decode()) == (307, location)
+    assert sub.not_found_calls == []
+
+
 def test_catch_all_is_the_last_route(sub):
     # Маршрут, объявленный ниже /{token}/{rest:path}, стал бы недостижим
     assert sub.router.routes[-1].path.endswith("/{token}/{rest:path}")
@@ -125,10 +147,11 @@ def test_own_routes_do_not_take_subscription_path(sub):
     assert sub.subscription_path_taken(_app(sub).routes) is False
 
 
-def test_foreign_route_on_subscription_path_is_detected(sub):
+@pytest.mark.parametrize("suffix", ["", "/"])
+def test_foreign_route_on_subscription_path_is_detected(sub, suffix):
     app = _app(sub)
     foreign = APIRouter()
-    foreign.add_api_route(f"/{sub.XRAY_SUBSCRIPTION_PATH}", lambda: {}, methods=["GET"])
+    foreign.add_api_route(f"/{sub.XRAY_SUBSCRIPTION_PATH}{suffix}", lambda: {}, methods=["GET"])
     app.include_router(foreign)
 
     assert sub.subscription_path_taken(app.routes) is True
