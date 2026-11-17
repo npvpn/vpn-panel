@@ -989,6 +989,7 @@ def modify_user_bs_extra(
             cast(DBUser, dbuser),
             delta_bytes=payload.delta_bytes,
             reset=payload.reset,
+            operation_id=payload.operation_id,
         )
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err

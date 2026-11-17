@@ -5,6 +5,7 @@ Functions for managing proxy hosts, users, user templates, nodes, and administra
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Literal, cast
+from uuid import UUID
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
@@ -32,6 +33,7 @@ from app.db.models import (
     NodeUserUsage,
     NodeWeightSnapshot,
     NotificationReminder,
+    PanelDeliveryReceipt,
     Proxy,
     ProxyHost,
     ProxyInbound,
@@ -2447,7 +2449,14 @@ def reset_user_bs_extra_pool(db: Session, dbuser: User, *, commit: bool = True) 
     return dbuser
 
 
-def modify_user_bs_extra(db: Session, dbuser: User, *, delta_bytes: int | None = None, reset: bool = False) -> User:
+def modify_user_bs_extra(
+    db: Session,
+    dbuser: User,
+    *,
+    delta_bytes: int | None = None,
+    reset: bool = False,
+    operation_id: UUID | None = None,
+) -> User:
     """Инкремент или сброс купленного БС-пула (bs_extra)."""
     from app.xray.bs_limit import period_keys
 
@@ -2457,6 +2466,25 @@ def modify_user_bs_extra(db: Session, dbuser: User, *, delta_bytes: int | None =
             return dbuser
         return reset_user_bs_extra_pool(db, dbuser)
     elif delta_bytes is not None:
+        if operation_id is not None:
+            receipt = PanelDeliveryReceipt(
+                operation_id=str(operation_id),
+                user_id=cast(int, dbuser.id),
+                delta_bytes=int(delta_bytes),
+            )
+            try:
+                with db.begin_nested():
+                    db.add(receipt)
+                    db.flush()
+            except IntegrityError:
+                previous = db.get(PanelDeliveryReceipt, str(operation_id))
+                if previous is None:
+                    raise
+                if previous.user_id != dbuser.id or previous.delta_bytes != int(delta_bytes):
+                    raise ValueError("operation_id is already bound to another bs-extra change")
+                db.refresh(dbuser)
+                return dbuser
+
         from app.services.panel_settings import get_bs_monthly_limit
 
         monthly_limit = get_bs_monthly_limit(db)
