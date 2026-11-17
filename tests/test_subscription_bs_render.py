@@ -272,9 +272,8 @@ def test_information_placeholder_keeps_remark_and_uses_dead_endpoint(xray_stub):
         ClashConfiguration,
         ClashMetaConfiguration,
         SingBoxConfiguration,
-        OutlineConfiguration,
     ],
-    ids=["v2ray", "v2ray_json", "clash", "clash_meta", "singbox", "outline"],
+    ids=["v2ray", "v2ray_json", "clash", "clash_meta", "singbox"],
 )
 def test_information_placeholder_renders_in_supported_formats(xray_stub, conf_factory):
     host = _host(remark="Information")
@@ -284,6 +283,41 @@ def test_information_placeholder_renders_in_supported_formats(xray_stub, conf_fa
     rendered = _render(conf_factory(), BsContext.empty())
 
     assert "Information" in str(rendered)
+
+
+@pytest.mark.parametrize("placeholder_first", [True, False])
+def test_information_placeholder_preserves_outline_endpoint_in_both_orders(xray_stub, placeholder_first):
+    inbound = {**_inbound(), "protocol": "shadowsocks", "port": 8388}
+    placeholder = _host(remark="Information", order=0 if placeholder_first else 1)
+    placeholder["is_placeholder"] = True
+    working = _host("working.example", remark="Working", order=1 if placeholder_first else 0)
+    working["port"] = 8388
+    xray_stub([placeholder, working], inbound=inbound)
+
+    class OutlineSettings:
+        def model_dump(self):
+            return {"password": "working-secret", "method": "aes-256-gcm"}
+
+    class OutlineProtocol:
+        name = "shadowsocks"
+
+    protocol = OutlineProtocol()
+    rendered = share.process_inbounds_and_tags(
+        inbounds={protocol: [BS_TAG]},
+        proxies={protocol: OutlineSettings()},
+        format_variables=defaultdict(lambda: "<missing>", {"USERNAME": "u1", "BOT_USERNAME": "probe-bot"}),
+        conf=OutlineConfiguration(),
+        bs=BsContext.empty(),
+        stub=ZERO_STUB,
+    )
+
+    assert json.loads(rendered) == {
+        "method": "aes-256-gcm",
+        "password": "working-secret",
+        "server": "working.example",
+        "server_port": 8388,
+        "tag": "Working",
+    }
 
 
 def test_host_finalmask_reaches_subscription_inbound(xray_stub):

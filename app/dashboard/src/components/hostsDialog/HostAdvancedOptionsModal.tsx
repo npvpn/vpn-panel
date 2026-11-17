@@ -189,6 +189,7 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
             )}
             <HostAdvancedOptions
               {...advancedOptionsProps}
+              isPlaceholder={isPlaceholder}
               hideRemarkAddress={
                 isPlaceholder || advancedOptionsProps.hideRemarkAddress
               }

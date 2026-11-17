@@ -455,6 +455,18 @@ def test_placeholder_controls_are_available_in_the_expected_layouts():
     assert "isPlaceholder || advancedOptionsProps.hideRemarkAddress" in advanced_modal
 
 
+def test_placeholder_advanced_options_show_only_saved_fields():
+    components = Path(__file__).parents[1] / "app/dashboard/src/components/hostsDialog"
+    advanced_modal = (components / "HostAdvancedOptionsModal.tsx").read_text()
+    advanced_options = (components / "HostAdvancedOptions.tsx").read_text()
+
+    assert "isPlaceholder={isPlaceholder}" in advanced_modal
+    assert "index={isPlaceholder ? 2 : tabIndex}" in advanced_options
+    assert 'display={isPlaceholder && i !== 2 ? "none" : undefined}' in advanced_options
+    assert "{!isPlaceholder && (" in advanced_options
+    assert "name={`${hostKey}.${index}.bot_usernames`}" in advanced_options
+
+
 @pytest.mark.parametrize("network", ["tcp", "grpc", "ws"])
 def test_inbound_change_keeps_host_identity_and_clears_xhttp_extra(network):
     """Смена транспорта меняет только inbound и очищает несовместимый Extra."""

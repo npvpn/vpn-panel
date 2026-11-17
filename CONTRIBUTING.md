@@ -30,7 +30,7 @@ uv sync --all-groups
 ```bash
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy app | uv run mypy-baseline filter
+uv run mypy app | uv run mypy-baseline filter --ignore-categories note
 uv run pytest -q
 ```
 
@@ -83,7 +83,7 @@ uv run python main.py
 
 - Questions: Telegram, [t.me/npvpn](https://t.me/npvpn). Bugs and feature requests: [GitHub Issues](https://github.com/npvpn/vpn-panel/issues).
 - Setup: `uv sync --all-groups`.
-- Checks (same as CI): `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy app | uv run mypy-baseline filter`, `uv run pytest -q`.
+- Checks (same as CI): `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy app | uv run mypy-baseline filter --ignore-categories note`, `uv run pytest -q`.
 - Run locally: an Xray binary is required (default `/usr/local/bin/xray`, override with `XRAY_EXECUTABLE_PATH`); copy `.env.example` to `.env`, run `uv run alembic upgrade head`, then `uv run python main.py`.
 - Branch from `master` and open the PR against `master`; PRs are squash-merged, so the PR title becomes the commit message.
 - New logic needs tests; DB schema changes only via `alembic revision`.

@@ -29,12 +29,13 @@ def add_information_placeholder(conf, remark: str) -> None:
     from app.subscription.clash import ClashConfiguration, ClashMetaConfiguration
     from app.subscription.outline import OutlineConfiguration
 
+    # Outline хранит один endpoint: добавление заглушки затрёт рабочий сервер.
+    if isinstance(conf, OutlineConfiguration):
+        return
+
     protocol = "vless"
     settings = {"id": JSON_STUB_ID, "flow": ""}
-    if isinstance(conf, OutlineConfiguration):
-        protocol = "shadowsocks"
-        settings = {"password": "disabled-placeholder", "method": "aes-256-gcm"}
-    elif isinstance(conf, ClashConfiguration) and not isinstance(conf, ClashMetaConfiguration):
+    if isinstance(conf, ClashConfiguration) and not isinstance(conf, ClashMetaConfiguration):
         protocol = "vmess"
 
     inbound = {
