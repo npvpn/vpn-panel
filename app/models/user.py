@@ -148,6 +148,7 @@ class UserCreate(User):
     username: str
     status: UserStatusCreate = None
     bs_extra: int | None = None
+    created_at: datetime | None = None
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
