@@ -673,7 +673,8 @@ class Node(Base):
     # REST control session survives panel process restarts. Only a successful
     # remote /disconnect clears it; local transport cleanup must preserve it.
     control_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    status = Column(Enum(NodeStatus), nullable=False, default=NodeStatus.connecting)
+    config_apply_pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
+    status: Mapped[NodeStatus] = mapped_column(Enum(NodeStatus), nullable=False, default=NodeStatus.connecting)
     last_status_change = Column(DateTime, default=datetime.utcnow)
     message = Column(String(1024), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

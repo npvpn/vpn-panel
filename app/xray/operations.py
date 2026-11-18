@@ -12,9 +12,10 @@ from app.db import GetDB, crud
 from app.models.node import NodeStatus
 from app.models.user import UserResponse
 from app.utils.concurrency import get_node_executor, threaded_function
+from app.utils.usage_runtime import usage_state
 from app.xray.node import XRayNode
 from app.xray.node_config import node_config_json, node_has_inbound
-from app.xray.node_operations import NodeOperationScheduler, OperationKind
+from app.xray.node_operations import NodeOperationScheduler, NodeOperationSuperseded, OperationKind
 from config import (
     XRAY_NODE_CONNECT_CONCURRENCY,
     XRAY_NODE_CONNECT_RETRIES,
@@ -517,6 +518,8 @@ _node_scheduler_lock = threading.Lock()
 
 
 def _execute_node_operation(node_id, kind, config_factory):
+    if kind == OperationKind.APPLY:
+        return _apply_node_impl(node_id, config_factory)
     if kind == OperationKind.RESTART:
         with _node_operation_lock(node_id):
             return _restart_node_impl(node_id, config_factory=config_factory)
@@ -538,6 +541,80 @@ def get_node_scheduler() -> NodeOperationScheduler:
 
 def node_mutation(node_id):
     return get_node_scheduler().mutation(node_id)
+
+
+def apply_node(node_id: int, *, accounting=None, recover: bool = False):
+    state = accounting if accounting is not None else usage_state
+    scheduler = get_node_scheduler()
+    with scheduler.metadata(node_id):
+        if recover:
+            # Health/startup snapshots can precede a completed acknowledgement.
+            with GetDB() as db:
+                dbnode = crud.get_node_by_id(db, node_id)
+                if dbnode is None or not dbnode.config_apply_pending:
+                    return None
+            if scheduler.pending(node_id):
+                return None
+        state.pause(node_id)
+        future = scheduler.prepare_apply(node_id, priority=not recover)
+        state.when_idle(node_id, lambda: scheduler.ready(node_id))
+    return future
+
+
+def _apply_node_impl(node_id, config_factory):
+    scheduler = get_node_scheduler()
+    try:
+        scheduler.check_current(node_id)
+        with GetDB() as db:
+            dbnode = crud.get_node_by_id(db, node_id)
+            if dbnode is None:
+                usage_state.resume(node_id)
+                return False
+            disabled = dbnode.status == NodeStatus.disabled
+            saved_session = dbnode.control_session_id
+        scheduler.check_current(node_id)
+        if disabled:
+            # After a panel restart the local registry is empty, but remote Xray
+            # may still run. Recreate only the control transport and stop it.
+            transport = xray.nodes.get(node_id)
+            if transport is None:
+                transport = add_node(dbnode)
+                if isinstance(saved_session, str) and saved_session:
+                    transport.adopt_control_session(saved_session)
+            with scheduler.metadata(node_id):
+                scheduler.check_current(node_id)
+                # This worker now owns the old transport for stopping it. A new
+                # edit will retire it again before any late session publication.
+                vars(transport)["_superseded"] = False
+            transport.stop()
+        remove_node(node_id, invalidate_slot=False)
+        scheduler.check_current(node_id)
+        if not disabled and not _connect_node_impl(node_id, force=True, config_factory=config_factory):
+            return False
+        with scheduler.metadata(node_id):
+            scheduler.check_current(node_id)
+            with GetDB() as db:
+                dbnode = crud.get_node_by_id(db, node_id)
+                if dbnode is not None:
+                    dbnode.config_apply_pending = False
+                    if disabled:
+                        dbnode.message = None
+                    db.commit()
+            usage_state.resume(node_id)
+        return True
+    except NodeOperationSuperseded:
+        raise
+    except Exception as exc:
+        with scheduler.metadata(node_id):
+            scheduler.check_current(node_id)
+            with GetDB() as db:
+                dbnode = crud.get_node_by_id(db, node_id)
+                if dbnode is not None:
+                    dbnode.message = str(exc)
+                    if dbnode.status != NodeStatus.disabled:
+                        dbnode.status = NodeStatus.error
+                    db.commit()
+        raise
 
 
 def node_operation_snapshot():
@@ -603,11 +680,13 @@ def add_node(dbnode: "DBNode"):
             usage_coefficient=dbnode.usage_coefficient,
         )
         xray.nodes[dbnode.id] = node
+        vars(node)["_operation_check"] = lambda: get_node_scheduler().check_current(node_id)
+        vars(node)["_operation_wait"] = lambda delay: get_node_scheduler().wait_current(node_id, delay)
         if hasattr(node, "set_control_session_listener"):
 
             def persist_session(session_id: str | None) -> None:
-                with _node_lifecycle_lock(node_id):
-                    if xray.nodes.get(node_id) is node:
+                with get_node_scheduler().metadata(node_id):
+                    if xray.nodes.get(node_id) is node and not vars(node).get("_superseded", False):
                         _persist_control_session(node_id, session_id)
 
             node.set_control_session_listener(persist_session)
@@ -616,26 +695,29 @@ def add_node(dbnode: "DBNode"):
 
 
 def _change_node_status(node_id: int, status: NodeStatus, message: str = None, version: str = None) -> bool:
-    with GetDB() as db:
-        try:
-            dbnode = crud.get_node_by_id(db, node_id)
-            if not dbnode:
-                logger.warning(f"[node.status] node_id={node_id} not found for status={status.value}")
-                return False
+    scheduler = get_node_scheduler()
+    with scheduler.metadata(node_id):
+        if not scheduler.is_current(node_id):
+            return False
+        with GetDB() as db:
+            try:
+                dbnode = crud.get_node_by_id(db, node_id)
+                if not dbnode:
+                    logger.warning(f"[node.status] node_id={node_id} not found for status={status.value}")
+                    return False
 
-            if dbnode.status == NodeStatus.disabled:
-                remove_node(dbnode.id)
-                logger.info(f"[node.status] node_id={node_id} is disabled; status update skipped")
-                return False
+                if dbnode.status == NodeStatus.disabled:
+                    logger.info(f"[node.status] node_id={node_id} is disabled; status update skipped")
+                    return False
 
-            crud.update_node_status(db, dbnode, status, message, version)
-            return True
-        except SQLAlchemyError as exc:
-            db.rollback()
-            logger.error(
-                f"[node.status] failed to update node_id={node_id} status={status.value}: {type(exc).__name__}: {exc}"
-            )
-            raise
+                crud.update_node_status(db, dbnode, status, message, version)
+                return True
+            except SQLAlchemyError as exc:
+                db.rollback()
+                logger.error(
+                    f"[node.status] failed to update node_id={node_id} status={status.value}: {type(exc).__name__}: {exc}"
+                )
+                raise
 
 
 def connecting_age_seconds(node_id: int) -> float | None:
@@ -755,6 +837,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False, *, config_fact
                 cascade_kwargs = _cascade_kwargs(db, dbnode)
                 blocked_user_ids = _blocked_user_ids(db, node_id)
 
+        get_node_scheduler().check_current(node_id)
         if not dbnode:
             return
 
@@ -785,6 +868,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False, *, config_fact
         # Manual Reconnect (force=True): full in-process retry loop.
         retries = max(1, XRAY_NODE_CONNECT_RETRIES) if force else 1
         retry_delay = max(0, XRAY_NODE_CONNECT_RETRY_DELAY)
+        get_node_scheduler().check_current(node_id)
         try:
             node = xray.nodes[dbnode.id]
         except KeyError:
@@ -796,8 +880,10 @@ def _connect_node_impl(node_id, config=None, force: bool = False, *, config_fact
                 adopt(saved_session)
 
         for attempt in range(1, retries + 1):
+            get_node_scheduler().check_current(node_id)
             _connect_semaphore.acquire()
             try:
+                get_node_scheduler().check_current(node_id)
                 path = "HARD" if force else "SOFT"
                 has_session = bool(getattr(node, "_session_id", None))
                 logger.debug(
@@ -824,6 +910,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False, *, config_fact
                         )
                         _cleanup_node_connection(node)
                         node.connect()
+                        get_node_scheduler().check_current(node_id)
                         node.restart(config_json=config_json)
                     logger.debug(
                         f'[connect_node] HARD done node_id={node_id} ("{dbnode.name}"): '
@@ -836,6 +923,7 @@ def _connect_node_impl(node_id, config=None, force: bool = False, *, config_fact
                     try:
                         if hasattr(node, "try_restore"):
                             restored = node.try_restore()
+                        get_node_scheduler().check_current(node_id)
                         if restored:
                             logger.debug(
                                 f'[connect_node] SOFT decision node_id={node_id} ("{dbnode.name}"): '
@@ -850,6 +938,8 @@ def _connect_node_impl(node_id, config=None, force: bool = False, *, config_fact
                                 f"( /connect only if session missing/invalid )"
                             )
                             node.start(config_json=prepare_config_json())
+                    except NodeOperationSuperseded:
+                        raise
                     except Exception as soft_exc:
                         if getattr(node, "_session_id", None):
                             # Session still remembered — do not escalate to error/hard /connect yet.
@@ -868,12 +958,16 @@ def _connect_node_impl(node_id, config=None, force: bool = False, *, config_fact
                         )
                         raise
 
+                get_node_scheduler().check_current(node_id)
                 node.inbound_tags = set(node_inbound_tags)
                 version = node.get_version()
+                get_node_scheduler().check_current(node_id)
                 _change_node_status(node_id, NodeStatus.connected, version=version)
                 logger.debug(f'[connect_node] DONE node_id={node_id} ("{dbnode.name}") path={path} xray=v{version}')
                 logger.info(f'Connected to "{dbnode.name}" node, xray run on v{version}')
-                return
+                return True
+            except NodeOperationSuperseded:
+                raise
             except Exception as exc:
                 last_exc = exc
                 if attempt < retries:
@@ -889,11 +983,13 @@ def _connect_node_impl(node_id, config=None, force: bool = False, *, config_fact
             if attempt < retries:
                 delay = retry_delay * attempt
                 if delay:
-                    time.sleep(delay)
+                    get_node_scheduler().wait_current(node_id, delay)
 
         if last_exc:
             raise last_exc
 
+    except NodeOperationSuperseded:
+        raise
     except Exception as exc:
         try:
             _change_node_status(node_id, NodeStatus.error, message=str(exc))
@@ -967,10 +1063,14 @@ def _restart_node_impl(node_id, config=None, *, config_factory=None):
         if config is None:
             config = config_factory() if config_factory is not None else xray.config.include_db_users()
 
+        get_node_scheduler().check_current(node_id)
         node.restart(config_json=node_config_json(config, node_inbound_tags, cascade_kwargs, blocked_user_ids))
+        get_node_scheduler().check_current(node_id)
         node.inbound_tags = set(node_inbound_tags)
         logger.debug(f'[restart_node] done node_id={node_id} ("{dbnode.name}")')
         logger.info(f'Xray core of "{dbnode.name}" node restarted')
+    except NodeOperationSuperseded:
+        raise
     except Exception as e:
         try:
             _change_node_status(node_id, NodeStatus.error, message=str(e))

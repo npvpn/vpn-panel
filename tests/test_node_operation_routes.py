@@ -29,13 +29,14 @@ def load_route(monkeypatch):
         spec.loader.exec_module(route)
     operations = importlib.import_module("app.xray.operations")
     monkeypatch.setattr(route.xray, "operations", operations, raising=False)
+    monkeypatch.setattr(route.xray, "nodes", {}, raising=False)
     monkeypatch.setattr(route.xray, "hosts", SimpleNamespace(update=Mock()), raising=False)
     monkeypatch.setattr(route, "crud", Mock())
     monkeypatch.setattr(route.node_lifecycle, "crud", route.crud)
     return route, operations
 
 
-@pytest.mark.parametrize("action", ["edit", "delete"])
+@pytest.mark.parametrize("action", ["delete"])
 def test_busy_operation_blocks_admin_before_database_change(monkeypatch, action):
     route, operations = load_route(monkeypatch)
     assert hasattr(operations, "node_mutation")
@@ -117,6 +118,10 @@ def test_collection_during_transport_removal_cannot_refresh_after_edit(monkeypat
     node = SimpleNamespace(id=7, name="test", status=NodeStatus.disabled)
     route.crud.update_node.return_value = node
     route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+    assert not old_results
+    scheduler.execute = lambda node_id, *_: operations.remove_node(node_id)
+    scheduler.executor.run()
+    state.resume(7)
     state.observe_nodes({7: "test"})
     state.mark_success(7, "user", old_results[0])
     assert all(row["last_success"] == 0 for row in state.snapshot()["nodes"])

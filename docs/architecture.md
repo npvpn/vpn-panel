@@ -297,12 +297,32 @@ Eligibility читает локальные started/session/API flags без RES
 delta автоматически не повторяется, иначе возможен двойной расход. Такие ошибки
 имеют отдельные метрики/лог, а историческая разбивка по часам не восстанавливается.
 
-Edit/Disable/Delete используют один admission mutation guard до DB write.
-При активной операции —409 с понятным сообщением; ожидающая команда отменяется
-до изменения. Новый health/start сигнал не заменяет transport вне владельца.
-Возраст stale не освобождает живую sync-команду. Сохраняются session/lifecycle locks
-NPVPN-2373; shutdown сначала завершает ограниченные node operations, затем отпускает
-локальные transport без остановки удалённого Xray.
+Edit/Disable сохраняют желаемые параметры и `nodes.config_apply_pending` одной
+транзакцией, без RPC и ожидания активной команды в HTTP. Под metadata lock
+строка перечитывается current/locking read (`refresh(..., with_for_update=True)`),
+поэтому ORM-снимок HTTP до предыдущего ack не теряет новое pending/Connecting.
+Создание inbound/default host внутри edit делает flush, итоговый commit один. Тот же ограниченный
+планировщик исполняет приоритетный APPLY: пересоздание transport и HARD для
+включённой ноды, stop и disconnect без запуска Xray для Disabled. Повторные правки объединяются;
+параметры читаются при исполнении. Старая команда уступает после текущего RPC,
+не продолжает retry и не публикует старый статус/сессию. Сохранение и публикации
+сериализованы коротким per-node metadata lock без RPC/полного config build.
+Успех актуального APPLY снимает флаг; ошибка оставляет флаг и причину в status/
+message. Startup и существующий health-check подхватывают pending, включая
+Disabled; остальные ноды восстанавливают сохранённую сессию обычным SOFT.
+Recovery повторно проверяет pending под metadata lock до pause/admission: старый
+health snapshot не запускает лишний HARD и не оставляет учёт paused после ack.
+Такие восстановления ставятся в обычный FIFO существующего scheduler и не
+расходуют лимит обычных health-reconnect на тик; исполняемых slots не прибавляется.
+При отключении после рестарта сначала восстанавливается control transport с
+сертификатом ноды, затем stop/disconnect; start/restart не выполняется. Сохранённая
+сессия очищается только подтверждённым remote disconnect, как и до исправления.
+
+Delete сохраняет отдельный admission guard: активная операция или запись
+accounting — 409 до DB write; ожидающая команда отменяется. Возраст stale не
+освобождает живую sync-команду. Сохраняются session/lifecycle locks NPVPN-2373;
+shutdown сначала завершает ограниченные node operations, затем отпускает локальные
+transport без остановки удалённого Xray.
 
 Prometheus читает только in-memory snapshots новых метрик. last_success/tracking_since,
 accounting_delay и delay_threshold экспортируются по name/kind ещё до первого успеха,
@@ -323,18 +343,20 @@ ownership freshness, не ожидая периодического наблюд
 
 ### Accounting и изменение ноды
 
-`app/services/node_lifecycle.py` владеет edit/delete: guard статистики → guard
-операций ноды → запись БД → удаление transport → retirement в finally. Роутер
-преобразует конфликт в409 и передаёт планирование reconnect сервису. Конфликт
-accounting проверяется до отмены ожидающего reconnect.
+`app/services/node_lifecycle.py` владеет edit/delete. Edit закрывает допуск
+новых reset и инвалидирует снимки metadata/freshness; существующие collection
+leases доводятся до SQL-записей с прежним коэффициентом и БС-владением. Одна
+callback готовности на ноду допускает APPLY после освобождения последнего lease;
+повторные edit заменяют callback. Отказ БД восстанавливает прежний допуск и не
+отменяет прежнюю команду. Delete проверяет accounting до отмены reconnect.
 
-`UsageState` проверяет epoch и резервирует ноду непосредственно перед reset.
-Lease сохраняется через получение delta, все SQL-записи и отметку свежести;
-изменение занятой ноды отклоняется до записи БД. Во время mutation новые snapshots
-исключают эту ноду. Старое ожидающее задание завершается без reset. Registry mutex
-не удерживается через RPC/SQL. `completed_results` освобождает lease после обработки
-результата, а при закрытии consumer — также у завершившихся позднее futures.
-SQL-потребитель остаётся единственным для каждого вида статистики.
+`UsageState` проверяет epoch непосредственно перед reset. Lease сохраняется через
+получение delta, все SQL-записи и отметку свежести; при edit delta не отбрасывается
+и не сбрасывается повторно. Новые snapshots исключают paused-ноду до актуального
+APPLY; старый результат не освежает новую конфигурацию. Registry mutex не держится
+при RPC/SQL/callback. `completed_results` освобождает lease после обработки, также
+при позднем завершении futures после закрытия consumer. SQL-потребитель остаётся
+единственным для каждого вида статистики.
 
 Пулы node-control и node-usage создаются при импорте модуля; потоки появляются только
 при submit. Одновременный первый вызов jobs не может создать второй usage-pool.

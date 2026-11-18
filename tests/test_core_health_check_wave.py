@@ -32,6 +32,7 @@ class _NodeStatus(str, enum.Enum):
 class _DBNode:
     def __init__(self, node_id, status, name=None):
         self.id = node_id
+        self.config_apply_pending = False
         self.status = status
         self.name = name or f"node-{node_id}"
 
@@ -174,3 +175,43 @@ def test_missing_node_transport_is_created_only_after_admission(job):
     job.core_health_check()
     job.xray.operations.add_node.assert_not_called()
     job.xray.operations.connect_node.assert_called_once()
+
+
+@pytest.mark.parametrize("status", [_NodeStatus.connecting, _NodeStatus.disabled])
+def test_health_recovers_pending_manual_apply_including_disabled(job, status):
+    """Незавершённая ручная правка восстанавливается существующим health тиком."""
+    node = _DBNode(7, status)
+    node.config_apply_pending = True
+    job.crud.get_nodes.return_value = [node]
+    job.xray.core.started = True
+    job.core_health_check()
+    job.xray.operations.apply_node.assert_called_once_with(7, recover=True)
+    job.xray.operations.connect_node.assert_not_called()
+    job.crud.get_nodes.assert_called_once_with(
+        db=job.crud.get_nodes.call_args.kwargs["db"], enabled=True, include_pending=True
+    )
+
+
+def test_startup_keeps_pending_and_separates_normal_restore(job):
+    """Startup восстанавливает pending HARD и отключение, остальные ноды — SOFT."""
+    nodes = [_DBNode(7, _NodeStatus.connecting), _DBNode(8, _NodeStatus.disabled), _DBNode(9, _NodeStatus.connected)]
+    nodes[0].config_apply_pending = nodes[1].config_apply_pending = True
+    job.crud.get_nodes.return_value = nodes
+    job.start_core()
+    assert [call.args[0] for call in job.xray.operations.apply_node.call_args_list] == [7, 8]
+    job.xray.operations.connect_nodes.assert_called_once_with([9])
+    assert [call.args[1].id for call in job.crud.update_node_status.call_args_list] == [9]
+
+
+def test_pending_failure_does_not_starve_other_node_at_cap_one(job, monkeypatch):
+    pending = _DBNode(7, _NodeStatus.disabled)
+    pending.config_apply_pending = True
+    other = _DBNode(8, _NodeStatus.error)
+    job.crud.get_nodes.return_value = [pending, other]
+    job.xray.core.started = True
+    job.xray.nodes = {}
+    monkeypatch.setattr(job, "XRAY_NODE_MAX_CONCURRENT_CONNECTS", 1)
+    for _ in range(3):
+        job.core_health_check()
+    assert job.xray.operations.connect_node.call_count == 3
+    assert all(call.args[0] == 8 for call in job.xray.operations.connect_node.call_args_list)
