@@ -18,13 +18,18 @@
         <div class="error-page">
             <div class="error-content">
                 <div class="error-code">404</div>
-                <h1 class="error-title" style="margin-top: 0.5rem; margin-bottom: 24px;">
+                <h1 class="error-title" style="margin-top: 0.5rem; margin-bottom: {{ '24px' if home_url else '12px' }};">
                     Что-то пошло не так
                 </h1>
                 {% if home_url %}
                     <a href="{{ home_url }}" target="_blank" rel="noopener noreferrer" class="dark-btn" style="font-size: 16px;">
                         На главную
                     </a>
+                {% else %}
+                    {# Сервис не определить — вести некуда; говорим, куда обратиться (NPVPN-2374) #}
+                    <p style="font-family: var(--font-family); font-size: 16px; line-height: 140%; color: var(--text-secondary); max-width: 520px;">
+                        Проверьте, что ссылка полная, или обратитесь в сервис, где оформили подписку
+                    </p>
                 {% endif %}
             </div>
             {% if show_ads %}
