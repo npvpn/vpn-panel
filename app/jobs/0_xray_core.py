@@ -105,7 +105,7 @@ def core_health_check():
             continue
 
         if reconnects_scheduled >= max_reconnects:
-            break
+            continue
 
         force = _should_force_reconnect(node_id, dbnode.status, now)
 

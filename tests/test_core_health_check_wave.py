@@ -215,3 +215,26 @@ def test_pending_failure_does_not_starve_other_node_at_cap_one(job, monkeypatch)
         job.core_health_check()
     assert job.xray.operations.connect_node.call_count == 3
     assert all(call.args[0] == 8 for call in job.xray.operations.connect_node.call_args_list)
+
+
+@pytest.mark.parametrize("pending_status", [_NodeStatus.connecting, _NodeStatus.disabled])
+def test_pending_after_exhausted_ordinary_budget_is_still_recovered(job, monkeypatch, pending_status):
+    """Исчерпанный лимит не прерывает обход до pending после обычных нод."""
+    first = _DBNode(1, _NodeStatus.error)
+    second = _DBNode(2, _NodeStatus.error)
+    pending = _DBNode(3, pending_status)
+    pending.config_apply_pending = True
+    job.crud.get_nodes.return_value = [first, second, pending]
+    job.xray.core.started = True
+    job.xray.nodes = {1: MagicMock(), 2: MagicMock()}
+    job.xray.operations.is_connect_in_progress.return_value = False
+    monkeypatch.setattr(job, "XRAY_NODE_MAX_CONCURRENT_CONNECTS", 1)
+    monkeypatch.setattr(job, "_should_force_reconnect", lambda *_args: True)
+
+    for _ in range(3):
+        job.core_health_check()
+
+    assert job.xray.operations.connect_node.call_count == 3
+    assert all(call.args[0] == 1 for call in job.xray.operations.connect_node.call_args_list)
+    assert job.xray.operations.apply_node.call_count == 3
+    job.xray.operations.apply_node.assert_called_with(3, recover=True)

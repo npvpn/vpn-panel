@@ -767,3 +767,103 @@ def test_disabled_stop_keeps_session_if_remote_disconnect_fails(monkeypatch, dis
     assert future.result() is True
     expected_session = "saved-session" if disconnect_fails else None
     assert row.config_apply_pending is False and row.control_session_id == expected_session
+
+
+def test_repeated_save_uses_latest_sql_settings_and_config(monkeypatch, tmp_path):
+    """Следующий HARD берёт новый адрес/порты/inbounds из отдельной SQL-сессии."""
+    import json
+    from contextlib import contextmanager
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    route, operations = load_route(monkeypatch)
+    from app.db import crud as real_crud
+    from app.db.base import Base
+    from app.db.models import Node
+    from app.models.node import NodeModify
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'latest-apply.db'}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        db.add(Node(id=7, name="test", address="192.0.2.1", port=62050, api_port=62051))
+        db.commit()
+    monkeypatch.setattr(route.node_lifecycle, "crud", real_crud)
+    state = UsageState()
+    monkeypatch.setattr(route.node_lifecycle, "usage_state", state)
+    monkeypatch.setattr(operations, "usage_state", state)
+    executor = Executor()
+    generation = [1]
+    control = NodeOperationScheduler(
+        executor, operations._execute_node_operation, lambda: {"generation": generation[0]}, concurrency=1
+    )
+    monkeypatch.setattr(operations, "get_node_scheduler", lambda: control)
+
+    @contextmanager
+    def get_db():
+        with Session(engine) as db:
+            yield db
+
+    monkeypatch.setattr(operations, "GetDB", get_db)
+    monkeypatch.setattr(operations, "get_tls", lambda: {"key": "k", "certificate": "c"})
+    monkeypatch.setattr(operations, "_cascade_kwargs", lambda *_: {"role": "direct"})
+    monkeypatch.setattr(operations, "_blocked_user_ids", lambda *_: set())
+    monkeypatch.setattr(operations, "XRAY_NODE_CONNECT_RETRIES", 1)
+
+    def config_json(config, tags, *_args):
+        return json.dumps({**config, "inbounds": tags}, sort_keys=True)
+
+    monkeypatch.setattr(operations, "node_config_json", config_json)
+    transports = []
+
+    def create(**_kwargs):
+        transport = Mock()
+        transport._session_id = None
+        transport.get_version.return_value = "26.10.21"
+        transports.append(transport)
+        if len(transports) == 1:
+
+            def second_save(**_args):
+                generation[0] = 2
+                with Session(engine) as db:
+                    route.modify_node(
+                        NodeModify(address="198.51.100.20", port=63050, api_port=63051, inbounds=["second"]),
+                        BackgroundTasks(),
+                        db.get(Node, 7),
+                        db,
+                        Mock(),
+                    )
+
+            transport.restart.side_effect = second_save
+        return transport
+
+    factory = Mock(side_effect=create)
+    monkeypatch.setattr(operations, "XRayNode", factory)
+    try:
+        with Session(engine) as db:
+            route.modify_node(
+                NodeModify(address="192.0.2.10", inbounds=["first"]), BackgroundTasks(), db.get(Node, 7), db, Mock()
+            )
+        executor.run()
+        with Session(engine) as db:
+            assert db.get(Node, 7).config_apply_pending is True
+        executor.run()
+        first, latest = factory.call_args_list
+        assert first.kwargs["address"] == "192.0.2.10"
+        assert (latest.kwargs["address"], latest.kwargs["port"], latest.kwargs["api_port"]) == (
+            "198.51.100.20",
+            63050,
+            63051,
+        )
+        assert json.loads(transports[0].restart.call_args.kwargs["config_json"]) == {
+            "generation": 1,
+            "inbounds": ["first"],
+        }
+        assert json.loads(transports[1].restart.call_args.kwargs["config_json"]) == {
+            "generation": 2,
+            "inbounds": ["second"],
+        }
+        with Session(engine) as db:
+            assert db.get(Node, 7).config_apply_pending is False
+    finally:
+        engine.dispose()
