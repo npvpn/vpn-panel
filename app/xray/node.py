@@ -323,9 +323,7 @@ class ReSTXRayNode:
         return inline_local_certificates(config)
 
     def make_request(self, path: str, timeout: int, **params):
-        check = vars(self).get("_operation_check")
-        if check is not None:
-            check()
+        _check_operation(self)
         try:
             # urllib3 1.x applies the *connect* half of timeout=(connect, read) to the
             # socket while *writing* the request body, and switches to read only after
@@ -421,6 +419,7 @@ class ReSTXRayNode:
     def _ensure_control_session(self):
         """Ensure REST session for control commands without /connect on transient errors."""
         if self._session_id:
+            _check_operation(self)
             self._ensure_peer_cert()
             try:
                 self.make_request("/ping", timeout=XRAY_NODE_REST_PING_TIMEOUT)
@@ -446,6 +445,7 @@ class ReSTXRayNode:
         self.connect()
 
     def connect(self):
+        _check_operation(self)
         old = self._session_tag()
         if self._session_id:
             try:
@@ -488,6 +488,7 @@ class ReSTXRayNode:
         return res.get("core_version")
 
     def _ensure_peer_cert(self) -> None:
+        _check_operation(self)
         if getattr(self, "_node_cert", None):
             return
         cert = fetch_server_certificate(self.address, self.port, XRAY_NODE_CERT_FETCH_TIMEOUT)
@@ -706,7 +707,7 @@ class RPyCXRayNode:
         self._certfile = string_to_temp_file(ssl_cert)
 
         self._service = Service()
-        self._api = None
+        self._api: XRayAPI | None = None
 
         # Реальный набор тегов инбаундов ноды; заполняется после успешного
         # start/restart (NPVPN-1779), None до первого коннекта.
@@ -839,6 +840,13 @@ class RPyCXRayNode:
         remote = self.remote
         _check_operation(self)
         remote.restart(config_json)
+        self._api = wait_for_grpc_ready(
+            self.address,
+            self.api_port,
+            self._node_cert.encode(),
+            check_current=vars(self).get("_operation_check"),
+            retry_wait=vars(self).get("_operation_wait"),
+        )
         self.started = True
 
     @contextmanager

@@ -30,7 +30,7 @@ def test_edit_busy_node_saves_without_network(monkeypatch):
     route.crud.update_node.return_value = node
 
     def execute(*_args):
-        result = route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+        result = route.modify_node(Mock(), BackgroundTasks(), node, Mock(), Mock())
         assert result.name == "new"
         remove.assert_not_called()
 
@@ -58,7 +58,7 @@ def test_edit_during_usage_waits_for_both_leases(monkeypatch):
     node = SimpleNamespace(id=7, name="new", status=NodeStatus.connecting)
     route.crud.update_node.return_value = node
 
-    route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+    route.modify_node(Mock(), BackgroundTasks(), node, Mock(), Mock())
     assert not executor.jobs
     with pytest.raises(StaleObservationError):
         state.acquire_collection(7, old)
@@ -83,7 +83,7 @@ def test_failed_edit_preserves_running_operation(monkeypatch):
 
     def execute(*_args):
         with pytest.raises(RuntimeError, match="database"):
-            route.modify_node(SimpleNamespace(), BackgroundTasks(), SimpleNamespace(id=7), Mock(), Mock())
+            route.modify_node(Mock(), BackgroundTasks(), SimpleNamespace(id=7), Mock(), Mock())
         assert scheduler.is_current(7)
 
     scheduler.execute = execute
@@ -231,7 +231,7 @@ def test_migration_adds_default_to_existing_rows_and_downgrades():
 
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine, inspect, text
 
     path = next(
         (Path(__file__).parents[1] / "app/db/migrations/versions").glob("*npvpn_2108_pending_manual_node_apply.py")
@@ -246,7 +246,9 @@ def test_migration_adds_default_to_existing_rows_and_downgrades():
         with Operations.context(MigrationContext.configure(conn)):
             migration.upgrade()
             assert conn.execute(text("SELECT config_apply_pending FROM nodes")).scalar_one() == 0
+            assert conn.execute(text("SELECT config_apply_endpoint FROM nodes")).scalar_one() is None
             migration.downgrade()
+        assert {col["name"] for col in inspect(conn).get_columns("nodes")} == {"id", "name"}
         assert conn.execute(text("SELECT name FROM nodes")).scalar_one() == "old"
     engine.dispose()
 
@@ -357,10 +359,12 @@ def test_old_status_is_not_published_after_edit(monkeypatch):
         with scheduler.edit(7):
             pass
         assert operations._change_node_status(7, NodeStatus.connected) is False
+        return True
 
     scheduler.execute = execute
-    scheduler.request(7, OperationKind.SOFT)
+    future = scheduler.request(7, OperationKind.SOFT)
     executor.run()
+    assert future.result() is True
     db.assert_not_called()
 
 
@@ -678,13 +682,15 @@ def test_old_session_listener_after_edit_before_replacement(monkeypatch, failed_
     if failed_save:
         route.crud.update_node.side_effect = RuntimeError("database")
         with pytest.raises(RuntimeError):
-            route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+            route.modify_node(Mock(), BackgroundTasks(), node, Mock(), Mock())
     else:
-        route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+        route.modify_node(Mock(), BackgroundTasks(), node, Mock(), Mock())
     assert operations.xray.nodes[7] is transport
     listener("old-session")
     if failed_save:
-        persist.assert_called_once_with(7, "old-session")
+        persist.assert_called_once_with(
+            7, "old-session", endpoint={"address": "127.0.0.1", "port": 62050, "api_port": 62051, "protocol": "rest"}
+        )
     else:
         persist.assert_not_called()
     release()
@@ -821,7 +827,7 @@ def test_repeated_save_uses_latest_sql_settings_and_config(monkeypatch, tmp_path
         transport._session_id = None
         transport.get_version.return_value = "26.10.21"
         transports.append(transport)
-        if len(transports) == 1:
+        if len(transports) == 2:
 
             def second_save(**_args):
                 generation[0] = 2
@@ -848,18 +854,20 @@ def test_repeated_save_uses_latest_sql_settings_and_config(monkeypatch, tmp_path
         with Session(engine) as db:
             assert db.get(Node, 7).config_apply_pending is True
         executor.run()
-        first, latest = factory.call_args_list
+        stopped_old, first, stopped_previous, latest = factory.call_args_list
+        assert stopped_old.kwargs["address"] == "192.0.2.1"
+        assert stopped_previous.kwargs["address"] == "192.0.2.10"
         assert first.kwargs["address"] == "192.0.2.10"
         assert (latest.kwargs["address"], latest.kwargs["port"], latest.kwargs["api_port"]) == (
             "198.51.100.20",
             63050,
             63051,
         )
-        assert json.loads(transports[0].restart.call_args.kwargs["config_json"]) == {
+        assert json.loads(transports[1].restart.call_args.kwargs["config_json"]) == {
             "generation": 1,
             "inbounds": ["first"],
         }
-        assert json.loads(transports[1].restart.call_args.kwargs["config_json"]) == {
+        assert json.loads(transports[3].restart.call_args.kwargs["config_json"]) == {
             "generation": 2,
             "inbounds": ["second"],
         }

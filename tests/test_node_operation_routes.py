@@ -48,7 +48,7 @@ def test_busy_operation_blocks_admin_before_database_change(monkeypatch, action)
         node = SimpleNamespace(id=7, name="test")
         with pytest.raises(HTTPException) as exc:
             if action == "edit":
-                route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+                route.modify_node(Mock(), BackgroundTasks(), node, Mock(), Mock())
             else:
                 route.remove_node(node, Mock(), Mock())
         assert exc.value.status_code == 409
@@ -71,7 +71,7 @@ def test_queued_edit_cancels_old_intent_and_does_not_execute_it(monkeypatch):
     old = scheduler.request(7, OperationKind.SOFT)
     node = SimpleNamespace(id=7, name="test", status=NodeStatus.disabled)
     route.crud.update_node.return_value = node
-    route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+    route.modify_node(Mock(), BackgroundTasks(), node, Mock(), Mock())
     assert old.cancelled()
     executor.run()
     execute.assert_not_called()
@@ -91,7 +91,7 @@ def test_successful_edit_retires_prior_usage_generation(monkeypatch):
     monkeypatch.setattr(operations, "remove_node", Mock())
     node = SimpleNamespace(id=7, name="test", status=NodeStatus.disabled)
     route.crud.update_node.return_value = node
-    route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+    route.modify_node(Mock(), BackgroundTasks(), node, Mock(), Mock())
     assert state.snapshot()["nodes"] == []
     state.observe_nodes({7: "test"})
     state.mark_success(7, "user", old[7])
@@ -103,7 +103,7 @@ def test_collection_during_transport_removal_cannot_refresh_after_edit(monkeypat
     from app.utils.usage_runtime import UsageState
 
     state = UsageState(clock=lambda: 100)
-    state.observe_nodes({7: "test"})
+    old_epoch = state.observe_nodes({7: "test"})[7]
     monkeypatch.setattr(route.node_lifecycle, "usage_state", state)
     scheduler = NodeOperationScheduler(Executor(), lambda *_: None, lambda: {}, concurrency=1)
     monkeypatch.setattr(operations, "get_node_scheduler", lambda: scheduler)
@@ -117,14 +117,17 @@ def test_collection_during_transport_removal_cannot_refresh_after_edit(monkeypat
     monkeypatch.setattr(operations, "remove_node", remove)
     node = SimpleNamespace(id=7, name="test", status=NodeStatus.disabled)
     route.crud.update_node.return_value = node
-    route.modify_node(SimpleNamespace(), BackgroundTasks(), node, Mock(), Mock())
+    route.modify_node(Mock(), BackgroundTasks(), node, Mock(), Mock())
     assert not old_results
     scheduler.execute = lambda node_id, *_: operations.remove_node(node_id)
     scheduler.executor.run()
     state.resume(7)
-    state.observe_nodes({7: "test"})
-    state.mark_success(7, "user", old_results[0])
+    assert old_results == [None]
+    fresh = state.observe_nodes({7: "test"})[7]
+    state.mark_success(7, "user", old_epoch)
     assert all(row["last_success"] == 0 for row in state.snapshot()["nodes"])
+    state.mark_success(7, "user", fresh)
+    assert any(row["last_success"] == 100 for row in state.snapshot()["nodes"])
 
 
 def test_cancelled_reconnect_future_returns_busy_instead_of_server_error(monkeypatch):

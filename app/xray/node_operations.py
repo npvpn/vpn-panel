@@ -240,8 +240,11 @@ class NodeOperationScheduler:
                 raise RuntimeError("node scheduler shutdown")
             return self._prepare_apply(node_id, priority=priority)
 
-    def ready(self, node_id: int) -> None:
+    def ready(self, node_id: int, expected: Future | None = None) -> None:
         with self._lock:
+            waiting = self._waiting.get(node_id)
+            if expected is not None and (waiting is None or waiting.future is not expected):
+                return
             self._blocked.discard(node_id)
             failures = self._dispatch()
         self._fail(failures)

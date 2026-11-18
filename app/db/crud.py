@@ -2185,7 +2185,7 @@ def remove_node(db: Session, dbnode: Node) -> Node:
     return dbnode
 
 
-def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
+def update_node(db: Session, dbnode: Node, modify: NodeModify, *, commit: bool = True) -> Node:
     """
     Updates an existing node with new information.
 
@@ -2200,7 +2200,28 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
     # Dependency resolution may have loaded this instance before the previous
     # APPLY acknowledged it. FOR UPDATE is a current read on MySQL as well.
     db.refresh(dbnode, with_for_update=True)
+    was_stopped = dbnode.status == NodeStatus.disabled and not dbnode.config_apply_pending
     dbnode.config_apply_pending = True
+    if dbnode.config_apply_endpoint is None:
+        dbnode.config_apply_endpoint = {
+            "address": dbnode.address,
+            "port": dbnode.port,
+            "api_port": dbnode.api_port,
+            "protocol": dbnode.protocol.value,
+            "control_session_id": dbnode.control_session_id,
+            "stopped": was_stopped,
+        }
+    if any(
+        getattr(modify, key) is not None and getattr(modify, key) != getattr(dbnode, key)
+        for key in ("address", "port", "api_port", "protocol")
+    ):
+        dbnode.control_session_id = None
+    # All new tag locks are acquired in the same order, including cascade tags.
+    tags = set(modify.inbounds or [])
+    for route in modify.cascade_routes or []:
+        tags.update((route.entry_inbound_tag, route.cascade_inbound_tag))
+    for tag in sorted(tags):
+        get_or_create_inbound(db, tag, commit=False)
     if modify.name is not None:
         dbnode.name = modify.name
 
@@ -2247,8 +2268,11 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
     if "owner_bot_id" in modify.model_fields_set:
         cast(Any, dbnode).owner_bot_id = modify.owner_bot_id
 
-    db.commit()
-    db.refresh(dbnode)
+    if commit:
+        db.commit()
+        db.refresh(dbnode)
+    else:
+        db.flush()
     return dbnode
 
 

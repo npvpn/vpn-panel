@@ -29,6 +29,8 @@ def ready_apis(nodes: dict) -> dict:
     ready = {}
     for node_id, node in list(nodes.items()):
         cached = vars(node)
+        if cached.get("_superseded", False):
+            continue
         rest_ready = cached.get("_started") is True and bool(cached.get("_session_id"))
         rpyc_ready = cached.get("started") is True and cached.get("connection") is not None
         api = cached.get("_api")
@@ -173,6 +175,10 @@ class UsageState:
                 self._paused.add(node_id)
                 self._revision += 1
 
+    def is_paused(self, node_id: int) -> bool:
+        with self._lock:
+            return node_id in self._paused
+
     def resume(self, node_id: int) -> None:
         with self._lock:
             self._paused.discard(node_id)
@@ -236,9 +242,11 @@ class UsageState:
         with self._lock:
             if revision is not None and revision != self._revision:
                 raise StaleObservationError()
-            enabled = {
-                node: name for node, name in enabled.items() if node not in self._mutating and node not in self._paused
-            }
+            enabled = {node: name for node, name in enabled.items() if node not in self._mutating}
+            # A tentative edit hides collection tokens, but rollback must retain
+            # the old epoch and freshness even if metadata was observed meanwhile.
+            enabled.update({node: name for node, name in self._names.items() if node in self._paused})
+            enabled = {node: name for node, name in enabled.items() if node not in self._paused or node in self._names}
             if self._names != enabled:
                 self._revision += 1
             now = self.clock()
@@ -252,7 +260,7 @@ class UsageState:
                 for kind in self.periods:
                     self._stamps[(node, kind)] = UsageStamp(now)
             self._names = dict(enabled)
-            return dict(self._epochs)
+            return {node: epoch for node, epoch in self._epochs.items() if node not in self._paused}
 
     def mark_success(self, node_id, kind, epoch):
         with self._lock:

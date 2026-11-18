@@ -309,7 +309,6 @@ app/xray/node.py:0: error: Argument "ssl_cert" to "XRay" has incompatible type "
 app/xray/node.py:0: error: Argument 1 to "DER_cert_to_PEM_cert" has incompatible type "bytes | None"; expected "Buffer"  [arg-type]
 app/xray/node.py:0: error: Need type annotation for "_logs_queues" (hint: "_logs_queues: list[<type>] = ...")  [var-annotated]
 app/xray/node.py:0: error: Function "builtins.callable" is not valid as a type  [valid-type]
-app/xray/node.py:0: error: Incompatible types in assignment (expression has type "XRay", variable has type "None")  [assignment]
 app/xray/node.py:0: error: Function "builtins.callable" is not valid as a type  [valid-type]
 app/xray/node.py:0: error: Function "builtins.callable" is not valid as a type  [valid-type]
 app/xray/core.py:0: error: Need type annotation for "_logs_buffer"  [var-annotated]

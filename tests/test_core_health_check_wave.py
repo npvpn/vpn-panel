@@ -15,7 +15,7 @@ import importlib.util
 import pathlib
 import sys
 import types
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -198,12 +198,12 @@ def test_startup_keeps_pending_and_separates_normal_restore(job):
     nodes[0].config_apply_pending = nodes[1].config_apply_pending = True
     job.crud.get_nodes.return_value = nodes
     job.start_core()
-    assert [call.args[0] for call in job.xray.operations.apply_node.call_args_list] == [7, 8]
+    assert job.xray.operations.apply_node.call_args_list == [call(7, recover=True), call(8, recover=True)]
     job.xray.operations.connect_nodes.assert_called_once_with([9])
     assert [call.args[1].id for call in job.crud.update_node_status.call_args_list] == [9]
 
 
-def test_pending_failure_does_not_starve_other_node_at_cap_one(job, monkeypatch):
+def test_pending_recovery_does_not_consume_ordinary_budget_at_cap_one(job, monkeypatch):
     pending = _DBNode(7, _NodeStatus.disabled)
     pending.config_apply_pending = True
     other = _DBNode(8, _NodeStatus.error)
@@ -237,4 +237,36 @@ def test_pending_after_exhausted_ordinary_budget_is_still_recovered(job, monkeyp
     assert job.xray.operations.connect_node.call_count == 3
     assert all(call.args[0] == 1 for call in job.xray.operations.connect_node.call_args_list)
     assert job.xray.operations.apply_node.call_count == 3
-    job.xray.operations.apply_node.assert_called_with(3, recover=True)
+    assert job.xray.operations.apply_node.call_args_list == [call(3, recover=True)] * 3
+
+
+@pytest.mark.parametrize("startup", [False, True])
+def test_pending_admission_failure_does_not_abort_other_nodes_or_job(job, startup):
+    nodes = [_DBNode(7, _NodeStatus.disabled), _DBNode(8, _NodeStatus.disabled), _DBNode(9, _NodeStatus.error)]
+    nodes[0].config_apply_pending = nodes[1].config_apply_pending = True
+    _arrange(job, nodes)
+    job.xray.operations.apply_node.side_effect = [RuntimeError("database unavailable"), None]
+    if startup:
+        job.scheduler.add_job.reset_mock()
+        job.start_core()
+        job.scheduler.add_job.assert_called_once()
+        job.xray.operations.connect_nodes.assert_called_once_with([9])
+    else:
+        job.core_health_check()
+        job.xray.operations.connect_node.assert_called_once()
+    assert job.xray.operations.apply_node.call_args_list == [call(7, recover=True), call(8, recover=True)]
+
+
+def test_pending_recovered_before_slow_normal_health_probes(job, monkeypatch):
+    nodes = [
+        _DBNode(1, _NodeStatus.error),
+        _DBNode(2, _NodeStatus.error),
+        _DBNode(3, _NodeStatus.connected),
+        _DBNode(4, _NodeStatus.disabled),
+    ]
+    nodes[3].config_apply_pending = True
+    _arrange(job, nodes)
+    monkeypatch.setattr(job, "XRAY_NODE_MAX_CONCURRENT_CONNECTS", 1)
+    job.core_health_check()
+    job.xray.operations.apply_node.assert_called_once_with(4, recover=True)
+    job.xray.nodes[3].api.get_sys_stats.assert_not_called()
