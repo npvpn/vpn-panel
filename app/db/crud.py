@@ -878,6 +878,9 @@ def create_user(db: Session, user: UserCreate, admin: Admin = None) -> User:
     if user.bot_username and not bot:
         raise ValueError(f'Bot "{user.bot_username}" not found')
 
+    created_at_kwargs: dict[str, datetime] = {}
+    if user.created_at is not None:
+        created_at_kwargs["created_at"] = user.created_at
     dbuser = User(
         username=user.username,
         proxies=proxies,
@@ -900,6 +903,7 @@ def create_user(db: Session, user: UserCreate, admin: Admin = None) -> User:
         )
         if user.next_plan
         else None,
+        **created_at_kwargs,
     )
     # Ensure stable subscription token exists from day one
     dbuser.subscription_token = create_subscription_token(user.username)
