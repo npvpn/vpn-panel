@@ -125,17 +125,17 @@ def test_no_wave_when_connecting_node_is_already_locked(job):
     job.xray.operations.connect_node.assert_not_called()
 
 
-def test_wave_is_built_when_node_needs_reconnect(job):
+def test_node_wave_is_not_built_before_executor_admission(job):
     include_db_users = _arrange(job, [_DBNode(1, _NodeStatus.error)])
 
     job.core_health_check()
 
-    include_db_users.assert_called_once()
+    include_db_users.assert_not_called()
     job.xray.operations.connect_node.assert_called_once()
-    assert job.xray.operations.connect_node.call_args.args[1] == {"wave": "config"}
+    assert job.xray.operations.connect_node.call_args.args == (1,)
 
 
-def test_wave_is_built_once_per_tick_and_shared(job):
+def test_repeated_health_requests_carry_no_wave_config(job):
     """Конфиг волны один на тик — иначе каждая нода тащила бы свою копию всех юзеров."""
     include_db_users = _arrange(
         job,
@@ -144,11 +144,10 @@ def test_wave_is_built_once_per_tick_and_shared(job):
 
     job.core_health_check()
 
-    include_db_users.assert_called_once()
+    include_db_users.assert_not_called()
     assert job.xray.operations.connect_node.call_count == 3
 
-    configs = [call.args[1] for call in job.xray.operations.connect_node.call_args_list]
-    assert all(config is configs[0] for config in configs)
+    assert all(len(call.args) == 1 for call in job.xray.operations.connect_node.call_args_list)
 
 
 def test_previous_wave_memory_is_returned_to_kernel(job, monkeypatch):
@@ -167,3 +166,11 @@ def test_app_shutdown_releases_remote_nodes(job):
 
     job.xray.core.stop.assert_called_once()
     job.xray.operations.release_remote_nodes.assert_called_once()
+
+
+def test_missing_node_transport_is_created_only_after_admission(job):
+    _arrange(job, [_DBNode(1, _NodeStatus.error)])
+    job.xray.nodes = {}
+    job.core_health_check()
+    job.xray.operations.add_node.assert_not_called()
+    job.xray.operations.connect_node.assert_called_once()

@@ -8,6 +8,7 @@ import {
   HStack,
   Text,
   VStack,
+  useToast,
 } from "@chakra-ui/react";
 import { FetchNodesQueryKey, NodeType, useNodes } from "contexts/NodesContext";
 import { FC, memo } from "react";
@@ -15,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "react-query";
 import "slick-carousel/slick/slick-theme.css";
 import "slick-carousel/slick/slick.css";
+import { generateErrorMessage } from "utils/toastHandler";
 import { Status } from "types/User";
 import { ReloadIcon } from "./Filters";
 import { NodeModalStatusBadge } from "./NodeModalStatusBadge";
@@ -36,6 +38,7 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
     const { reconnectNode, setDeletingNode } = useNodes();
     const { t } = useTranslation();
     const queryClient = useQueryClient();
+    const toast = useToast();
     const handleDeleteNode = () => setDeletingNode(node);
 
     const { isLoading: isReconnecting, mutate: reconnect } = useMutation(
@@ -43,6 +46,9 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
       {
         onSuccess: () => {
           queryClient.invalidateQueries(FetchNodesQueryKey);
+        },
+        onError: (error) => {
+          generateErrorMessage(error, toast);
         },
       }
     );

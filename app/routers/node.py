@@ -1,5 +1,7 @@
 import asyncio
 import time
+from concurrent.futures import CancelledError
+from contextlib import contextmanager
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket
 from sqlalchemy.exc import IntegrityError
@@ -7,6 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app import logger, xray
 from app.db import Session, crud, get_db
+from app.db.models import Node as DBNode
 from app.dependencies import get_dbnode, validate_dates
 from app.models.admin import Admin
 from app.models.node import (
@@ -14,13 +17,22 @@ from app.models.node import (
     NodeModify,
     NodeResponse,
     NodeSettings,
-    NodeStatus,
     NodesUsageResponse,
 )
 from app.models.proxy import ProxyHost
+from app.services import node_lifecycle
 from app.utils import responses
+from app.xray.node_operations import NodeBusyError
 
 router = APIRouter(tags=["Node"], prefix="/api", responses={401: responses._401, 403: responses._403})
+
+
+@contextmanager
+def _node_conflict():
+    try:
+        yield
+    except NodeBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def add_host_if_needed(new_node: NodeCreate, db: Session):
@@ -65,7 +77,7 @@ def add_node(
 
 @router.get("/node/{node_id}", response_model=NodeResponse)
 def get_node(
-    dbnode: NodeResponse = Depends(get_dbnode),
+    dbnode: DBNode = Depends(get_dbnode),
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Retrieve details of a specific node by its ID."""
@@ -142,22 +154,17 @@ def get_nodes(db: Session = Depends(get_db), _: Admin = Depends(Admin.check_sudo
     return crud.get_nodes(db)
 
 
-@router.put("/node/{node_id}", response_model=NodeResponse)
+@router.put("/node/{node_id}", response_model=NodeResponse, responses={409: responses._409})
 def modify_node(
     modified_node: NodeModify,
     bg: BackgroundTasks,
-    dbnode: NodeResponse = Depends(get_node),
+    dbnode: DBNode = Depends(get_node),
     db: Session = Depends(get_db),
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Update a node's details. Only accessible to sudo admins."""
-    updated_node = crud.update_node(db, dbnode, modified_node)
-    # remove_node → remote /disconnect (stops Xray). Reattach must be HARD:
-    # new session + /restart, not soft try_restore (session already wiped).
-    xray.operations.remove_node(updated_node.id)
-    if updated_node.status != NodeStatus.disabled:
-        bg.add_task(xray.operations.connect_node, node_id=updated_node.id, force=True)
-
+    with _node_conflict():
+        node_lifecycle.modify_node(db, dbnode, modified_node, bg.add_task)
     xray.hosts.update()
     logger.info(f'Node "{dbnode.name}" modified')
     return dbnode
@@ -165,27 +172,28 @@ def modify_node(
 
 @router.post("/node/{node_id}/reconnect")
 def reconnect_node(
-    bg: BackgroundTasks,
-    dbnode: NodeResponse = Depends(get_node),
+    dbnode: DBNode = Depends(get_node),
     _: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Trigger a reconnection for the specified node. Only accessible to sudo admins."""
-    # Explicit nuclear reconnect: drop any in-flight soft/HARD ownership so force connect
-    # is not silently skipped while another thread holds the slot.
-    xray.operations.invalidate_connect_slot(dbnode.id)
-    bg.add_task(xray.operations.connect_node, node_id=dbnode.id, force=True)
+    future = xray.operations.connect_node(node_id=dbnode.id, force=True, manual=True)
+    if future.done():
+        try:
+            future.result()
+        except (NodeBusyError, CancelledError) as exc:
+            raise HTTPException(status_code=409, detail=str(NodeBusyError())) from exc
     return {"detail": "Reconnection task scheduled"}
 
 
-@router.delete("/node/{node_id}")
+@router.delete("/node/{node_id}", responses={409: responses._409})
 def remove_node(
-    dbnode: NodeResponse = Depends(get_node),
+    dbnode: DBNode = Depends(get_node),
     db: Session = Depends(get_db),
     admin: Admin = Depends(Admin.check_sudo_admin),
 ):
     """Delete a node and remove it from xray in the background."""
-    crud.remove_node(db, dbnode)
-    xray.operations.remove_node(dbnode.id)
+    with _node_conflict():
+        node_lifecycle.remove_node(db, dbnode)
 
     xray.hosts.update()
     logger.info(f'Node "{dbnode.name}" deleted')

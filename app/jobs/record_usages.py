@@ -13,7 +13,9 @@ from sqlalchemy.sql.dml import Insert
 from app import logger, scheduler, xray
 from app.db import GetDB, crud
 from app.db.models import Admin, BotBsDaily, Node, NodeUsage, NodeUserBsUsage, NodeUserUsage, System, User
-from app.utils.concurrency import get_xray_executor
+from app.models.node import NodeStatus
+from app.utils.concurrency import get_usage_executor
+from app.utils.usage_runtime import StaleObservationError, completed_results, ready_apis, usage_state
 from app.xray.bs_limit import bs_counter_step, period_keys
 from config import (
     DISABLE_RECORDING_NODE_USAGE,
@@ -23,9 +25,14 @@ from config import (
     JOB_RECORD_USER_USAGES_INTERVAL,
     NODE_USER_USAGE_CLEANUP_BATCH_SIZE,
     NODE_USER_USAGE_RETENTION_DAYS,
+    XRAY_THREAD_POOL_SIZE,
 )
 from xray_api import XRay as XRayAPI
-from xray_api import exc as xray_exc
+
+usage_state.configure(
+    periods={"user": JOB_RECORD_USER_USAGES_INTERVAL, "node": JOB_RECORD_NODE_USAGES_INTERVAL},
+    workers=XRAY_THREAD_POOL_SIZE,
+)
 
 
 def safe_execute(db: Session, stmt, params=None):
@@ -290,158 +297,196 @@ def record_node_stats(params: dict, node_id: int | None):
 
 
 def get_users_stats(api: XRayAPI):
-    try:
-        params = defaultdict(int)
-        for stat in filter(attrgetter("value"), api.get_users_stats(reset=True, timeout=30)):
-            params[stat.name.split(".", 1)[0]] += stat.value
-        params = list({"uid": uid, "value": value} for uid, value in params.items())
-        return params
-    except xray_exc.XrayError:
-        return []
+    params = defaultdict(int)
+    for stat in filter(attrgetter("value"), api.get_users_stats(reset=True, timeout=30)):
+        params[stat.name.split(".", 1)[0]] += stat.value
+    return [{"uid": uid, "value": value} for uid, value in params.items()]
 
 
 def get_outbounds_stats(api: XRayAPI):
+    return [
+        {"up": stat.value, "down": 0} if stat.link == "uplink" else {"up": 0, "down": stat.value}
+        for stat in filter(attrgetter("value"), api.get_outbounds_stats(reset=True, timeout=10))
+    ]
+
+
+def _usage_context():
+    # До reset=True: при недоступной БД не забираем необратимую delta без
+    # знания БС-владения. Один запрос метаданных на тик, не на ноду/скрейп.
+    revision = usage_state.metadata_revision()
+    with GetDB() as db:
+        rows = (
+            db.query(Node.id, Node.name, Node.is_bs, Node.owner_bot_id)
+            .filter(
+                Node.status != NodeStatus.disabled,
+            )
+            .all()
+        )
+    owners = {row.id: row.owner_bot_id for row in rows if row.is_bs}
+    enabled = {row.id: row.name for row in rows}
+    apis = {None: (xray.api, 1)}
+    apis.update({node: value for node, value in ready_apis(xray.nodes).items() if node in enabled})
+    tokens = usage_state.observe_nodes(enabled, revision=revision)
+    return apis, owners, tokens
+
+
+def _admin_totals(values, cache):
+    missing = {p["uid"] for p in values} - cache.keys()
+    if missing:
+        try:
+            with GetDB() as db:
+                found = dict(db.query(User.id, User.admin_id).filter(User.id.in_(missing)).all())
+            cache.update({uid: found.get(uid) for uid in missing})
+        except Exception:
+            usage_state.mark_failure("user", "admin_map")
+            logger.exception("[record_user_usages] admin mapping failed; retaining primary user accounting")
+            return {}, False
+    totals = defaultdict(int)
+    for value in values:
+        admin_id = cache.get(value["uid"])
+        if admin_id:
+            totals[admin_id] += value["value"]
+    return totals, True
+
+
+def _record_user_totals(params, coefficient, admin_cache):
+    if not params:
+        return True
+    values = [{"uid": int(p["uid"]), "value": int(p["value"] * coefficient)} for p in params]
+    totals, mapped = _admin_totals(values, admin_cache)
+    # Independent session after a failed lookup rollback: secondary admin
+    # aggregate must not prevent the primary counter from recording delta.
+    with GetDB() as db:
+        stmt = (
+            update(User)
+            .where(User.id == bindparam("uid"))
+            .values(
+                used_traffic=User.used_traffic + bindparam("value"),
+                online_at=datetime.utcnow(),
+            )
+        )
+        safe_execute(db, stmt, values)
+        if totals:
+            stmt = (
+                update(Admin)
+                .where(Admin.id == bindparam("admin_id"))
+                .values(
+                    users_usage=Admin.users_usage + bindparam("value"),
+                )
+            )
+            safe_execute(db, stmt, [{"admin_id": admin_id, "value": value} for admin_id, value in totals.items()])
+    return mapped
+
+
+def _write_usage(kind, node_id, stage, write):
     try:
-        params = [
-            {"up": stat.value, "down": 0} if stat.link == "uplink" else {"up": 0, "down": stat.value}
-            for stat in filter(attrgetter("value"), api.get_outbounds_stats(reset=True, timeout=10))
-        ]
-        return params
-    except xray_exc.XrayError:
-        return []
+        result = write()
+    except Exception as exc:
+        # Delta уже сброшена. Запись автоматически не повторяется: частично
+        # зафиксированный инкремент нельзя ещё раз применять без receipt.
+        usage_state.mark_failure(kind, stage)
+        logger.error("[record_%s_usages] node=%s stage=%s failed: %s", kind, node_id, stage, exc, exc_info=True)
+        return False
+    return result is not False
+
+
+def _record_user_node(params, node_id, coefficient, owners, admin_cache):
+    success = _write_usage("user", node_id, "totals", lambda: _record_user_totals(params, coefficient, admin_cache))
+    if not DISABLE_RECORDING_NODE_USER_USAGE:
+        recorded = _write_usage("user", node_id, "history", lambda: record_user_stats(params, node_id, coefficient))
+        success = recorded and success
+        if node_id in owners:
+            recorded = _write_usage(
+                "user",
+                node_id,
+                "bs",
+                lambda: record_bs_user_stats(params, node_id, coefficient, owners[node_id] is None),
+            )
+            success = recorded and success
+    return success
 
 
 def record_user_usages():
-    api_instances = {None: xray.api}
-    usage_coefficient = {None: 1}  # default usage coefficient for the main api instance
-
-    for node_id, node in list(xray.nodes.items()):
-        if node.connected and node.started:
-            api_instances[node_id] = node.api
-            usage_coefficient[node_id] = node.usage_coefficient  # fetch the usage coefficient
-
-    executor = get_xray_executor()
-    futures = {node_id: executor.submit(get_users_stats, api) for node_id, api in api_instances.items()}
-    # Сбой одной ноды не должен ронять весь джоб и терять статистику остальных.
-    api_params = {}
-    for node_id, future in futures.items():
+    with usage_state.track_tick("user") as tick:
         try:
-            api_params[node_id] = future.result()
-        except Exception as e:
-            logger.warning(f"[record_user_usages] failed to collect stats for node {node_id}: {type(e).__name__}: {e}")
-            api_params[node_id] = []
-
-    users_usage = defaultdict(int)
-    for node_id, params in api_params.items():
-        coefficient = usage_coefficient.get(node_id, 1)  # get the usage coefficient for the node
-        for param in params:
-            users_usage[param["uid"]] += int(param["value"] * coefficient)  # apply the usage coefficient
-    users_usage = list({"uid": uid, "value": value} for uid, value in users_usage.items())
-    if not users_usage:
-        return
-
-    admin_usage = defaultdict(int)
-    try:
-        with GetDB() as db:
-            user_ids = [int(u["uid"]) for u in users_usage]
-            user_admin_map = dict(db.query(User.id, User.admin_id).filter(User.id.in_(user_ids)).all())
-        for user_usage in users_usage:
-            admin_id = user_admin_map.get(int(user_usage["uid"]))
-            if admin_id:
-                admin_usage[admin_id] += user_usage["value"]
-    except Exception as e:
-        # Не можем посчитать admin-агрегат — это не повод терять учёт трафика
-        # самих юзеров, просто пропускаем admin-обновление этого тика.
-        logger.warning(f"[record_user_usages] failed to build admin usage map: {type(e).__name__}: {e}")
-        admin_usage = defaultdict(int)
-
-    # record users usage
-    try:
-        with GetDB() as db:
-            stmt = (
-                update(User)
-                .where(User.id == bindparam("uid"))
-                .values(used_traffic=User.used_traffic + bindparam("value"), online_at=datetime.utcnow())
+            apis, owners, tokens = _usage_context()
+        except StaleObservationError:
+            tick.failed = True
+            usage_state.mark_failure("user", "metadata_changed")
+            logger.debug("[record_user_usages] lifecycle changed before collection; retry next scheduled tick")
+            return
+        except Exception:
+            usage_state.mark_failure("user", "metadata")
+            tick.failed = True
+            logger.exception("[record_user_usages] unable to load metadata before collecting deltas")
+            return
+        admin_cache = {}
+        tasks = (
+            (
+                node_id,
+                lambda node=node_id, api=api: usage_state.collect(node, tokens.get(node), lambda: get_users_stats(api)),
             )
+            for node_id, (api, _factor) in apis.items()
+        )
+        for node_id, outcome in completed_results(get_usage_executor(), tasks, limit=XRAY_THREAD_POOL_SIZE):
+            if outcome.error is not None:
+                tick.failed = True
+                usage_state.mark_failure("user", "collect")
+                logger.warning("[record_user_usages] node=%s collection failed: %s", node_id, outcome.error)
+                continue
+            if _record_user_node(outcome.data, node_id, apis[node_id][1], owners, admin_cache):
+                usage_state.mark_success(node_id, "user", tokens.get(node_id))
+            else:
+                tick.failed = True
 
-            safe_execute(db, stmt, users_usage)
 
-            admin_data = [{"admin_id": admin_id, "value": value} for admin_id, value in admin_usage.items()]
-            if admin_data:
-                admin_update_stmt = (
-                    update(Admin)
-                    .where(Admin.id == bindparam("admin_id"))
-                    .values(users_usage=Admin.users_usage + bindparam("value"))
-                )
-                safe_execute(db, admin_update_stmt, admin_data)
-    except Exception as e:
-        # Счётчики xray уже сброшены (reset=True), трафик этого тика потерян
-        # безвозвратно — но джоб не должен умирать и пропускать следующие тики.
-        logger.error(f"[record_user_usages] failed to write user/admin usage: {type(e).__name__}: {e}")
-
-    if DISABLE_RECORDING_NODE_USER_USAGE:
-        return
-
-    # id всех БС-нод — для них дополнительно ведём node_user_bs_usage. Заодно
-    # вытягиваем владельца (NPVPN-2044.1): одним запросом, не по одному на тик,
-    # чтобы не плодить лишний SELECT на горячем пути (джоба тикает каждые 10 с).
-    try:
+def _record_node_total(params):
+    up = sum(p["up"] for p in params)
+    down = sum(p["down"] for p in params)
+    if up or down:
         with GetDB() as db:
-            bs_node_owners = dict(db.query(Node.id, Node.owner_bot_id).filter(Node.is_bs.is_(True)).all())
-    except Exception as e:
-        logger.warning(f"[record_user_usages] failed to load BS node ids: {type(e).__name__}: {e}")
-        bs_node_owners = {}
-    bs_node_ids = set(bs_node_owners)
-
-    for node_id, params in api_params.items():
-        try:
-            record_user_stats(params, node_id, usage_coefficient[node_id])
-        except Exception as e:
-            logger.warning(
-                f"[record_user_usages] failed to record node_user_usage for node {node_id}: {type(e).__name__}: {e}"
-            )
-        # node_id=None (главный xray-инстанс) никогда не попадает в bs_node_ids
-        # (там только целочисленные id нод из БД), поэтому БС-учёт его не трогает.
-        if node_id in bs_node_ids:
-            try:
-                billable = bs_node_owners.get(node_id) is None
-                record_bs_user_stats(params, node_id, usage_coefficient[node_id], billable)
-            except Exception as e:
-                logger.warning(
-                    f"[record_user_usages] failed to record node_user_bs_usage for "
-                    f"node {node_id}: {type(e).__name__}: {e}"
-                )
+            safe_execute(db, update(System).values(uplink=System.uplink + up, downlink=System.downlink + down))
 
 
 def record_node_usages():
-    api_instances = {None: xray.api}
-    for node_id, node in list(xray.nodes.items()):
-        if node.connected and node.started:
-            api_instances[node_id] = node.api
-
-    executor = get_xray_executor()
-    futures = {node_id: executor.submit(get_outbounds_stats, api) for node_id, api in api_instances.items()}
-    api_params = {node_id: future.result() for node_id, future in futures.items()}
-
-    total_up = 0
-    total_down = 0
-    for node_id, params in api_params.items():
-        for param in params:
-            total_up += param["up"]
-            total_down += param["down"]
-    if not (total_up or total_down):
-        return
-
-    # record nodes usage
-    with GetDB() as db:
-        stmt = update(System).values(uplink=System.uplink + total_up, downlink=System.downlink + total_down)
-        safe_execute(db, stmt)
-
-    if DISABLE_RECORDING_NODE_USAGE:
-        return
-
-    for node_id, params in api_params.items():
-        record_node_stats(params, node_id)
+    with usage_state.track_tick("node") as tick:
+        try:
+            apis, _owners, tokens = _usage_context()
+        except StaleObservationError:
+            tick.failed = True
+            usage_state.mark_failure("node", "metadata_changed")
+            logger.debug("[record_node_usages] lifecycle changed before collection; retry next scheduled tick")
+            return
+        except Exception:
+            usage_state.mark_failure("node", "metadata")
+            tick.failed = True
+            logger.exception("[record_node_usages] unable to load metadata before collecting deltas")
+            return
+        tasks = (
+            (
+                node_id,
+                lambda node=node_id, api=api: usage_state.collect(
+                    node, tokens.get(node), lambda: get_outbounds_stats(api)
+                ),
+            )
+            for node_id, (api, _factor) in apis.items()
+        )
+        for node_id, outcome in completed_results(get_usage_executor(), tasks, limit=XRAY_THREAD_POOL_SIZE):
+            if outcome.error is not None:
+                tick.failed = True
+                usage_state.mark_failure("node", "collect")
+                logger.warning("[record_node_usages] node=%s collection failed: %s", node_id, outcome.error)
+                continue
+            success = _write_usage("node", node_id, "totals", lambda data=outcome.data: _record_node_total(data))
+            if not DISABLE_RECORDING_NODE_USAGE:
+                recorded = _write_usage(
+                    "node", node_id, "history", lambda data=outcome.data, node=node_id: record_node_stats(data, node)
+                )
+                success = success and recorded
+            if success:
+                usage_state.mark_success(node_id, "node", tokens.get(node_id))
+            else:
+                tick.failed = True
 
 
 def cleanup_node_user_usages():

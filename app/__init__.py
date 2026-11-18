@@ -207,6 +207,10 @@ from app.utils.node_metrics import register as _register_node_metrics  # noqa: E
 
 _register_node_metrics()
 
+from app.utils.operation_metrics import register as _register_operation_metrics
+
+_register_operation_metrics()
+
 from app import dashboard, jobs, routers, telegram  # noqa
 from app.routers import api_router  # noqa
 

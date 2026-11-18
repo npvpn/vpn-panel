@@ -4,7 +4,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import anyio
 from fastapi import BackgroundTasks
 
-from config import XRAY_THREAD_POOL_SIZE
+from config import XRAY_NODE_CONNECT_CONCURRENCY, XRAY_THREAD_POOL_SIZE
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -13,12 +13,29 @@ logger = logging.getLogger("uvicorn.error")
 _xray_executor = ThreadPoolExecutor(max_workers=XRAY_THREAD_POOL_SIZE, thread_name_prefix="xray-pool")
 
 
+# Executors create worker threads lazily on submit; module import serializes
+# construction so concurrent first calls cannot allocate independent pools.
+_node_executor = ThreadPoolExecutor(
+    max_workers=max(1, XRAY_NODE_CONNECT_CONCURRENCY), thread_name_prefix="node-control"
+)
+_usage_executor = ThreadPoolExecutor(max_workers=max(1, XRAY_THREAD_POOL_SIZE), thread_name_prefix="node-usage")
+
+
+def get_node_executor() -> ThreadPoolExecutor:
+    return _node_executor
+
+
+def get_usage_executor() -> ThreadPoolExecutor:
+    return _usage_executor
+
+
 def get_xray_executor() -> ThreadPoolExecutor:
     return _xray_executor
 
 
 def shutdown_xray_executor(wait: bool = True):
     logger.info("[concurrency] shutting down xray thread pool (wait=%s)", wait)
+    _usage_executor.shutdown(wait=wait, cancel_futures=True)
     _xray_executor.shutdown(wait=wait)
 
 
