@@ -115,6 +115,32 @@ def test_known_client_type_with_bad_token_gets_not_found_page(sub, monkeypatch):
     assert (status, body) == (404, f"not-found:{_TOKEN}".encode())
 
 
+# Типы из выданных ссылок: до NPVPN-2374 их держал regex в Path, теперь — только
+# ключи client_config. Список фиксируем явно, чтобы рабочая ссылка не стала 404
+@pytest.mark.parametrize("client_type", ["sing-box", "clash-meta", "clash", "outline", "v2ray", "v2ray-json", "incy"])
+def test_known_client_type_with_user_renders_subscription(sub, monkeypatch, client_type):
+    dbuser = MagicMock(expire=None)
+    rendered: list = []
+
+    def _render(db, ctx, plan):
+        rendered.append(plan)
+        return Response("subscription", status_code=200)
+
+    monkeypatch.setattr(sub, "resolve_subscription_context", lambda token, db: (dbuser, False, None))
+    monkeypatch.setattr(sub, "crud", MagicMock())
+    monkeypatch.setattr(sub, "UserResponse", MagicMock())
+    monkeypatch.setattr(sub, "resolve_bot_settings", lambda user: None)
+    monkeypatch.setattr(sub, "get_panel_settings", lambda db: None)
+    monkeypatch.setattr(sub, "build_render_context", lambda *args, **kwargs: "ctx")
+    monkeypatch.setattr(sub, "render_subscription", _render)
+
+    status, body = _get(_app(sub), f"/sub/{_TOKEN}/{client_type}")
+
+    assert (status, body) == (200, b"subscription")
+    assert [plan.config_format for plan in rendered] == [client_type]
+    assert sub.not_found_calls == []
+
+
 def test_extra_path_tail_gets_not_found_page(sub):
     status, body = _get(_app(sub), f"/sub/{_TOKEN}/a/b/c")
 
