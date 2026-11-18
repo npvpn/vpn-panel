@@ -446,6 +446,17 @@ def user_subscription_with_client_type(
     return render_subscription(db, ctx, plan)
 
 
+# Токен потерялся в середине ссылки (/sub//v2ray): пустой сегмент не подходит под
+# {token}, и без этого маршрута браузеру ушёл бы голый JSON 404 (NPVPN-2392)
+@router.get("//{rest:path}", include_in_schema=False)
+def subscription_empty_token(request: Request, rest: str, db: Session = Depends(get_db)):
+    return render_not_found(request, db, "")
+
+
+# Адреса после /sub/<токен>/, у которых есть что отдать: на них ведёт снятие слеша
+_SUFFIXES_WITH_ROUTE = frozenset(client_config) | {"info", "usage"}
+
+
 # Последним: только то, что не подошло ни под один адрес выше
 # (/sub/<токен>/лишний/хвост). Иначе браузеру — голый JSON 404 (NPVPN-2374).
 @router.get("/{token}/{rest:path}", include_in_schema=False)
@@ -453,8 +464,10 @@ def subscription_unknown_path(request: Request, token: str, rest: str, db: Sessi
     # Слеш на конце (/sub/<токен>/v2ray/) раньше снимал redirect_slashes Starlette,
     # но он срабатывает, только если не подошёл ни один маршрут, а этот подходит
     # под всё. Снимаем сами, иначе рабочие ссылки со слешем получат 404.
+    # Только на известный адрес: редирект на другой 404 клиенту без поддержки
+    # редиректов дал бы 307 вместо 404 (NPVPN-2392).
     # Адрес относительный: панель за nginx, схема соединения тут http
-    if rest.endswith("/"):
+    if rest.endswith("/") and rest.rstrip("/") in _SUFFIXES_WITH_ROUTE:
         url = request.url.path.rstrip("/")
         if request.url.query:
             url = f"{url}?{request.url.query}"

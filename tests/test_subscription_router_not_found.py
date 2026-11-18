@@ -164,6 +164,24 @@ def test_trailing_slash_redirects_to_known_route(sub, path, query, location):
     assert sub.not_found_calls == []
 
 
+@pytest.mark.parametrize("path", [f"/sub/{_TOKEN}/a/b/", f"/sub/{_TOKEN}/456465/"])
+def test_trailing_slash_on_unknown_path_gets_not_found_page(sub, path):
+    # редирект только туда, где есть что отдать; иначе клиент без поддержки
+    # редиректов получил бы 307 вместо 404
+    status, body = _get(_app(sub), path)
+
+    assert (status, body) == (404, f"not-found:{_TOKEN}".encode())
+
+
+@pytest.mark.parametrize("path", ["/sub//v2ray", "/sub//a/b"])
+def test_empty_token_with_suffix_gets_not_found_page(sub, path):
+    # токен потерялся в середине ссылки: под {token} пустой сегмент не подходит,
+    # без отдельного маршрута FastAPI отдал бы голый JSON 404
+    status, body = _get(_app(sub), path)
+
+    assert (status, body) == (404, b"not-found:")
+
+
 def test_catch_all_is_the_last_route(sub):
     # Маршрут, объявленный ниже /{token}/{rest:path}, стал бы недостижим
     assert sub.router.routes[-1].path.endswith("/{token}/{rest:path}")
