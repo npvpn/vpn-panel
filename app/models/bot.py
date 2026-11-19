@@ -99,7 +99,6 @@ SUBSCRIPTION_PROFILE_KEYS: tuple[str, ...] = (
     "sub_update_interval",
     "web_url",
     "show_ads",
-    "sub_device_limit_hard_mode",
     "bs_extra_reset_pool_on_prolong",
 )
 
@@ -112,7 +111,6 @@ class SubscriptionProfilePayload(BaseModel):
     sub_update_interval: str = ""
     web_url: str = ""
     show_ads: bool = True
-    sub_device_limit_hard_mode: bool = False
     bs_extra_reset_pool_on_prolong: bool = False
 
     @field_validator("sub_subscription_domain", mode="before")

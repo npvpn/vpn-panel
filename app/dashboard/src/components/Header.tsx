@@ -27,10 +27,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { REPO_URL } from "constants/Project";
 import { useDashboard } from "contexts/DashboardContext";
-import { fetch } from "service/http";
-import { Bot } from "types/Bot";
-import { isSoloPanel } from "utils/botAudience";
-import { FC, ReactNode, useEffect, useState } from "react";
+import { FC, ReactNode } from "react";
 import GitHubButton from "react-github-btn";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -82,20 +79,6 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
   } = useDashboard();
   const { t } = useTranslation();
   const { colorMode, toggleColorMode } = useColorMode();
-  const [botsLoaded, setBotsLoaded] = useState(false);
-  const [botCount, setBotCount] = useState(0);
-  useEffect(() => {
-    fetch<Bot[]>("/bots")
-      .then((items) => {
-        setBotCount(items.length);
-        setBotsLoaded(true);
-      })
-      .catch(() => setBotsLoaded(false));
-  }, []);
-  const botMenuLabel =
-    botsLoaded && isSoloPanel(botCount)
-      ? t("header.subscriptionSettings")
-      : t("header.botSettings");
   const gBtnColor = colorMode === "dark" ? "dark_dimmed" : colorMode;
 
   return (
@@ -167,7 +150,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
                     icon={<BotSettingsIcon />}
                     onClick={onEditingBotSettings.bind(null, true)}
                   >
-                    {botMenuLabel}
+                    {t("header.botSettings")}
                   </MenuItem>
                   <MenuItem
                     maxW="200px"

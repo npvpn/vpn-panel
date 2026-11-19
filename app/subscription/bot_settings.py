@@ -25,7 +25,5 @@ def resolve_bot_settings(user: User) -> dict[str, Any]:
     if session is not None:
         from app.services.panel_settings import get_panel_settings
 
-        settings["sub_device_limit_hard_mode"] = bool(
-            get_panel_settings(session).get("sub_device_limit_hard_mode")
-        )
+        settings["sub_device_limit_hard_mode"] = bool(get_panel_settings(session).get("sub_device_limit_hard_mode"))
     return settings

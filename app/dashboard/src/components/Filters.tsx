@@ -1,5 +1,6 @@
 import {
   BoxProps,
+  Box,
   Button,
   chakra,
   FormControl,
@@ -12,6 +13,7 @@ import {
   InputLeftElement,
   InputRightElement,
   Spinner,
+  Tooltip,
 } from "@chakra-ui/react";
 import {
   ArrowPathIcon,
@@ -112,6 +114,14 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       .then((items) => {
         setBots(items);
         setBotsLoaded(true);
+        if (items.length === 1) {
+          setSelectedBotId(items[0].id);
+          useDashboard.getState().onFilterChange({
+            ...useDashboard.getState().filters,
+            offset: 0,
+            bot_username: items[0].username,
+          });
+        }
       })
       .catch(() => setBots([]));
   }, []);
@@ -179,27 +189,33 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       </GridItem>
       <GridItem colSpan={2} order={{ base: 1, md: 2 }}>
         <HStack justifyContent="flex-end" alignItems="center" h="full">
-          {(!botsLoaded || bots.length > 0) && (
           <FormControl
             w={{ base: "auto", lg: "220px" }}
             flex={{ base: 1, lg: "none" }}
             minW={0}
             flexShrink={{ lg: 0 }}
           >
-            <ReactSelect<BotOption>
-              options={botOptions}
-              value={selectedOption}
-              onChange={handleBotChange}
-              placeholder={t("botSettings.selectBot")}
-              noOptionsMessage={() => t("botSettings.noBotsFound")}
-              isSearchable
-              isClearable
-              styles={botSelectStyles}
-              menuPortalTarget={document.body}
-              menuPosition="fixed"
-            />
+            <Tooltip
+              label={t("botSettings.createBotToSelect")}
+              isDisabled={!botsLoaded || bots.length > 0}
+            >
+              <Box>
+                <ReactSelect<BotOption>
+                  options={botOptions}
+                  value={selectedOption}
+                  onChange={handleBotChange}
+                  placeholder={t("botSettings.selectBot")}
+                  noOptionsMessage={() => t("botSettings.noBotsFound")}
+                  isSearchable
+                  isClearable
+                  isDisabled={botsLoaded && bots.length === 0}
+                  styles={botSelectStyles}
+                  menuPortalTarget={document.body}
+                  menuPosition="fixed"
+                />
+              </Box>
+            </Tooltip>
           </FormControl>
-          )}
           <IconButton
             aria-label="refresh users"
             disabled={loading}

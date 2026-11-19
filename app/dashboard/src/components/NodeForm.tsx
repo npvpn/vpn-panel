@@ -38,6 +38,7 @@ type NodeFormType = FC<{
   btnProps?: Partial<ButtonProps>;
   btnLeftAdornment?: ReactNode;
   addAsHost?: boolean;
+  isNew?: boolean;
   nodeSettings?: {
     min_node_version: string;
     certificate: string;
@@ -71,6 +72,7 @@ export const NodeForm: NodeFormType = ({
   btnProps = {},
   btnLeftAdornment,
   addAsHost = false,
+  isNew = false,
   nodeSettings,
 }) => {
   const { t } = useTranslation();
@@ -114,6 +116,18 @@ export const NodeForm: NodeFormType = ({
       })
       .catch(() => setBots([]));
   }, []);
+
+  useEffect(() => {
+    if (
+      isNew &&
+      !form.formState.isDirty &&
+      botsLoaded &&
+      bots.length === 1 &&
+      form.getValues("owner_bot_id") == null
+    ) {
+      form.setValue("owner_bot_id", bots[0].id);
+    }
+  }, [bots, botsLoaded, form, form.formState.isDirty, isNew]);
 
   const certUrl = useMemo(() => {
     if (!nodeSettings?.certificate) return null;
@@ -326,31 +340,37 @@ export const NodeForm: NodeFormType = ({
             <FormLabel m={0}>{t("nodes.isBsNode")}</FormLabel>
           </Checkbox>
         </FormControl>
-        {(!botsLoaded || bots.length > 0) && (
         <FormControl py={1}>
           <FormLabel>{t("nodes.ownerBotId")}</FormLabel>
-          <Controller
-            name="owner_bot_id"
-            control={form.control}
-            render={({ field }) => (
-              <Select
-                size="sm"
-                value={field.value ?? ""}
-                onChange={(e) =>
-                  field.onChange(e.target.value === "" ? null : Number(e.target.value))
-                }
-              >
-                <option value="">{t("nodes.ownerBotIdOurs")}</option>
-                {bots.map((bot) => (
-                  <option key={bot.id} value={bot.id}>
-                    {bot.username}
-                  </option>
-                ))}
-              </Select>
-            )}
-          />
+          <Tooltip
+            label={t("botSettings.createBotToSelect")}
+            isDisabled={!botsLoaded || bots.length > 0}
+          >
+            <Box>
+              <Controller
+                name="owner_bot_id"
+                control={form.control}
+                render={({ field }) => (
+                  <Select
+                    size="sm"
+                    isDisabled={botsLoaded && bots.length === 0}
+                    value={field.value ?? ""}
+                    onChange={(e) =>
+                      field.onChange(e.target.value === "" ? null : Number(e.target.value))
+                    }
+                  >
+                    <option value="">{t("nodes.ownerBotIdOurs")}</option>
+                    {bots.map((bot) => (
+                      <option key={bot.id} value={bot.id}>
+                        {bot.username}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              />
+            </Box>
+          </Tooltip>
         </FormControl>
-        )}
         {inboundTags.length > 0 && (
           <FormControl py={1}>
             <FormLabel>{t("nodes.inbounds")}</FormLabel>

@@ -196,8 +196,10 @@ export const HostRow = memo(function HostRow({
   const isAvailableToAllBots = bots.length > 0 && botNames.length === bots.length;
   const isVisibleToNobody = botNames.length === 0;
 
-  const botBadgeLabel = bots.length < 2
-    ? null
+  const botBadgeLabel = bots.length === 0
+    ? t("hostsDialog.availableBots.solo")
+    : bots.length === 1
+    ? t("hostsDialog.availableBots.all")
     : isAvailableToAllBots
     ? bots.length > 1
       ? t("hostsDialog.availableBots.all")
@@ -212,7 +214,9 @@ export const HostRow = memo(function HostRow({
     bot.title ? `${bot.title} (@${bot.username})` : `@${bot.username}`
   );
 
-  const botBadgeTooltip = isAvailableToAllBots
+  const botBadgeTooltip = bots.length === 0
+    ? t("hostsDialog.availableBots.soloHint")
+    : isAvailableToAllBots
     ? allBotNames.join(", ") || null
     : isVisibleToNobody
     ? t("hostsDialog.availableBots.noneHint")
@@ -476,7 +480,6 @@ export const HostRow = memo(function HostRow({
           </Tooltip>
         </Td>
 
-        {bots.length >= 2 && (
         <Td
           px={3}
           py={2}
@@ -507,7 +510,6 @@ export const HostRow = memo(function HostRow({
             </Tooltip>
           )}
         </Td>
-        )}
       </>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps

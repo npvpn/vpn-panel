@@ -85,6 +85,11 @@ export const AddHostForm: FC<Props> = ({
 }) => {
   const { t } = useTranslation();
   const initialTag = defaultInboundTag || inboundTags[0] || "";
+  const emptyHost = () => ({
+    ...EMPTY_HOST,
+    inbound_tag: defaultInboundTag || inboundTags[0] || "",
+    bot_usernames: bots.length === 1 ? [bots[0].username] : [],
+  });
 
   const form = useForm<z.infer<typeof hostsFormSchema>>({
     resolver: zodResolver(hostsFormSchema),
@@ -93,7 +98,7 @@ export const AddHostForm: FC<Props> = ({
     // может включить флаг, проверить remark и сразу вернуть обычный хост.
     shouldUnregister: false,
     defaultValues: {
-      hosts: [{ ...EMPTY_HOST, inbound_tag: initialTag }],
+      hosts: [{ ...EMPTY_HOST, inbound_tag: initialTag, bot_usernames: bots.length === 1 ? [bots[0].username] : [] }],
     },
   });
 
@@ -105,6 +110,12 @@ export const AddHostForm: FC<Props> = ({
       form.setValue("hosts.0.inbound_tag", tag);
     }
   }, [defaultInboundTag, inboundTags, form]);
+
+  useEffect(() => {
+    if (bots.length === 1 && form.getValues("hosts.0.bot_usernames").length === 0) {
+      form.setValue("hosts.0.bot_usernames", [bots[0].username]);
+    }
+  }, [bots, form]);
 
   const inboundTag = useWatch({
     control: form.control,
@@ -123,10 +134,7 @@ export const AddHostForm: FC<Props> = ({
 
     form.reset({
       hosts: [
-        {
-          ...EMPTY_HOST,
-          inbound_tag: defaultInboundTag || inboundTags[0] || "",
-        },
+        emptyHost(),
       ],
     });
 

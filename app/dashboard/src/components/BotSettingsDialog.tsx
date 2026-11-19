@@ -40,7 +40,6 @@ import { FC, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDashboard } from "contexts/DashboardContext";
 import { fetch } from "service/http";
-import { isSoloPanel } from "utils/botAudience";
 import { SubscriptionProfileForm } from "./SubscriptionProfileForm";
 import { Bot, BotSettings } from "types/Bot";
 import {
@@ -82,6 +81,7 @@ export const BotSettingsDialog: FC = () => {
     useState<BotSettings>(emptySettings);
   const [hasDraft, setHasDraft] = useState(false);
   const [botSearch, setBotSearch] = useState("");
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [isBotListOpen, setIsBotListOpen] = useState(false);
   // const [didAutoSelect, setDidAutoSelect] = useState(false);
   const NEW_BOT_DRAFT_KEY = "botSettings_draft_new";
@@ -90,6 +90,7 @@ export const BotSettingsDialog: FC = () => {
     username ? `botSettings_draft_${username}` : NEW_BOT_DRAFT_KEY;
 
   const saveDraftTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const botsRequestId = useRef(0);
 
   const saveDraft = (
     newSettings: BotSettings,
@@ -122,13 +123,16 @@ export const BotSettingsDialog: FC = () => {
   };
 
   const fetchBots = () => {
+    const requestId = botsRequestId.current;
     return fetch<Bot[]>("/bots")
       .then((items) => {
+        if (requestId !== botsRequestId.current) return null;
         setBots(items);
         setBotsFailed(false);
         return items;
       })
       .catch(() => {
+        if (requestId !== botsRequestId.current) return null;
         setBots([]);
         setBotsFailed(true);
         return null;
@@ -142,9 +146,12 @@ export const BotSettingsDialog: FC = () => {
   }, []);
 
   useEffect(() => {
+    const requestId = ++botsRequestId.current;
     if (!isEditingBotSettings) {
       setBotsLoaded(false);
-      return;
+      return () => {
+        ++botsRequestId.current;
+      };
     }
     setBotsLoaded(false);
     setBotsFailed(false);
@@ -153,9 +160,11 @@ export const BotSettingsDialog: FC = () => {
     setBotUsername("");
     setBotTitle("");
     setBotSearch("");
+    setActiveTabIndex(0);
     replaceSettings(emptySettings);
     Promise.allSettled([
       fetchBots().then((loadedBots) => {
+        if (requestId !== botsRequestId.current) return;
         if (!loadedBots) {
           setBotsLoaded(false);
           toast({
@@ -173,9 +182,16 @@ export const BotSettingsDialog: FC = () => {
         }
       }),
       fetch<BotSettings>("/bots/default-settings")
-        .then(setDefaultSettings)
+        .then((items) => {
+          if (requestId === botsRequestId.current) setDefaultSettings(items);
+        })
         .catch(() => undefined),
-    ]).finally(() => setLoading(false));
+    ]).finally(() => {
+      if (requestId === botsRequestId.current) setLoading(false);
+    });
+    return () => {
+      ++botsRequestId.current;
+    };
   }, [isEditingBotSettings]);
 
   useEffect(() => {
@@ -496,7 +512,13 @@ export const BotSettingsDialog: FC = () => {
       .finally(() => setDeleting(false));
   };
 
-  const soloPanel = botsLoaded && !botsFailed && isSoloPanel(bots.length);
+  const profileTabVisible = botsLoaded && !botsFailed && bots.length === 0;
+
+  useEffect(() => {
+    if (!profileTabVisible && activeTabIndex === 2) {
+      setActiveTabIndex(0);
+    }
+  }, [activeTabIndex, profileTabVisible]);
 
   return (
     <Modal
@@ -511,12 +533,9 @@ export const BotSettingsDialog: FC = () => {
           <HStack justify="space-between" align="center" w="full">
             <Box>
               <Text fontSize="lg" fontWeight="semibold">
-                {soloPanel
-                  ? t("botSettings.subscriptionTitle")
-                  : t("botSettings.title")}
+                {t("botSettings.title")}
               </Text>
             </Box>
-            {!soloPanel && (
             <Popover
               placement="bottom-start"
               isOpen={isBotListOpen}
@@ -643,7 +662,6 @@ export const BotSettingsDialog: FC = () => {
                 </PopoverBody>
               </PopoverContent>
             </Popover>
-            )}
           </HStack>
         </ModalHeader>
         <ModalCloseButton />
@@ -654,15 +672,20 @@ export const BotSettingsDialog: FC = () => {
             scrollbarGutter: "stable",
           }}
         >
-          {soloPanel ? (
-            <SubscriptionProfileForm />
-          ) : (
-          <Tabs variant="enclosed" colorScheme="primary">
+          <Tabs
+            variant="enclosed"
+            colorScheme="primary"
+            index={activeTabIndex}
+            onChange={setActiveTabIndex}
+            isLazy
+            lazyBehavior="keepMounted"
+          >
             <TabList overflowX="auto" overflowY="hidden" whiteSpace="nowrap">
               <Tab>{t("botSettings.tabBotInfo")}</Tab>
               <Tab>{t("botSettings.tabSubscription")}</Tab>
+              {profileTabVisible && <Tab>{t("botSettings.tabPanelProfile")}</Tab>}
             </TabList>
-            {hasDraft && (
+            {hasDraft && activeTabIndex !== 2 && (
               <HStack
                 mt={2}
                 p={3}
@@ -937,13 +960,17 @@ export const BotSettingsDialog: FC = () => {
                   </Box>
                 </VStack>
               </TabPanel>
+              {profileTabVisible && (
+                <TabPanel>
+                  <SubscriptionProfileForm />
+                </TabPanel>
+              )}
             </TabPanels>
           </Tabs>
-          )}
         </ModalBody>
 
         <ModalFooter>
-          {soloPanel ? (
+          {profileTabVisible && activeTabIndex === 2 ? (
             <Button variant="ghost" onClick={close}>
               {t("cancel")}
             </Button>

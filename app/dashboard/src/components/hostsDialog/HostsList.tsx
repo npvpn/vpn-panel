@@ -134,7 +134,7 @@ export const HostsList: FC<Props> = ({
 
   const lastColumnWidthsRef = useRef<HostColumnWidths | null>(null);
 
-  const showBotColumn = bots.length >= 2;
+  const showBotColumn = true;
 
   const columnWidths = useMemo(() => {
     const DRAG = 32;

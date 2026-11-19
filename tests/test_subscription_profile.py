@@ -79,6 +79,20 @@ def test_user_with_bot_ignores_panel_subscription_profile(db):
     assert resolve_bot_settings(user)["sub_profile_title"] == "Бот"
 
 
+def test_unassigned_user_uses_default_settings_when_a_bot_exists(db):
+    from app.models.bot import SubscriptionProfilePayload, apply_bot_settings_fallback
+    from app.services.subscription_profile import save_subscription_profile
+    from app.subscription.bot_settings import resolve_bot_settings
+
+    save_subscription_profile(db, SubscriptionProfilePayload(sub_profile_title="Панель"))
+    db.add(Bot(username="only"))
+    user = User(username="unassigned", status=UserStatus.active)
+    db.add(user)
+    db.commit()
+
+    assert resolve_bot_settings(user)["sub_profile_title"] == apply_bot_settings_fallback(None)["sub_profile_title"]
+
+
 def test_profile_roundtrip_keeps_only_subscription_fields(db):
     from app.models.bot import SubscriptionProfilePayload
     from app.services.subscription_profile import get_subscription_profile, save_subscription_profile
@@ -92,3 +106,46 @@ def test_profile_roundtrip_keeps_only_subscription_fields(db):
     assert stored["show_ads"] is False
     assert stored["web_url"] == "https://vpn.example"
     assert "bot_url" not in stored
+    assert "sub_device_limit_hard_mode" not in stored
+
+
+def test_profile_does_not_override_panel_hard_mode(db):
+    from app.models.bot import SubscriptionProfilePayload
+    from app.models.settings import PanelSettingsPayload
+    from app.services.panel_settings import save_panel_settings
+    from app.services.subscription_profile import get_subscription_profile, save_subscription_profile
+    from app.subscription.bot_settings import resolve_bot_settings
+
+    save_panel_settings(db, PanelSettingsPayload(sub_device_limit_hard_mode=True))
+    save_subscription_profile(db, SubscriptionProfilePayload(sub_profile_title="Панель"))
+    user = User(username="solo", status=UserStatus.active)
+    db.add(user)
+    db.commit()
+
+    assert get_subscription_profile(db)["sub_profile_title"] == "Панель"
+    assert resolve_bot_settings(user)["sub_device_limit_hard_mode"] is True
+
+
+def test_users_without_bots_share_one_profile_query_per_session(db):
+    from app.models.bot import SubscriptionProfilePayload
+    from app.services.subscription_profile import save_subscription_profile
+    from app.subscription.bot_settings import resolve_bot_settings
+
+    save_subscription_profile(db, SubscriptionProfilePayload(sub_profile_title="Один профиль"))
+    users = [User(username=f"solo-{i}", status=UserStatus.active) for i in range(3)]
+    db.add_all(users)
+    db.commit()
+    db.info.clear()
+    queries = []
+
+    def count_profile_query(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if "global_settings" in statement and "SELECT" in statement:
+            queries.append(statement)
+
+    event.listen(db.get_bind(), "before_cursor_execute", count_profile_query)
+    try:
+        assert [resolve_bot_settings(user)["sub_profile_title"] for user in users] == ["Один профиль"] * 3
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", count_profile_query)
+
+    assert len(queries) == 2  # профиль и настройки панели, каждый читается один раз

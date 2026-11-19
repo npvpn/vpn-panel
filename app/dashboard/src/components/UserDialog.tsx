@@ -314,6 +314,12 @@ export const UserDialog: FC<UserDialogProps> = () => {
     resolver: zodResolver(schema),
   });
 
+  useEffect(() => {
+    if (isCreatingNewUser && botsLoaded && bots.length === 1 && !form.getValues("bot_username")) {
+      form.setValue("bot_username", bots[0].username);
+    }
+  }, [bots, botsLoaded, form, isCreatingNewUser]);
+
   useEffect(
     () =>
       useDashboard.subscribe(
@@ -916,7 +922,6 @@ export const UserDialog: FC<UserDialogProps> = () => {
                           </FormErrorMessage>
                         </FormControl>
 
-                        {(!botsLoaded || bots.length > 0) && (
                         <FormControl
                           mb={"10px"}
                           isInvalid={!!form.formState.errors.bot_username}
@@ -936,26 +941,34 @@ export const UserDialog: FC<UserDialogProps> = () => {
                               control={form.control}
                               name="bot_username"
                               render={({ field }) => (
-                                <ReactSelect<BotOption>
-                                  options={botOptions}
-                                  value={
-                                    botOptions.find(
-                                      (o) => o.value === field.value
-                                    ) ?? null
-                                  }
-                                  onChange={(option: BotOption | null) =>
-                                    field.onChange(option?.value ?? "")
-                                  }
-                                  placeholder={t("botSettings.selectBot")}
-                                  noOptionsMessage={() =>
-                                    t("botSettings.noBotsFound")
-                                  }
-                                  isSearchable
-                                  isClearable
-                                  styles={botSelectStyles}
-                                  menuPortalTarget={document.body}
-                                  menuPosition="fixed"
-                                />
+                                <Tooltip
+                                  label={t("botSettings.createBotToSelect")}
+                                  isDisabled={!botsLoaded || bots.length > 0}
+                                >
+                                  <Box>
+                                    <ReactSelect<BotOption>
+                                      options={botOptions}
+                                      value={
+                                        botOptions.find(
+                                          (o) => o.value === field.value
+                                        ) ?? null
+                                      }
+                                      onChange={(option: BotOption | null) =>
+                                        field.onChange(option?.value ?? "")
+                                      }
+                                      placeholder={t("botSettings.selectBot")}
+                                      noOptionsMessage={() =>
+                                        t("botSettings.noBotsFound")
+                                      }
+                                      isSearchable
+                                      isClearable
+                                      isDisabled={botsLoaded && bots.length === 0}
+                                      styles={botSelectStyles}
+                                      menuPortalTarget={document.body}
+                                      menuPosition="fixed"
+                                    />
+                                  </Box>
+                                </Tooltip>
                               )}
                             />
                             {/* <FormHelperText>
@@ -972,7 +985,6 @@ export const UserDialog: FC<UserDialogProps> = () => {
                             }
                           </FormErrorMessage>
                         </FormControl>
-                        )}
                       </Flex>
                       {error && (
                         <Alert

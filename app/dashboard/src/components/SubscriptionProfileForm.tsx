@@ -22,7 +22,6 @@ type SubscriptionProfile = {
   sub_update_interval: string;
   web_url: string;
   show_ads: boolean;
-  sub_device_limit_hard_mode: boolean;
   bs_extra_reset_pool_on_prolong: boolean;
 };
 
@@ -34,7 +33,6 @@ const EMPTY: SubscriptionProfile = {
   sub_update_interval: "",
   web_url: "",
   show_ads: true,
-  sub_device_limit_hard_mode: false,
   bs_extra_reset_pool_on_prolong: false,
 };
 
@@ -184,21 +182,6 @@ export const SubscriptionProfileForm: FC = () => {
         </HStack>
         <FormHelperText>
           {t("botSettings.bsExtraResetPoolOnProlongHint")}
-        </FormHelperText>
-      </FormControl>
-      <FormControl>
-        <HStack justify="space-between">
-          <FormLabel mb={0}>{t("botSettings.subDeviceLimitHardMode")}</FormLabel>
-          <Switch
-            colorScheme="primary"
-            isChecked={profile.sub_device_limit_hard_mode}
-            onChange={(event) =>
-              update({ sub_device_limit_hard_mode: event.target.checked })
-            }
-          />
-        </HStack>
-        <FormHelperText>
-          {t("botSettings.subDeviceLimitHardModeHint")}
         </FormHelperText>
       </FormControl>
       <Button
