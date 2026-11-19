@@ -93,6 +93,22 @@ def test_unassigned_user_uses_default_settings_when_a_bot_exists(db):
     assert resolve_bot_settings(user)["sub_profile_title"] == apply_bot_settings_fallback(None)["sub_profile_title"]
 
 
+def test_creating_first_bot_invalidates_solo_profile_cache(db):
+    from app.db import crud
+    from app.models.bot import SubscriptionProfilePayload, apply_bot_settings_fallback
+    from app.services.subscription_profile import save_subscription_profile
+    from app.subscription.bot_settings import resolve_bot_settings
+
+    save_subscription_profile(db, SubscriptionProfilePayload(sub_profile_title="Панель"))
+    user = User(username="transition", status=UserStatus.active)
+    db.add(user)
+    db.commit()
+
+    assert resolve_bot_settings(user)["sub_profile_title"] == "Панель"
+    crud.create_bot(db, "only")
+    assert resolve_bot_settings(user)["sub_profile_title"] == apply_bot_settings_fallback(None)["sub_profile_title"]
+
+
 def test_profile_roundtrip_keeps_only_subscription_fields(db):
     from app.models.bot import SubscriptionProfilePayload
     from app.services.subscription_profile import get_subscription_profile, save_subscription_profile

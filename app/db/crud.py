@@ -2,12 +2,14 @@
 Functions for managing proxy hosts, users, user templates, nodes, and administrative tasks.
 """
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from enum import Enum
+from threading import Lock
 from typing import Any, Literal, cast
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
@@ -75,6 +77,26 @@ from config import (
     NOTIFY_REACHED_USAGE_PERCENT,
     USERS_AUTODELETE_DAYS,
 )
+
+_BOT_CREATION_LOCK = Lock()
+
+
+@contextmanager
+def _lock_bot_creation(db: Session):
+    """Serialize the 0→1→2 transition that materializes host bindings."""
+    if db.bind is not None and db.bind.dialect.name == "mysql":
+        connection = db.connection()
+        acquired = connection.execute(text("SELECT GET_LOCK('npvpn_bot_creation', 10)")).scalar()
+        if acquired != 1:
+            raise ValueError("Could not acquire bot creation lock")
+        try:
+            yield
+        finally:
+            connection.execute(text("SELECT RELEASE_LOCK('npvpn_bot_creation')"))
+        return
+
+    with _BOT_CREATION_LOCK:
+        yield
 
 
 def add_default_host(db: Session, inbound: ProxyInbound, *, commit: bool = True):
@@ -644,19 +666,22 @@ def create_bot(
     normalized = _normalize_bot_username(username)
     if not normalized:
         raise ValueError("Bot username is required")
-    if get_bot(db, normalized):
-        raise ValueError(f'Bot "{normalized}" already exists')
+    with _lock_bot_creation(db):
+        if get_bot(db, normalized):
+            raise ValueError(f'Bot "{normalized}" already exists')
 
-    bind_all_hosts_to_only_bot(db)
-    bot = Bot(
-        username=normalized,
-        title=title or None,
-        source_bot_id=source_bot_id,
-        admin_sync_enabled=admin_sync_enabled,
-    )
-    db.add(bot)
-    db.commit()
-    db.refresh(bot)
+        bind_all_hosts_to_only_bot(db)
+        bot = Bot(
+            username=normalized,
+            title=title or None,
+            source_bot_id=source_bot_id,
+            admin_sync_enabled=admin_sync_enabled,
+        )
+        db.add(bot)
+        db.commit()
+        db.refresh(bot)
+        db.info.pop("_is_solo_panel", None)
+
     _set_bot_web_url(db, bot, web_url)
     db.refresh(bot)
     return bot
@@ -686,6 +711,7 @@ def delete_bot(db: Session, bot: Bot) -> None:
         user.bot_id = None
     db.delete(bot)
     db.commit()
+    db.info.pop("_is_solo_panel", None)
 
 
 def get_or_create_bot_settings(db: Session, bot: Bot) -> BotSettings:
