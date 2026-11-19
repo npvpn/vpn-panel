@@ -20,11 +20,16 @@ class OperationKind(IntEnum):
     SOFT = 0
     RESTART = 1
     HARD = 2
+    APPLY = 3
 
 
 class NodeBusyError(RuntimeError):
     def __init__(self):
         super().__init__("Нода занята текущей операцией; повторите после её завершения")
+
+
+class NodeOperationSuperseded(RuntimeError):
+    """Настройки изменились; текущий RPC завершается, следующие шаги пропускаются."""
 
 
 class ConfigWave:
@@ -58,6 +63,7 @@ class Intent:
     future: Future = field(default_factory=Future)
     running: bool = False
     cancel_requested: bool = False
+    wake: threading.Event = field(default_factory=threading.Event)
 
 
 class NodeOperationScheduler:
@@ -79,6 +85,9 @@ class NodeOperationScheduler:
         self._waiting: OrderedDict[int, Intent] = OrderedDict()
         self._active: dict[int, Intent] = {}
         self._mutating: set[int] = set()
+        self._blocked: set[int] = set()
+        self._metadata_locks: dict[int, Any] = {}
+        self._local = threading.local()
         self._closed = False
         self._outcomes: Counter = Counter()
 
@@ -127,7 +136,7 @@ class NodeOperationScheduler:
         for node_id in list(self._waiting):
             if len(self._active) >= self.concurrency:
                 break
-            if node_id in self._active or node_id in self._mutating:
+            if node_id in self._active or node_id in self._mutating or node_id in self._blocked:
                 continue
             intent = self._waiting.pop(node_id)
             if intent.future.cancelled():
@@ -156,18 +165,25 @@ class NodeOperationScheduler:
             intent.running = start
         result = None
         error: BaseException | None = None
+        previous = getattr(self._local, "intent", None)
+        self._local.intent = intent
         try:
             if start:
                 result = self.execute(intent.node_id, intent.kind, wave.get)
+        except NodeOperationSuperseded:
+            result = False
         except BaseException as exc:
             error = exc
             logger.exception("[node.operation] node_id=%s kind=%s failed", intent.node_id, intent.kind.name)
         finally:
+            self._local.intent = previous
             with self._lock:
                 if self._active.get(intent.node_id) is intent:
                     del self._active[intent.node_id]
                 outcome = (
-                    "cancelled" if not start else ("failed" if error is not None or result is False else "completed")
+                    "cancelled"
+                    if not start or intent.cancel_requested
+                    else ("failed" if error is not None or result is False else "completed")
                 )
                 self._outcomes[(intent.kind.name.lower(), outcome)] += 1
                 failures = self._dispatch()
@@ -180,6 +196,76 @@ class NodeOperationScheduler:
             if not start:
                 intent.future.cancel()
             self._fail(failures)
+
+    @contextmanager
+    def metadata(self, node_id: int):
+        # Only this node's SQL publication/save, never RPC or the global mutex.
+        with self._lock:
+            lock = self._metadata_locks.setdefault(node_id, threading.RLock())
+        with lock:
+            yield
+
+    def is_current(self, node_id: int) -> bool:
+        intent = getattr(self._local, "intent", None)
+        return intent is None or intent.node_id != node_id or not intent.cancel_requested
+
+    def wait_current(self, node_id: int, delay: float) -> None:
+        intent = getattr(self._local, "intent", None)
+        if intent is None:
+            time.sleep(delay)
+        else:
+            intent.wake.wait(delay)
+        self.check_current(node_id)
+
+    def check_current(self, node_id: int) -> None:
+        if not self.is_current(node_id):
+            raise NodeOperationSuperseded()
+
+    def _prepare_apply(self, node_id: int, *, priority: bool = True) -> Future:
+        active = self._active.get(node_id)
+        if active is not None and active.kind == OperationKind.APPLY and not active.cancel_requested:
+            return active.future
+        if active is not None:
+            active.cancel_requested = True
+            active.wake.set()
+        self._blocked.add(node_id)
+        future = self._admit(node_id, OperationKind.APPLY, manual=True)
+        if priority:
+            self._waiting.move_to_end(node_id, last=False)
+        return future
+
+    def prepare_apply(self, node_id: int, *, priority: bool = True) -> Future:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("node scheduler shutdown")
+            return self._prepare_apply(node_id, priority=priority)
+
+    def ready(self, node_id: int, expected: Future | None = None) -> None:
+        with self._lock:
+            waiting = self._waiting.get(node_id)
+            if expected is not None and (waiting is None or waiting.future is not expected):
+                return
+            self._blocked.discard(node_id)
+            failures = self._dispatch()
+        self._fail(failures)
+
+    @contextmanager
+    def edit(self, node_id: int):
+        with self.metadata(node_id):
+            with self._lock:
+                if self._closed:
+                    raise RuntimeError("node scheduler shutdown")
+                if node_id in self._mutating:
+                    raise NodeBusyError()
+            yield
+            with self._lock:
+                active = self._active.get(node_id)
+                if active is not None:
+                    active.cancel_requested = True
+                    active.wake.set()
+                self._prepare_apply(node_id)
+            if active is not None and not active.running:
+                active.future.cancel()
 
     def pending(self, node_id: int) -> bool:
         with self._lock:
@@ -205,18 +291,20 @@ class NodeOperationScheduler:
         active = self._active.get(node_id)
         if active is not None and not active.running:
             active.cancel_requested = True
+            active.wake.set()
             cancelled.append(active.future)
         return cancelled
 
     @contextmanager
     def mutation(self, node_id: int):
-        with self._lock:
-            active = self._active.get(node_id)
-            if node_id in self._mutating or (active is not None and active.running):
-                raise NodeBusyError()
-            self._mutating.add(node_id)
-            cancelled = self._cancel_queued(node_id)
-            failures = self._dispatch()
+        with self.metadata(node_id):
+            with self._lock:
+                active = self._active.get(node_id)
+                if node_id in self._mutating or (active is not None and active.running):
+                    raise NodeBusyError()
+                self._mutating.add(node_id)
+                cancelled = self._cancel_queued(node_id)
+                failures = self._dispatch()
         for future in cancelled:
             future.cancel()
         self._fail(failures)
@@ -225,6 +313,7 @@ class NodeOperationScheduler:
         finally:
             with self._lock:
                 self._mutating.discard(node_id)
+                self._blocked.discard(node_id)
                 failures = self._dispatch()
             self._fail(failures)
 

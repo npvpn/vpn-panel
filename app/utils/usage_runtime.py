@@ -29,6 +29,8 @@ def ready_apis(nodes: dict) -> dict:
     ready = {}
     for node_id, node in list(nodes.items()):
         cached = vars(node)
+        if cached.get("_superseded", False):
+            continue
         rest_ready = cached.get("_started") is True and bool(cached.get("_session_id"))
         rpyc_ready = cached.get("started") is True and cached.get("connection") is not None
         api = cached.get("_api")
@@ -122,6 +124,8 @@ class UsageState:
         self._revision = 0
         self._collecting: Counter = Counter()
         self._mutating: set[int] = set()
+        self._paused: set[int] = set()
+        self._idle_callbacks: dict[int, Callable[[], None]] = {}
         self._stamps: dict[tuple[int, str], UsageStamp] = {}
         self._errors: Counter = Counter()
         self._ticks: Counter = Counter()
@@ -141,7 +145,10 @@ class UsageState:
         # no registry mutex is held across network or database work.
         with self._lock:
             if node_id is not None and (
-                epoch is None or self._epochs.get(node_id) != epoch or node_id in self._mutating
+                epoch is None
+                or self._epochs.get(node_id) != epoch
+                or node_id in self._mutating
+                or node_id in self._paused
             ):
                 raise StaleObservationError()
             self._collecting[node_id] += 1
@@ -149,14 +156,57 @@ class UsageState:
 
         def release():
             nonlocal released
+            callback = None
             with self._lock:
                 if not released:
                     self._collecting[node_id] -= 1
                     if not self._collecting[node_id]:
                         del self._collecting[node_id]
+                        callback = self._idle_callbacks.pop(node_id, None)
                     released = True
+            if callback is not None:
+                callback()
 
         return release
+
+    def pause(self, node_id: int) -> None:
+        with self._lock:
+            if node_id not in self._paused:
+                self._paused.add(node_id)
+                self._revision += 1
+
+    def is_paused(self, node_id: int) -> bool:
+        with self._lock:
+            return node_id in self._paused
+
+    def resume(self, node_id: int) -> None:
+        with self._lock:
+            self._paused.discard(node_id)
+            self._idle_callbacks.pop(node_id, None)
+            self._revision += 1
+
+    def when_idle(self, node_id: int, callback: Callable[[], None]) -> None:
+        with self._lock:
+            if self._collecting[node_id]:
+                self._idle_callbacks[node_id] = callback
+                return
+        callback()
+
+    @contextmanager
+    def edit(self, node_id: int):
+        # Caller serializes edits per node. Existing leases retain their delta.
+        with self._lock:
+            paused = node_id in self._paused
+            self._paused.add(node_id)
+            self._revision += 1
+        try:
+            yield
+        except BaseException:
+            if not paused:
+                self.resume(node_id)
+            raise
+        else:
+            self.retire_node(node_id)
 
     @contextmanager
     def mutation(self, node_id: int):
@@ -193,6 +243,10 @@ class UsageState:
             if revision is not None and revision != self._revision:
                 raise StaleObservationError()
             enabled = {node: name for node, name in enabled.items() if node not in self._mutating}
+            # A tentative edit hides collection tokens, but rollback must retain
+            # the old epoch and freshness even if metadata was observed meanwhile.
+            enabled.update({node: name for node, name in self._names.items() if node in self._paused})
+            enabled = {node: name for node, name in enabled.items() if node not in self._paused or node in self._names}
             if self._names != enabled:
                 self._revision += 1
             now = self.clock()
@@ -206,7 +260,7 @@ class UsageState:
                 for kind in self.periods:
                     self._stamps[(node, kind)] = UsageStamp(now)
             self._names = dict(enabled)
-            return dict(self._epochs)
+            return {node: epoch for node, epoch in self._epochs.items() if node not in self._paused}
 
     def mark_success(self, node_id, kind, epoch):
         with self._lock:

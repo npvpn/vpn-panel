@@ -300,7 +300,7 @@ def test_queued_retired_collection_does_not_reset_or_write(pipeline, monkeypatch
     assert remote.calls == 0
 
 
-@pytest.mark.parametrize("action", ["edit", "delete"])
+@pytest.mark.parametrize("action", ["delete"])
 def test_node_mutation_is_busy_until_collected_delta_is_written(pipeline, monkeypatch, action):
     """Изменять владельца/коэффициент между reset и SQL нельзя."""
     from unittest.mock import Mock
@@ -360,3 +360,72 @@ def test_node_mutation_is_busy_until_collected_delta_is_written(pipeline, monkey
             release_write.set()
             thread.join(4)
     assert not errors and not thread.is_alive()
+
+
+def test_edit_after_reset_writes_old_delta_once_before_apply(pipeline, monkeypatch):
+    """Смена коэффициента/БС после reset не меняет атрибуцию уже считанной delta."""
+    from unittest.mock import Mock
+
+    from fastapi import BackgroundTasks
+
+    from app.db.models import Node as DBNode
+    from app.db.models import NodeUserBsUsage, NodeUserUsage, User
+    from app.models.node import NodeModify
+    from app.utils.usage_runtime import UsageState
+    from app.xray.node_operations import NodeOperationScheduler
+    from tests.test_node_operation_routes import load_route
+    from tests.test_node_operations import Executor
+
+    job, engine = pipeline
+    actual_update = job.crud.update_node
+    route, operations = load_route(monkeypatch)
+    state = UsageState()
+    monkeypatch.setattr(job, "usage_state", state)
+    monkeypatch.setattr(route.node_lifecycle, "usage_state", state)
+    executor = Executor()
+    control = NodeOperationScheduler(executor, Mock(), lambda: {}, concurrency=1)
+    monkeypatch.setattr(operations, "get_node_scheduler", lambda: control)
+    api = API(1)
+    monkeypatch.setattr(job, "xray", SimpleNamespace(api=API(None), nodes={1: Node(api)}))
+    ready, resume = threading.Event(), threading.Event()
+    original_write = job._record_user_node
+
+    def delayed_write(params, node_id, *args):
+        if node_id == 1:
+            ready.set()
+            assert resume.wait(5)
+        return original_write(params, node_id, *args)
+
+    monkeypatch.setattr(job, "_record_user_node", delayed_write)
+    route.crud.update_node.side_effect = actual_update
+    errors = []
+
+    with ThreadPoolExecutor(max_workers=2) as usage_executor:
+        monkeypatch.setattr(job, "get_usage_executor", lambda: usage_executor)
+
+        def run():
+            try:
+                job.record_user_usages()
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        try:
+            assert ready.wait(5), errors
+            with Session(engine) as db:
+                route.modify_node(
+                    NodeModify(usage_coefficient=2, is_bs=True), BackgroundTasks(), db.get(DBNode, 1), db, Mock()
+                )
+            assert not executor.jobs
+        finally:
+            resume.set()
+            thread.join(5)
+    assert not thread.is_alive() and not errors
+    assert api.calls == 1 and len(executor.jobs) == 1
+    with Session(engine) as db:
+        assert db.get(User, 1).used_traffic == 100
+        assert db.query(NodeUserUsage.used_traffic).filter_by(node_id=1).scalar() == 100
+        assert db.query(NodeUserBsUsage).count() == 0
+        assert db.get(DBNode, 1).usage_coefficient == 2
+        assert db.get(DBNode, 1).config_apply_pending is True

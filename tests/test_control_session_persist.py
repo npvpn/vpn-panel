@@ -48,7 +48,11 @@ def test_add_node_listener_persists_session_id():
         listener = created.set_control_session_listener.call_args.args[0]
         listener("33333333-3333-3333-3333-333333333333")
 
-    persist.assert_called_once_with(4, "33333333-3333-3333-3333-333333333333")
+    persist.assert_called_once_with(
+        4,
+        "33333333-3333-3333-3333-333333333333",
+        endpoint={"address": "10.0.0.8", "port": 62050, "api_port": 62051, "protocol": "rest"},
+    )
 
 
 def test_control_session_is_committed_and_can_be_cleared(tmp_path):
@@ -79,6 +83,7 @@ def test_replaced_node_cannot_overwrite_new_control_session(tmp_path):
 
     dbnode = MagicMock()
     dbnode.id = 4
+    dbnode.address, dbnode.port, dbnode.api_port, dbnode.protocol = "10.0.0.8", 62050, 62051, "rest"
     old_node = MagicMock()
     new_node = MagicMock()
     entered_persist = threading.Event()
@@ -87,12 +92,12 @@ def test_replaced_node_cannot_overwrite_new_control_session(tmp_path):
     errors: list[BaseException] = []
     original_persist = operations._persist_control_session
 
-    def delayed_persist(node_id, session_id):
+    def delayed_persist(node_id, session_id, **kwargs):
         if session_id == "old-session":
             entered_persist.set()
             if not resume_persist.wait(5):
                 raise TimeoutError("old publication was not released")
-        original_persist(node_id, session_id)
+        original_persist(node_id, session_id, **kwargs)
 
     def run_old(listener):
         try:

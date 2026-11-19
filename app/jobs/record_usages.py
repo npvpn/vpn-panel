@@ -327,6 +327,7 @@ def _usage_context():
     apis = {None: (xray.api, 1)}
     apis.update({node: value for node, value in ready_apis(xray.nodes).items() if node in enabled})
     tokens = usage_state.observe_nodes(enabled, revision=revision)
+    apis = {node: value for node, value in apis.items() if node is None or node in tokens}
     return apis, owners, tokens
 
 

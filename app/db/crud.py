@@ -77,7 +77,7 @@ from config import (
 )
 
 
-def add_default_host(db: Session, inbound: ProxyInbound):
+def add_default_host(db: Session, inbound: ProxyInbound, *, commit: bool = True):
     """
     Adds a default host to a proxy inbound.
 
@@ -87,10 +87,13 @@ def add_default_host(db: Session, inbound: ProxyInbound):
     """
     host = ProxyHost(remark="🚀 Marz ({USERNAME}) [{PROTOCOL} - {TRANSPORT}]", address="{SERVER_IP}", inbound=inbound)
     db.add(host)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
 
-def get_or_create_inbound(db: Session, inbound_tag: str) -> ProxyInbound:
+def get_or_create_inbound(db: Session, inbound_tag: str, *, commit: bool = True) -> ProxyInbound:
     """
     Retrieves or creates a proxy inbound based on the given tag.
 
@@ -105,8 +108,11 @@ def get_or_create_inbound(db: Session, inbound_tag: str) -> ProxyInbound:
     if not inbound:
         inbound = ProxyInbound(tag=inbound_tag)
         db.add(inbound)
-        db.commit()
-        add_default_host(db, inbound)
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+        add_default_host(db, inbound, commit=commit)
         db.refresh(inbound)
     return inbound
 
@@ -2024,7 +2030,9 @@ def get_node_by_id(db: Session, node_id: int) -> Node | None:
     return db.query(Node).filter(Node.id == node_id).first()
 
 
-def get_nodes(db: Session, status: NodeStatus | list | None = None, enabled: bool = None) -> list[Node]:
+def get_nodes(
+    db: Session, status: NodeStatus | list | None = None, enabled: bool = None, *, include_pending: bool = False
+) -> list[Node]:
     """
     Retrieves nodes based on optional status and enabled filters.
 
@@ -2045,7 +2053,10 @@ def get_nodes(db: Session, status: NodeStatus | list | None = None, enabled: boo
             query = query.filter(Node.status == status)
 
     if enabled:
-        query = query.filter(Node.status != NodeStatus.disabled)
+        criterion = Node.status != NodeStatus.disabled
+        if include_pending:
+            criterion = or_(criterion, Node.config_apply_pending.is_(True))
+        query = query.filter(criterion)
 
     return query.all()
 
@@ -2109,13 +2120,13 @@ def get_nodes_usage(
     return list(usages.values()), traffic_source
 
 
-def _sync_cascade_routes(db: Session, dbnode: Node, routes) -> None:
+def _sync_cascade_routes(db: Session, dbnode: Node, routes, *, commit_inbounds: bool = True) -> None:
     """Переписать cascade_routes входной ноды из API-моделей CascadeRouteModel."""
     dbnode.cascade_routes = [
         CascadeRoute(
             exit_node_id=r.exit_node_id,
-            entry_inbound_tag=get_or_create_inbound(db, r.entry_inbound_tag).tag,
-            cascade_inbound_tag=get_or_create_inbound(db, r.cascade_inbound_tag).tag,
+            entry_inbound_tag=get_or_create_inbound(db, r.entry_inbound_tag, commit=commit_inbounds).tag,
+            cascade_inbound_tag=get_or_create_inbound(db, r.cascade_inbound_tag, commit=commit_inbounds).tag,
         )
         for r in routes
     ]
@@ -2174,7 +2185,7 @@ def remove_node(db: Session, dbnode: Node) -> Node:
     return dbnode
 
 
-def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
+def update_node(db: Session, dbnode: Node, modify: NodeModify, *, commit: bool = True) -> Node:
     """
     Updates an existing node with new information.
 
@@ -2186,6 +2197,31 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
     Returns:
         Node: The updated Node object.
     """
+    # Dependency resolution may have loaded this instance before the previous
+    # APPLY acknowledged it. FOR UPDATE is a current read on MySQL as well.
+    db.refresh(dbnode, with_for_update=True)
+    was_stopped = dbnode.status == NodeStatus.disabled and not dbnode.config_apply_pending
+    dbnode.config_apply_pending = True
+    if dbnode.config_apply_endpoint is None:
+        dbnode.config_apply_endpoint = {
+            "address": dbnode.address,
+            "port": dbnode.port,
+            "api_port": dbnode.api_port,
+            "protocol": dbnode.protocol.value,
+            "control_session_id": dbnode.control_session_id,
+            "stopped": was_stopped,
+        }
+    if any(
+        getattr(modify, key) is not None and getattr(modify, key) != getattr(dbnode, key)
+        for key in ("address", "port", "api_port", "protocol")
+    ):
+        dbnode.control_session_id = None
+    # All new tag locks are acquired in the same order, including cascade tags.
+    tags = set(modify.inbounds or [])
+    for route in modify.cascade_routes or []:
+        tags.update((route.entry_inbound_tag, route.cascade_inbound_tag))
+    for tag in sorted(tags):
+        get_or_create_inbound(db, tag, commit=False)
     if modify.name is not None:
         dbnode.name = modify.name
 
@@ -2201,8 +2237,8 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
     if modify.protocol is not None:
         dbnode.protocol = modify.protocol
 
-    if modify.status is NodeStatus.disabled:
-        dbnode.status = modify.status
+    if modify.status is NodeStatus.disabled or (modify.status is None and dbnode.status == NodeStatus.disabled):
+        dbnode.status = NodeStatus.disabled
         dbnode.xray_version = None
         dbnode.message = None
     else:
@@ -2212,7 +2248,7 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
         dbnode.usage_coefficient = modify.usage_coefficient
 
     if modify.inbounds is not None:
-        dbnode.inbounds = [get_or_create_inbound(db, tag) for tag in modify.inbounds]
+        dbnode.inbounds = [get_or_create_inbound(db, tag, commit=False) for tag in modify.inbounds]
 
     if modify.role is not None:
         _apply_node_role(dbnode, modify.role)
@@ -2224,7 +2260,7 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
         dbnode.cascade_balancer_strategy = modify.cascade_balancer_strategy
 
     if modify.cascade_routes is not None:
-        _sync_cascade_routes(db, dbnode, modify.cascade_routes)
+        _sync_cascade_routes(db, dbnode, modify.cascade_routes, commit_inbounds=False)
 
     if "hosting_traffic_limit_bytes" in modify.model_fields_set:
         cast(Any, dbnode).hosting_traffic_limit_bytes = modify.hosting_traffic_limit_bytes
@@ -2232,8 +2268,11 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
     if "owner_bot_id" in modify.model_fields_set:
         cast(Any, dbnode).owner_bot_id = modify.owner_bot_id
 
-    db.commit()
-    db.refresh(dbnode)
+    if commit:
+        db.commit()
+        db.refresh(dbnode)
+    else:
+        db.flush()
     return dbnode
 
 
