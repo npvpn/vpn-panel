@@ -24,6 +24,7 @@ from contextlib import AbstractContextManager
 
 from prometheus_client import REGISTRY
 from prometheus_client.core import GaugeMetricFamily
+from sqlalchemy.sql.elements import ColumnElement
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ class NodeRoleCollector:
             raise RuntimeError("live xray inbound tags are empty")
 
         # is_disabled nullable: NULL в старых строках = хост включён.
-        serving = ProxyHost.is_disabled.is_not(True) & ProxyHost.inbound_tag.in_(live_tags)
+        serving: ColumnElement[bool] = ProxyHost.is_disabled.is_not(True) & ProxyHost.inbound_tag.in_(live_tags)
         with self._session_factory() as db:
             nodes = db.query(Node.id, Node.name, Node.address).filter(Node.status != NodeStatus.disabled).all()
             hosts = db.query(ProxyHost.inbound_tag, ProxyHost.address).filter(serving).all()

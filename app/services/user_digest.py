@@ -7,10 +7,12 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
+from sqlalchemy import Row
+from sqlalchemy.orm import Query, Session
 
 from app.db.crud import _normalize_bot_username
 from app.db.models import Admin, Bot, User
+from app.models.user import UserStatus
 
 
 def get_users_digest(
@@ -22,7 +24,7 @@ def get_users_digest(
     limit: int | None = None,
 ) -> tuple[list[dict], int]:
     """Возвращает (список из {username, status, expire}, общее количество)."""
-    query = db.query(User.username, User.status, User.expire)
+    query: Query[Row[str, UserStatus, int | None]] = db.query(User.username, User.status, User.expire)
 
     if bot_username:
         normalized = _normalize_bot_username(bot_username)

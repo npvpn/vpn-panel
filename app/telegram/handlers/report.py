@@ -1,5 +1,6 @@
 import datetime
 from datetime import datetime
+from typing import cast
 
 from telebot.apihelper import ApiTelegramException
 from telebot.formatting import escape_html
@@ -157,7 +158,7 @@ def report_user_data_reset_by_next(user: User, admin: Admin = None):
 <b>Expire Date :</b> <code>{expire_date}</code>
 ➖➖➖➖➖➖➖➖➖
     """.format(
-        username=escape_html(user.username),
+        username=escape_html(cast(str, user.username)),
         data_limit=readable_size(user.data_limit) if user.data_limit else "Unlimited",
         expire_date=datetime.fromtimestamp(user.expire).strftime("%H:%M:%S %Y-%m-%d") if user.expire else "Never",
     )
