@@ -351,7 +351,7 @@
   "userDialog.subRoutingV2raytunHint": "Leave empty to use panel default (SUB_ROUTING_V2RAYTUN from env).",
   "userDialog.botUsername": "Bot",
   "userDialog.noBot": "Without bot",
-  "userDialog.botUsernameHint": "A user without a bot gets the panel subscription profile.",
+  "userDialog.botUsernameHint": "Without bots, a user gets the panel subscription profile; otherwise, the default settings apply.",
   "filters.allBots": "All bots",
   "header.botSettings": "Bot Settings",
   "header.panelSettings": "Panel settings",

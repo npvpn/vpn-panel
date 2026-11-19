@@ -351,7 +351,7 @@
   "userDialog.subRoutingV2raytunHint": "Пусто — использовать значение панели по умолчанию (SUB_ROUTING_V2RAYTUN из env).",
   "userDialog.botUsername": "Бот",
   "userDialog.noBot": "Без бота",
-  "userDialog.botUsernameHint": "Пользователь без бота получает профиль подписки панели.",
+  "userDialog.botUsernameHint": "Без ботов пользователь получает профиль подписки панели; при наличии ботов — настройки по умолчанию.",
   "filters.allBots": "Все боты",
   "header.botSettings": "Настройки бота",
   "header.panelSettings": "Настройки панели",

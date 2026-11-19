@@ -312,7 +312,7 @@
   "userDialog.subRoutingV2raytunHint": "خالی بگذارید تا مقدار پیش‌فرض پنل (SUB_ROUTING_V2RAYTUN در env) استفاده شود.",
   "userDialog.botUsername": "ربات",
   "userDialog.noBot": "بدون ربات",
-  "userDialog.botUsernameHint": "برای کاربران بدون ربات، تنظیمات از env خوانده می‌شود.",
+  "userDialog.botUsernameHint": "بدون ربات، کاربر پروفایل اشتراک پنل را می‌گیرد؛ در غیر این صورت تنظیمات پیش‌فرض اعمال می‌شود.",
   "filters.allBots": "همه ربات‌ها",
   "header.botSettings": "تنظیمات ربات",
   "header.panelSettings": "تنظیمات پنل",
