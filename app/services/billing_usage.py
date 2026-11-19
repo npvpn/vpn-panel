@@ -6,10 +6,11 @@ app.models.admin, app.utils.responses), из-за чего его нельзя �
 только SQLAlchemy — и сбор проверяется тестами без поднятия приложения.
 """
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Row, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import Bot, BotBsDaily, ProxyHost, User, UserDevice, host_bot_association
@@ -51,7 +52,7 @@ def collect_bot_usage(db: Session, period_from: datetime, period_to: datetime) -
 
     Хосты и устройства — срез на сейчас, трафик — накопление за [from, to).
     """
-    rented_rows = (
+    rented_rows: Sequence[Row[str, ProxyHost]] = (
         db.execute(
             select(Bot.username, ProxyHost)
             .select_from(host_bot_association)

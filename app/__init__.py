@@ -11,7 +11,6 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.utils.request_context import (
@@ -28,6 +27,7 @@ app = FastAPI(
     title="MarzbanAPI",
     description="Unified GUI Censorship Resistant Solution Powered by Xray",
     version=__version__,
+    generate_unique_id_function=lambda route: route.name,
     docs_url="/docs" if DOCS else None,
     redoc_url="/redoc" if DOCS else None,
 )
@@ -215,15 +215,6 @@ from app import dashboard, jobs, routers, telegram  # noqa
 from app.routers import api_router  # noqa
 
 app.include_router(api_router)
-
-
-def use_route_names_as_operation_ids(app: FastAPI) -> None:
-    for route in app.routes:
-        if isinstance(route, APIRoute):
-            route.operation_id = route.name
-
-
-use_route_names_as_operation_ids(app)
 
 
 def _setup_file_logging() -> None:

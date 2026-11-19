@@ -4,7 +4,7 @@ from operator import attrgetter
 from typing import Any
 
 from pymysql.err import OperationalError
-from sqlalchemy import and_, bindparam, insert, select, text, update
+from sqlalchemy import Select, and_, bindparam, insert, select, text, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -70,7 +70,7 @@ def record_user_stats(params: list, node_id: int | None, consumption_factor: int
 
     with GetDB() as db:
         # make user usage row if doesn't exist
-        select_stmt = select(NodeUserUsage.user_id).where(
+        select_stmt: Select[int | None] = select(NodeUserUsage.user_id).where(
             and_(NodeUserUsage.node_id == node_id, NodeUserUsage.created_at == created_at)
         )
         existings = [r[0] for r in db.execute(select_stmt).fetchall()]
@@ -278,7 +278,7 @@ def record_node_stats(params: dict, node_id: int | None):
 
     with GetDB() as db:
         # make node usage row if doesn't exist
-        select_stmt = select(NodeUsage.node_id).where(
+        select_stmt: Select[int | None] = select(NodeUsage.node_id).where(
             and_(NodeUsage.node_id == node_id, NodeUsage.created_at == created_at)
         )
         notfound = db.execute(select_stmt).first() is None

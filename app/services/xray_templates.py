@@ -194,11 +194,12 @@ def list_documents(db: Session) -> list[dict[str, Any]]:
 
 
 def _bound_hosts(db: Session, template_id: int) -> list[dict[str, str]]:
-    rows = (
+    rows = cast(
+        list[tuple[str, str]],
         db.query(ProxyHost.remark, ProxyHost.inbound_tag)
         .filter(ProxyHost.client_config_id == template_id)
         .order_by(ProxyHost.id)
-        .all()
+        .all(),
     )
     return [{"remark": remark, "inbound_tag": inbound_tag} for remark, inbound_tag in rows]
 

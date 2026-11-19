@@ -1,0 +1,8 @@
+{
+  "password": "dependency-test-password",
+  "secret": "npvpn-2403-test-secret-32-bytes-minimum",
+  "argon2": "$argon2id$v=19$m=65536,t=3,p=4$5TxHKIVQqrUW4jzHeA+BsA$ct7RDIRUMQqdWf0TBT0UgPFcnA4XA5pErX8YNaf+efo",
+  "bcrypt": "$2b$12$B7ssIo6q1rmX4GoWiCyg2u2LC4lBYVq6MTkQCNx5qpNrZw3/plCMi",
+  "compact": "Y29tcGFjdF91c2VyLDE3OTUwMDk2MzIefq670VjVD",
+  "legacy": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsZWdhY3lfdXNlciIsImFjY2VzcyI6InN1YnNjcmlwdGlvbiIsImlhdCI6MTcwMDAwMDAwMH0.8yI6KVP0bw6sEHeJ7aCCQWDdRAXHqltd20227EwVZHY"
+}
