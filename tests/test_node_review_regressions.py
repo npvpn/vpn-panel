@@ -490,3 +490,115 @@ def test_reconnect_with_pending_settings_continues_apply_after_accounting(monkey
     release()
     executor.run()
     apply.assert_called_once()
+
+
+def _pending_stop_endpoint(node_database, status, address):
+    engine, Session, Node, NodeModify, crud = node_database
+    with Session(engine) as db:
+        row = Node(
+            id=7,
+            name="node",
+            address="192.0.2.1",
+            port=62050,
+            api_port=62051,
+            status=NodeStatus.connected,
+            control_session_id="old-session",
+        )
+        db.add(row)
+        db.commit()
+        crud.update_node(db, row, NodeModify(address=address, status=status))
+        return dict(row.config_apply_endpoint)
+
+
+@pytest.mark.parametrize("status", [NodeStatus.disabled, NodeStatus.connecting])
+@pytest.mark.parametrize("edit_during_stop", [False, True])
+def test_confirmed_stop_survives_crash_before_next_apply_step(monkeypatch, node_database, status, edit_during_stop):
+    """После stop старый сервер может исчезнуть: recovery не требует второго stop."""
+    lifecycle, ops, state, executor, scheduler = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    _pending_stop_endpoint(node_database, status, "192.0.2.2")
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+    monkeypatch.setattr(lifecycle, "crud", real_crud)
+    transport = Mock()
+    stopped = []
+
+    def stop():
+        if edit_during_stop:
+            with Session(engine) as db:
+                lifecycle.modify_node(db, db.get(Node, 7), NodeModify(address="192.0.2.3", status=status), Mock())
+        stopped.append(True)
+
+    transport.stop.side_effect = stop
+    monkeypatch.setattr(ops, "add_node", Mock(return_value=transport))
+
+    class ProcessCrash(BaseException):
+        pass
+
+    def remove(*_args, **_kwargs):
+        if stopped:
+            raise ProcessCrash()
+
+    monkeypatch.setattr(ops, "remove_node", remove)
+    scheduler.execute = ops._execute_node_operation
+    first = ops.apply_node(7)
+    executor.run()
+    with pytest.raises(ProcessCrash):
+        first.result()
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.config_apply_pending is True
+        assert row.config_apply_endpoint["address"] == "192.0.2.1"
+        assert row.config_apply_endpoint["stopped"] is True
+        assert row.address == ("192.0.2.3" if edit_during_stop else "192.0.2.2")
+
+    # Lose the old worker/registry. Server A is now unavailable forever.
+    ops.xray.nodes.clear()
+    executor = Executor()
+    scheduler = NodeOperationScheduler(executor, ops._execute_node_operation, lambda: {}, concurrency=1)
+    monkeypatch.setattr(ops, "get_node_scheduler", lambda: scheduler)
+    old_server = Mock(side_effect=AssertionError("stopped endpoint must not be contacted again"))
+    monkeypatch.setattr(ops, "add_node", old_server)
+    monkeypatch.setattr(ops, "remove_node", Mock())
+    connect = Mock(return_value=True)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+    recovery = ops.apply_node(7, recover=True)
+    executor.run()
+    assert recovery.result() is True
+    old_server.assert_not_called()
+    transport.stop.assert_called_once()
+    assert connect.call_count == (0 if status == NodeStatus.disabled else 1)
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.config_apply_pending is False and row.config_apply_endpoint is None
+
+
+@pytest.mark.parametrize("replaced", [False, True])
+def test_stop_ack_preserves_latest_session_and_does_not_mark_another_endpoint(monkeypatch, node_database, replaced):
+    """Подтверждение относится к остановленному серверу, не к более новой цели."""
+    _, ops, _, _, _ = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    old_endpoint = _pending_stop_endpoint(node_database, NodeStatus.disabled, "192.0.2.1")
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+    monkeypatch.setattr(ops, "remove_node", Mock())
+    transport = Mock()
+
+    def stop():
+        with Session(engine) as db:
+            current = db.get(Node, 7)
+            current.config_apply_endpoint = {
+                **current.config_apply_endpoint,
+                "address": "192.0.2.2" if replaced else "192.0.2.1",
+                "control_session_id": "latest-session",
+            }
+            db.commit()
+
+    transport.stop.side_effect = stop
+    monkeypatch.setattr(ops, "add_node", Mock(return_value=transport))
+    with Session(engine) as db:
+        ops._stop_apply_endpoint(7, db.get(Node, 7), old_endpoint)
+    with Session(engine) as db:
+        endpoint = db.get(Node, 7).config_apply_endpoint
+        assert endpoint["control_session_id"] == "latest-session"
+        assert endpoint["stopped"] is (not replaced)

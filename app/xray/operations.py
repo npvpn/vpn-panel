@@ -600,6 +600,20 @@ def _stop_apply_endpoint(node_id, dbnode, old_endpoint):
         # edit will retire it again before any late session publication.
         vars(transport)["_superseded"] = False
     transport.stop()
+    if old_endpoint is not None:
+        with scheduler.metadata(node_id):
+            # A completed stop is a fact even if a PUT superseded this intent.
+            # Persist it before cleanup/starting another endpoint can fail.
+            with GetDB() as db:
+                current = crud.get_node_by_id(db, node_id)
+                if current is None or not current.config_apply_pending:
+                    return
+                saved = current.config_apply_endpoint
+                if isinstance(saved, dict) and all(
+                    saved.get(key) == old_endpoint.get(key) for key in ("address", "port", "api_port", "protocol")
+                ):
+                    current.config_apply_endpoint = {**saved, "stopped": True}
+                    db.commit()
 
 
 def _record_apply_endpoint(node_id, target):
