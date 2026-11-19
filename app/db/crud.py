@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any, Literal, cast
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import Row, and_, delete, func, or_, select, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
@@ -134,7 +134,7 @@ def get_hosts(db: Session, inbound_tag: str) -> list[ProxyHost]:
 
 def _max_host_order(db: Session, exclude_inbound_tag: str | None = None) -> int:
     """Max hosts.order across the table (optionally excluding one inbound)."""
-    query = db.query(func.max(ProxyHost.order))
+    query: Query[Row[int | None]] = db.query(func.max(ProxyHost.order))
     if exclude_inbound_tag is not None:
         query = query.filter(ProxyHost.inbound_tag != exclude_inbound_tag)
     value = query.scalar()
@@ -247,11 +247,8 @@ def _prepare_host_injection(
 
     new_ids = referenced_ids(result["host_injection"]) - referenced_ids(target.host_injection if target else None)
     if new_ids:
-        found = (
-            source_ids
-            if source_ids is not None
-            else {id_ for (id_,) in db.query(ProxyHost.id).filter(ProxyHost.id.in_(new_ids)).all()}
-        )
+        host_ids: Query[Row[int]] = db.query(ProxyHost.id).filter(ProxyHost.id.in_(new_ids))
+        found = source_ids if source_ids is not None else {id_ for (id_,) in host_ids.all()}
         if new_ids - found:
             raise ValueError("host_injection: unknown source host IDs")
     return result
@@ -381,7 +378,8 @@ def update_hosts(
 
     incoming_id_set = set(incoming_ids)
     if source_ids is None:
-        source_ids = {id_ for (id_,) in db.query(ProxyHost.id).all()} - (set(existing) - incoming_id_set)
+        host_ids: Query[Row[int]] = db.query(ProxyHost.id)
+        source_ids = {id_ for (id_,) in host_ids.all()} - (set(existing) - incoming_id_set)
     placeholder_flags = [
         host.is_placeholder
         if host.id is None or "is_placeholder" in host.model_fields_set

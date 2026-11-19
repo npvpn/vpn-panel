@@ -5,9 +5,10 @@ from telebot.util import extract_arguments
 
 from app.db import GetDB, crud
 from app.models.user import UserResponse
-from app.telegram import bot
+from app.telegram import get_bot
 from app.utils.system import readable_size
 
+bot = get_bot()
 bot.add_custom_filter(ChatFilter())
 
 
