@@ -680,7 +680,6 @@ def create_bot(
         db.add(bot)
         db.commit()
         db.refresh(bot)
-        db.info.pop("_is_solo_panel", None)
 
     _set_bot_web_url(db, bot, web_url)
     db.refresh(bot)
@@ -711,7 +710,6 @@ def delete_bot(db: Session, bot: Bot) -> None:
         user.bot_id = None
     db.delete(bot)
     db.commit()
-    db.info.pop("_is_solo_panel", None)
 
 
 def get_or_create_bot_settings(db: Session, bot: Bot) -> BotSettings:

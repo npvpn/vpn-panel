@@ -117,7 +117,7 @@ export const HappSubscriptionPreview: FC<Props> = ({
     }
     let cancelled = false;
     const request = solo
-      ? fetch<BotSettings>("/settings/subscription")
+      ? fetch<BotSettings>("/bots/default-settings")
       : fetch<BotSettings>(`/bots/${botUsername}/settings`);
     request
       .then((data) => {

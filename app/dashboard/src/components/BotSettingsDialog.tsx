@@ -40,7 +40,6 @@ import { FC, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDashboard } from "contexts/DashboardContext";
 import { fetch } from "service/http";
-import { SubscriptionProfileForm } from "./SubscriptionProfileForm";
 import { Bot, BotSettings } from "types/Bot";
 import {
   ChevronDownIcon,
@@ -64,8 +63,6 @@ export const BotSettingsDialog: FC = () => {
   const { t } = useTranslation();
   const toast = useToast();
   const [bots, setBots] = useState<Bot[]>([]);
-  const [botsLoaded, setBotsLoaded] = useState(false);
-  const [botsFailed, setBotsFailed] = useState(false);
   const [selectedBot, setSelectedBot] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -128,13 +125,11 @@ export const BotSettingsDialog: FC = () => {
       .then((items) => {
         if (requestId !== botsRequestId.current) return null;
         setBots(items);
-        setBotsFailed(false);
         return items;
       })
       .catch(() => {
         if (requestId !== botsRequestId.current) return null;
         setBots([]);
-        setBotsFailed(true);
         return null;
       });
   };
@@ -148,13 +143,10 @@ export const BotSettingsDialog: FC = () => {
   useEffect(() => {
     const requestId = ++botsRequestId.current;
     if (!isEditingBotSettings) {
-      setBotsLoaded(false);
       return () => {
         ++botsRequestId.current;
       };
     }
-    setBotsLoaded(false);
-    setBotsFailed(false);
     setLoading(true);
     setSelectedBot("");
     setBotUsername("");
@@ -166,7 +158,6 @@ export const BotSettingsDialog: FC = () => {
       fetchBots().then((loadedBots) => {
         if (requestId !== botsRequestId.current) return;
         if (!loadedBots) {
-          setBotsLoaded(false);
           toast({
             title: t("core.generalErrorMessage"),
             status: "error",
@@ -176,7 +167,6 @@ export const BotSettingsDialog: FC = () => {
           });
           return;
         }
-        setBotsLoaded(true);
         if (loadedBots.length === 1) {
           setSelectedBot(loadedBots[0].username);
         }
@@ -512,14 +502,6 @@ export const BotSettingsDialog: FC = () => {
       .finally(() => setDeleting(false));
   };
 
-  const profileTabVisible = botsLoaded && !botsFailed && bots.length === 0;
-
-  useEffect(() => {
-    if (!profileTabVisible && activeTabIndex === 2) {
-      setActiveTabIndex(0);
-    }
-  }, [activeTabIndex, profileTabVisible]);
-
   return (
     <Modal
       isOpen={isEditingBotSettings}
@@ -683,7 +665,6 @@ export const BotSettingsDialog: FC = () => {
             <TabList overflowX="auto" overflowY="hidden" whiteSpace="nowrap">
               <Tab>{t("botSettings.tabBotInfo")}</Tab>
               <Tab>{t("botSettings.tabSubscription")}</Tab>
-              {profileTabVisible && <Tab>{t("botSettings.tabPanelProfile")}</Tab>}
             </TabList>
             {hasDraft && activeTabIndex !== 2 && (
               <HStack
@@ -960,21 +941,11 @@ export const BotSettingsDialog: FC = () => {
                   </Box>
                 </VStack>
               </TabPanel>
-              {profileTabVisible && (
-                <TabPanel>
-                  <SubscriptionProfileForm />
-                </TabPanel>
-              )}
             </TabPanels>
           </Tabs>
         </ModalBody>
 
         <ModalFooter>
-          {profileTabVisible && activeTabIndex === 2 ? (
-            <Button variant="ghost" onClick={close}>
-              {t("cancel")}
-            </Button>
-          ) : (
           <Stack
             direction={{ base: "column", md: "row" }}
             justify="space-between"
@@ -1022,7 +993,6 @@ export const BotSettingsDialog: FC = () => {
               </Button>
             </HStack>
           </Stack>
-          )}
         </ModalFooter>
       </ModalContent>
     </Modal>

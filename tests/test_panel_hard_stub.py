@@ -57,3 +57,15 @@ def test_user_with_bot_takes_hard_mode_from_panel_settings():
         settings = resolve_bot_settings(user)
         assert settings["sub_device_limit_hard_mode"] is True
         assert settings["sub_profile_title"] == "Бот"
+
+
+def test_user_without_bot_uses_env_defaults():
+    from app.models.bot import apply_bot_settings_fallback
+    from app.subscription.bot_settings import resolve_bot_settings
+
+    with _db() as db:
+        user = User(username="solo", status=UserStatus.active)
+        db.add(user)
+        db.commit()
+
+        assert resolve_bot_settings(user)["sub_profile_title"] == apply_bot_settings_fallback(None)["sub_profile_title"]
