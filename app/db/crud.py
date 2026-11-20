@@ -2,12 +2,14 @@
 Functions for managing proxy hosts, users, user templates, nodes, and administrative tasks.
 """
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from enum import Enum
+from threading import Lock
 from typing import Any, Literal, cast
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
@@ -75,6 +77,26 @@ from config import (
     NOTIFY_REACHED_USAGE_PERCENT,
     USERS_AUTODELETE_DAYS,
 )
+
+_BOT_CREATION_LOCK = Lock()
+
+
+@contextmanager
+def _lock_bot_creation(db: Session):
+    """Serialize the 0→1→2 transition that materializes host bindings."""
+    if db.bind is not None and db.bind.dialect.name == "mysql":
+        connection = db.connection()
+        acquired = connection.execute(text("SELECT GET_LOCK('npvpn_bot_creation', 10)")).scalar()
+        if acquired != 1:
+            raise ValueError("Could not acquire bot creation lock")
+        try:
+            yield
+        finally:
+            connection.execute(text("SELECT RELEASE_LOCK('npvpn_bot_creation')"))
+        return
+
+    with _BOT_CREATION_LOCK:
+        yield
 
 
 def add_default_host(db: Session, inbound: ProxyInbound, *, commit: bool = True):
@@ -587,6 +609,33 @@ def get_bots(db: Session) -> list[Bot]:
     return db.query(Bot).order_by(Bot.username.asc()).all()
 
 
+def count_bots(db: Session) -> int:
+    return int(db.query(func.count(Bot.id)).scalar() or 0)
+
+
+def bind_all_hosts_to_only_bot(db: Session) -> None:
+    """Записать неявный доступ единственного бота, прежде чем появится второй.
+
+    Пока бот один, предикат и так отдаёт ему все хосты. Без этих строк
+    пустая привязка после появления второго бота станет «никому».
+    rented_at не заполняется и уже стоящие отметки не сдвигаются.
+    """
+    if count_bots(db) != 1:
+        return
+    only = db.query(Bot).one()
+    linked = {
+        host_id
+        for (host_id,) in db.query(host_bot_association.c.host_id).filter(host_bot_association.c.bot_id == only.id)
+    }
+    missing = [host_id for (host_id,) in db.query(ProxyHost.id).all() if host_id not in linked]
+    if not missing:
+        return
+    db.execute(
+        host_bot_association.insert(),
+        [{"host_id": host_id, "bot_id": only.id, "rented_at": None} for host_id in missing],
+    )
+
+
 def _normalize_web_url(value: str | None) -> str:
     domain = str(value or "").strip().replace("https://", "").replace("http://", "").strip("/")
     if not domain:
@@ -617,18 +666,21 @@ def create_bot(
     normalized = _normalize_bot_username(username)
     if not normalized:
         raise ValueError("Bot username is required")
-    if get_bot(db, normalized):
-        raise ValueError(f'Bot "{normalized}" already exists')
+    with _lock_bot_creation(db):
+        if get_bot(db, normalized):
+            raise ValueError(f'Bot "{normalized}" already exists')
 
-    bot = Bot(
-        username=normalized,
-        title=title or None,
-        source_bot_id=source_bot_id,
-        admin_sync_enabled=admin_sync_enabled,
-    )
-    db.add(bot)
-    db.commit()
-    db.refresh(bot)
+        bind_all_hosts_to_only_bot(db)
+        bot = Bot(
+            username=normalized,
+            title=title or None,
+            source_bot_id=source_bot_id,
+            admin_sync_enabled=admin_sync_enabled,
+        )
+        db.add(bot)
+        db.commit()
+        db.refresh(bot)
+
     _set_bot_web_url(db, bot, web_url)
     db.refresh(bot)
     return bot
@@ -2427,12 +2479,10 @@ def get_user_bs_traffic(db: Session, dbuser: User) -> dict[str, int]:
 
 
 def _bot_settings_for_user(db: Session, dbuser: User) -> dict[str, Any]:
-    from app.db.models import BotSettings
+    del db
+    from app.subscription.bot_settings import resolve_bot_settings
 
-    if not dbuser.bot_id:
-        return apply_bot_settings_fallback(None)
-    data = db.query(BotSettings.data).filter(BotSettings.bot_id == dbuser.bot_id).scalar()
-    return apply_bot_settings_fallback(data)
+    return resolve_bot_settings(dbuser)
 
 
 def set_user_bs_extra_amount(db: Session, dbuser: User, extra_bytes: int) -> None:

@@ -280,6 +280,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [devices, setDevices] = useState<UserDevice[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
+  const [botsLoaded, setBotsLoaded] = useState(false);
   const botOptions = useMemo<BotOption[]>(
     () =>
       bots.map((bot) => ({
@@ -301,7 +302,10 @@ export const UserDialog: FC<UserDialogProps> = () => {
 
   useEffect(() => {
     fetch<Bot[]>("/bots")
-      .then(setBots)
+      .then((items) => {
+        setBots(items);
+        setBotsLoaded(true);
+      })
       .catch(() => setBots([]));
   }, []);
 
@@ -309,6 +313,12 @@ export const UserDialog: FC<UserDialogProps> = () => {
     defaultValues: getDefaultValues(),
     resolver: zodResolver(schema),
   });
+
+  useEffect(() => {
+    if (isCreatingNewUser && botsLoaded && bots.length === 1 && !form.getValues("bot_username")) {
+      form.setValue("bot_username", bots[0].username);
+    }
+  }, [bots, botsLoaded, form, isCreatingNewUser]);
 
   useEffect(
     () =>
@@ -931,26 +941,34 @@ export const UserDialog: FC<UserDialogProps> = () => {
                               control={form.control}
                               name="bot_username"
                               render={({ field }) => (
-                                <ReactSelect<BotOption>
-                                  options={botOptions}
-                                  value={
-                                    botOptions.find(
-                                      (o) => o.value === field.value
-                                    ) ?? null
-                                  }
-                                  onChange={(option: BotOption | null) =>
-                                    field.onChange(option?.value ?? "")
-                                  }
-                                  placeholder={t("botSettings.selectBot")}
-                                  noOptionsMessage={() =>
-                                    t("botSettings.noBotsFound")
-                                  }
-                                  isSearchable
-                                  isClearable
-                                  styles={botSelectStyles}
-                                  menuPortalTarget={document.body}
-                                  menuPosition="fixed"
-                                />
+                                <Tooltip
+                                  label={t("botSettings.createBotToSelect")}
+                                  isDisabled={!botsLoaded || bots.length > 0}
+                                >
+                                  <Box>
+                                    <ReactSelect<BotOption>
+                                      options={botOptions}
+                                      value={
+                                        botOptions.find(
+                                          (o) => o.value === field.value
+                                        ) ?? null
+                                      }
+                                      onChange={(option: BotOption | null) =>
+                                        field.onChange(option?.value ?? "")
+                                      }
+                                      placeholder={t("botSettings.selectBot")}
+                                      noOptionsMessage={() =>
+                                        t("botSettings.noBotsFound")
+                                      }
+                                      isSearchable
+                                      isClearable
+                                      isDisabled={botsLoaded && bots.length === 0}
+                                      styles={botSelectStyles}
+                                      menuPortalTarget={document.body}
+                                      menuPosition="fixed"
+                                    />
+                                  </Box>
+                                </Tooltip>
                               )}
                             />
                             {/* <FormHelperText>

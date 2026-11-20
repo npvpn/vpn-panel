@@ -196,7 +196,11 @@ export const HostRow = memo(function HostRow({
   const isAvailableToAllBots = bots.length > 0 && botNames.length === bots.length;
   const isVisibleToNobody = botNames.length === 0;
 
-  const botBadgeLabel = isAvailableToAllBots
+  const botBadgeLabel = bots.length === 0
+    ? t("hostsDialog.availableBots.solo")
+    : bots.length === 1
+    ? t("hostsDialog.availableBots.all")
+    : isAvailableToAllBots
     ? bots.length > 1
       ? t("hostsDialog.availableBots.all")
       : null
@@ -210,7 +214,9 @@ export const HostRow = memo(function HostRow({
     bot.title ? `${bot.title} (@${bot.username})` : `@${bot.username}`
   );
 
-  const botBadgeTooltip = isAvailableToAllBots
+  const botBadgeTooltip = bots.length === 0
+    ? t("hostsDialog.availableBots.soloHint")
+    : isAvailableToAllBots
     ? allBotNames.join(", ") || null
     : isVisibleToNobody
     ? t("hostsDialog.availableBots.noneHint")

@@ -78,6 +78,7 @@ export const BotSettingsDialog: FC = () => {
     useState<BotSettings>(emptySettings);
   const [hasDraft, setHasDraft] = useState(false);
   const [botSearch, setBotSearch] = useState("");
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [isBotListOpen, setIsBotListOpen] = useState(false);
   // const [didAutoSelect, setDidAutoSelect] = useState(false);
   const NEW_BOT_DRAFT_KEY = "botSettings_draft_new";
@@ -86,6 +87,7 @@ export const BotSettingsDialog: FC = () => {
     username ? `botSettings_draft_${username}` : NEW_BOT_DRAFT_KEY;
 
   const saveDraftTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const botsRequestId = useRef(0);
 
   const saveDraft = (
     newSettings: BotSettings,
@@ -118,14 +120,17 @@ export const BotSettingsDialog: FC = () => {
   };
 
   const fetchBots = () => {
+    const requestId = botsRequestId.current;
     return fetch<Bot[]>("/bots")
       .then((items) => {
+        if (requestId !== botsRequestId.current) return null;
         setBots(items);
         return items;
       })
       .catch(() => {
+        if (requestId !== botsRequestId.current) return null;
         setBots([]);
-        return [];
+        return null;
       });
   };
 
@@ -136,23 +141,47 @@ export const BotSettingsDialog: FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!isEditingBotSettings) return;
+    const requestId = ++botsRequestId.current;
+    if (!isEditingBotSettings) {
+      return () => {
+        ++botsRequestId.current;
+      };
+    }
     setLoading(true);
     setSelectedBot("");
     setBotUsername("");
     setBotTitle("");
     setBotSearch("");
+    setActiveTabIndex(0);
     replaceSettings(emptySettings);
-    Promise.all([
-      fetchBots(),
-      fetch<BotSettings>("/bots/default-settings").then(setDefaultSettings),
-    ])
-      .then(([bots]) => {
-        if (bots.length === 1) {
-          setSelectedBot(bots[0].username);
+    Promise.allSettled([
+      fetchBots().then((loadedBots) => {
+        if (requestId !== botsRequestId.current) return;
+        if (!loadedBots) {
+          toast({
+            title: t("core.generalErrorMessage"),
+            status: "error",
+            duration: 2500,
+            isClosable: true,
+            position: "top",
+          });
+          return;
         }
-      })
-      .finally(() => setLoading(false));
+        if (loadedBots.length === 1) {
+          setSelectedBot(loadedBots[0].username);
+        }
+      }),
+      fetch<BotSettings>("/bots/default-settings")
+        .then((items) => {
+          if (requestId === botsRequestId.current) setDefaultSettings(items);
+        })
+        .catch(() => undefined),
+    ]).finally(() => {
+      if (requestId === botsRequestId.current) setLoading(false);
+    });
+    return () => {
+      ++botsRequestId.current;
+    };
   }, [isEditingBotSettings]);
 
   useEffect(() => {
@@ -445,9 +474,16 @@ export const BotSettingsDialog: FC = () => {
         setHasDraft(false);
         return fetchBots();
       })
-      .then((bots) => {
-        if (bots.length === 1) {
-          setSelectedBot(bots[0].username);
+      .then((loadedBots) => {
+        if (!loadedBots) {
+          setSelectedBot("");
+          setBotUsername("");
+          setBotTitle("");
+          setBotSearch("");
+          return;
+        }
+        if (loadedBots.length === 1) {
+          setSelectedBot(loadedBots[0].username);
         } else {
           setSelectedBot("");
           setBotUsername("");
@@ -618,12 +654,19 @@ export const BotSettingsDialog: FC = () => {
             scrollbarGutter: "stable",
           }}
         >
-          <Tabs variant="enclosed" colorScheme="primary">
+          <Tabs
+            variant="enclosed"
+            colorScheme="primary"
+            index={activeTabIndex}
+            onChange={setActiveTabIndex}
+            isLazy
+            lazyBehavior="keepMounted"
+          >
             <TabList overflowX="auto" overflowY="hidden" whiteSpace="nowrap">
               <Tab>{t("botSettings.tabBotInfo")}</Tab>
               <Tab>{t("botSettings.tabSubscription")}</Tab>
             </TabList>
-            {hasDraft && (
+            {hasDraft && activeTabIndex !== 2 && (
               <HStack
                 mt={2}
                 p={3}
