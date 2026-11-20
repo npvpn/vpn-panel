@@ -359,16 +359,14 @@ export const BotHostsTab: FC<Props> = ({
 
   return (
     <Box display="flex" flexDirection="column" minH={0} h="full">
-      {/* NPVPN-2215: одна строка — бот и поиск слева (бот первым: от него
-          зависит всё ниже), сводка и массовые действия справа. Без фильтра
-          доступности поиск на всю ширину растягивался. Flex с gap, а не
-          HStack: отступы HStack — margin слева, он перебивал ml="auto" и
-          сдвигал первый элемент перенесённой строки. */}
-      <Flex mt={1} gap={2} flexWrap="wrap" flexShrink={0}>
+      {/* Две строки: фильтры (бот первым — от него зависит всё ниже), под ними
+          сводка и массовые действия. В одну строку (NPVPN-2215) перестало
+          помещаться, когда сводка выросла, — резались поиск и «Только активные».
+          Flex с gap, а не HStack: отступы HStack — margin слева, и первый элемент
+          перенесённой строки съезжал. p="2px": кольцо фокуса не обрезается краем. */}
+      <Flex mt={1} p="2px" gap={2} flexWrap="wrap" flexShrink={0}>
         {/* С поиском: ботов бывает много, а в обычном select название не
             начать вводить. */}
-        {/* Ширины подобраны так, чтобы строка помещалась целиком: поиск
-            гибкий и сжимается первым, сводка с кнопками не переносится. */}
         <Box w={{ base: "full", md: "240px" }}>
           <ReactSelect<BotOption>
             aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
@@ -388,7 +386,6 @@ export const BotHostsTab: FC<Props> = ({
         <InputGroup
           w={{ base: "full", md: "auto" }}
           flex={{ md: "1 1 200px" }}
-          maxW={{ md: "280px" }}
           size="sm"
         >
           <InputLeftElement pointerEvents="none">
@@ -397,27 +394,31 @@ export const BotHostsTab: FC<Props> = ({
 
           <Input
             placeholder={t("hostsDialog.search") ?? undefined}
+            // Если плейсхолдер всё же обрезан узким окном — полный текст при наведении.
+            title={t("hostsDialog.search") ?? undefined}
             {...filterFieldProps}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </InputGroup>
 
-        <Box w={{ base: "full", md: "160px" }}>
+        <Box w={{ base: "full", md: "180px" }}>
           <ActiveOnlySelect isActive={activeOnly} onChange={setActiveOnly} />
         </Box>
+      </Flex>
 
-        {/* На телефоне — сводка слева, под ней кнопки поровну во всю
-            ширину; на десктопе — всё в ряд у правого края. */}
-        <Flex
-          ml="auto"
-          w={{ base: "full", md: "auto" }}
-          gap={3}
-          rowGap={2}
-          flexWrap="wrap"
-          alignItems="center"
-          justifyContent={{ base: "flex-start", md: "flex-end" }}
-        >
+      {/* На телефоне — сводка, под ней кнопки поровну во всю ширину; на
+          десктопе — сводка слева, кнопки у правого края. */}
+      <Flex
+        mt={2}
+        px="2px"
+        gap={3}
+        rowGap={2}
+        flexWrap="wrap"
+        alignItems="center"
+        justifyContent="space-between"
+        flexShrink={0}
+      >
           <Text fontSize="sm" opacity={0.7} whiteSpace="nowrap">
             {t("hostsDialog.botTab.summary", {
               available: availableCount,
@@ -453,7 +454,6 @@ export const BotHostsTab: FC<Props> = ({
               {t("hostsDialog.botTab.disableAll")}
             </Button>
           </HStack>
-        </Flex>
       </Flex>
 
       <Box

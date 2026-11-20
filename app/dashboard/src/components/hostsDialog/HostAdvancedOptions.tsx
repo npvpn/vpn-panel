@@ -1,6 +1,7 @@
 import {
   Box,
   FormControl,
+  FormHelperText,
   Text,
   Popover,
   PopoverArrow,
@@ -50,6 +51,7 @@ import { InfoIcon, PencilIcon, Error, Select } from "./constants";
 import { Trans } from "react-i18next";
 import { HostInjectionOptions } from "./HostInjectionOptions";
 import { templateInjection } from "./hostInjection";
+import { isSameHostValues } from "./hostValues";
 import { HostBalancingOptions } from "./HostBalancingOptions";
 import { RHFInput } from "./RHFInput";
 import { RHFCheckbox } from "./RHFCheckbox";
@@ -141,6 +143,9 @@ export type HostAdvancedOptionsProps = {
   hideRemarkAddress?: boolean;
   completeCatalog?: boolean;
   isPlaceholder?: boolean;
+  // Снимок хоста на момент открытия окна настроек: по нему вкладки с
+  // несохранёнными правками получают точку. Без снимка (строка/карточка) — без точек.
+  baseline?: Record<string, unknown> | null;
 };
 
 export const HostAdvancedOptions = memo(
@@ -160,6 +165,7 @@ export const HostAdvancedOptions = memo(
     hideRemarkAddress,
     completeCatalog,
     isPlaceholder = false,
+    baseline = null,
   }: HostAdvancedOptionsProps) => {
     const portPlaceholder = inbound?.port ?? "8080";
     const [isXhttpExtraOpen, setIsXhttpExtraOpen] = useState(false);
@@ -188,6 +194,15 @@ export const HostAdvancedOptions = memo(
       isPlaceholder
         ? i === 2 && !!hostErrors?.bot_usernames
         : tab.fields.some((field) => !!hostErrors?.[field])
+    );
+    // Вкладки с несохранёнными правками — сравнение «по смыслу», как у пометки
+    // «Есть несохранённые изменения» внизу окна (hostValues.ts).
+    const tabIsDirty = HOST_TABS.map(
+      (tab) =>
+        !!baseline &&
+        tab.fields.some(
+          (field) => !isSameHostValues(currentHost[field], baseline[field])
+        )
     );
 
     // Название и адрес скрыты там, где их правят в карточке или строке
@@ -252,7 +267,11 @@ export const HostAdvancedOptions = memo(
           index={isPlaceholder ? 2 : tabIndex}
           onChange={setTabIndex}
         >
+          {/* У заглушки (NPVPN-2383) остаётся одна вкладка «Доступ»: полоса из
+              одной вкладки ничего не переключает, а её sticky-сдвиг вверх (mt) ещё
+              и наезжал на поле «Название» над ней — прячем полосу целиком. */}
           <TabList
+            display={isPlaceholder ? "none" : undefined}
             overflowX="auto"
             overflowY="hidden"
             whiteSpace="nowrap"
@@ -290,6 +309,20 @@ export const HostAdvancedOptions = memo(
                     // у span без роли подпись скринридеры могут не озвучить
                     role="img"
                     aria-label={t("hostsDialog.tabs.hasErrors")}
+                  />
+                )}
+                {/* Ошибка важнее правки: при обеих — только красная точка. */}
+                {!tabHasErrors[i] && tabIsDirty[i] && (
+                  <Box
+                    as="span"
+                    ml={1.5}
+                    w="6px"
+                    h="6px"
+                    borderRadius="full"
+                    bg="orange.400"
+                    display="inline-block"
+                    role="img"
+                    aria-label={t("hostsDialog.tabs.hasChanges")}
                   />
                 )}
               </Tab>
@@ -1250,31 +1283,76 @@ export const HostAdvancedOptions = memo(
                   spacingY={3}
                   w="full"
                 >
-                <FormControl>
+                {/* На всю ширину сетки, а селект — прежней ширины колонки: так подсказка
+                    про архивный конфиг (NPVPN-2366) не переносится по узкой колонке. */}
+                <FormControl gridColumn="1 / -1">
                   <FormLabel>{t("hostsDialog.clientConfig")}</FormLabel>
                   <Controller
                     control={control}
                     name={`${hostKey}.${index}.client_config_id`}
-                    render={({ field }) => (
-                      <Select
-                        size="sm"
-                        value={field.value ?? ""}
-                        onChange={(e) =>
-                          field.onChange(
-                            e.target.value === "" ? null : Number(e.target.value)
-                          )
-                        }
-                      >
-                        <option value="">
-                          {t("hostsDialog.clientConfigDefault")}
-                        </option>
-                        {clientConfigs.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.title}
-                          </option>
-                        ))}
-                      </Select>
-                    )}
+                    render={({ field }) => {
+                      // NPVPN-2366: архивный конфиг нельзя назначить, но уже имеющуюся
+                      // привязку не теряем — показываем её неактивной опцией, и при
+                      // сохранении хоста значение остаётся прежним.
+                      const archivedCurrent = clientConfigs.find(
+                        (p) => p.id === field.value && p.archived_at != null
+                      );
+                      return (
+                        <>
+                          {/* Привязан архивный конфиг: поле показывает то, что хост
+                              реально получает, — «По умолчанию», но значение формы не
+                              трогаем (привязка к архивному сохраняется до явного выбора
+                              другого), а про архивный говорит подсказка. */}
+                          <Select
+                            size="sm"
+                            maxW={{ md: "calc(50% - 6px)" }}
+                            value={archivedCurrent ? "" : field.value ?? ""}
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value === "" ? null : Number(e.target.value)
+                              )
+                            }
+                          >
+                            <option value="">
+                              {t("hostsDialog.clientConfigDefault")}
+                            </option>
+                            {clientConfigs
+                              .filter((p) => p.archived_at == null)
+                              .map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.title}
+                                </option>
+                              ))}
+                            {/* Архивные видны, но не выбираются: конфиг не пропал, а лежит
+                                в архиве. Отдельной группой — не смешиваются с рабочими. */}
+                            {clientConfigs.some((p) => p.archived_at != null) && (
+                              <optgroup label={t("hostsDialog.clientConfigArchiveGroup")}>
+                                {clientConfigs
+                                  .filter((p) => p.archived_at != null)
+                                  .map((p) => (
+                                    <option key={p.id} value={`archived-${p.id}`} disabled>
+                                      {t("hostsDialog.clientConfigArchived", {
+                                        title: p.title,
+                                      })}
+                                    </option>
+                                  ))}
+                              </optgroup>
+                            )}
+                          </Select>
+                          {archivedCurrent && (
+                            <FormHelperText>
+                              {t("hostsDialog.clientConfigArchivedHint", {
+                                title: archivedCurrent.title,
+                              })}
+                              <br />
+                              {t("hostsDialog.clientConfigArchivedPath", {
+                                title: archivedCurrent.title,
+                              })}
+                            </FormHelperText>
+                          )}
+                        </>
+                      );
+                    }}
                   />
                 </FormControl>
                 {templateError && <Text color="red.500" gridColumn="1 / -1">{t("hostsDialog.injection.invalidTemplate")}</Text>}
