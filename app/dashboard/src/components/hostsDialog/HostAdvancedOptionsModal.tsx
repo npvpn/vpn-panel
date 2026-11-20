@@ -10,7 +10,6 @@ import {
   ModalOverlay,
   Text,
   Switch,
-  Tooltip,
 } from "@chakra-ui/react";
 import { FC, useEffect, useState } from "react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
@@ -162,21 +161,38 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
             pb={2}
             sx={{ overscrollBehavior: "contain", ...thinScrollbarSx }}
           >
-            <Box mb={3}>
+            {/* Заглушка (NPVPN-2383) — строка-опция в рамке: название и пояснение
+                видны сразу, а не только в тултипе, переключатель справа. Вся строка —
+                <label>, кликабельна целиком. */}
+            <Box
+              as="label"
+              mb={3}
+              display="flex"
+              alignItems="center"
+              gap={3}
+              borderWidth="1px"
+              borderRadius="md"
+              px={3}
+              py={2}
+              cursor="pointer"
+            >
+              <Box flex="1" minW={0}>
+                <Text fontSize="sm" fontWeight="medium">
+                  {t("hostsDialog.placeholder")}
+                </Text>
+                <Text fontSize="xs" color="gray.500">
+                  {t("hostsDialog.placeholderHint")}
+                </Text>
+              </Box>
               <Controller
                 control={form.control}
                 name={`hosts.${index}.is_placeholder`}
                 render={({ field }) => (
-                  <Tooltip label={t("hostsDialog.placeholderHint")}>
-                    <Box as="label" display="inline-flex" alignItems="center" gap={2}>
-                      <Switch
-                        aria-label={t("hostsDialog.placeholder")}
-                        isChecked={field.value}
-                        onChange={(e) => field.onChange(e.target.checked)}
-                      />
-                      <Text>{t("hostsDialog.placeholder")}</Text>
-                    </Box>
-                  </Tooltip>
+                  <Switch
+                    aria-label={t("hostsDialog.placeholder")}
+                    isChecked={field.value}
+                    onChange={(e) => field.onChange(e.target.checked)}
+                  />
                 )}
               />
             </Box>
@@ -189,6 +205,7 @@ export const HostAdvancedOptionsModal: FC<Props> = ({
             )}
             <HostAdvancedOptions
               {...advancedOptionsProps}
+              baseline={snapshot as Record<string, unknown> | null}
               isPlaceholder={isPlaceholder}
               hideRemarkAddress={
                 isPlaceholder || advancedOptionsProps.hideRemarkAddress

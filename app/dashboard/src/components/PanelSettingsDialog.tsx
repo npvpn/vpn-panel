@@ -263,7 +263,11 @@ export const PanelSettingsDialog: FC = () => {
   const subscriptionDirty = isSubscriptionDirty(settings, initial);
   const messagesDirty = isMessagesDirty(settings, initial);
   const jwtDirty = isJwtDirty(settings, initial);
+  // isDirty — то, что сохраняет общий футер; v2ray-json сохраняется сам и
+  // докладывает о правках отдельно, но закрыть окно молча нельзя ни с теми, ни с другими.
   const isDirty = subscriptionDirty || messagesDirty || jwtDirty;
+  const [v2rayDirty, setV2rayDirty] = useState(false);
+  const hasUnsaved = isDirty || v2rayDirty;
 
   const showValidationErrorToast = (err: any) => {
     const detail = err?.response?._data?.detail;
@@ -524,7 +528,7 @@ export const PanelSettingsDialog: FC = () => {
     ));
 
   const requestClose = () => {
-    if (isDirty) {
+    if (hasUnsaved) {
       discardConfirm.onOpen();
       return;
     }
@@ -643,7 +647,10 @@ export const PanelSettingsDialog: FC = () => {
                   {t("panelSettings.tabMessages")}
                   {messagesDirty && dirtyDot}
                 </Tab>
-                <Tab>{t("panelSettings.tabV2rayJson")}</Tab>
+                <Tab>
+                  {t("panelSettings.tabV2rayJson")}
+                  {v2rayDirty && dirtyDot}
+                </Tab>
                 <Tab>
                   {t("panelSettings.tabJwtKey")}
                   {jwtDirty && dirtyDot}
@@ -1043,7 +1050,7 @@ export const PanelSettingsDialog: FC = () => {
                   </Flex>
                 </TabPanel>
                 <TabPanel px={0}>
-                  <XrayTemplatesPanel />
+                  <XrayTemplatesPanel onDirtyChange={setV2rayDirty} />
                 </TabPanel>
                 <TabPanel px={0}>
                   <VStack spacing={4} align="stretch">
