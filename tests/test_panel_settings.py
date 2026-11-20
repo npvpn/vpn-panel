@@ -134,6 +134,37 @@ def test_save_clears_legacy_key_cache(monkeypatch):
     assert cleared == [True]
 
 
+def test_add_legacy_key_preserves_other_settings_and_is_idempotent(monkeypatch):
+    engine = _panel_db()
+    cleared: list[bool] = []
+    monkeypatch.setattr(panel_svc, "clear_legacy_subscription_secret_keys_cache", lambda: cleared.append(True))
+    with Session(engine) as db:
+        panel_svc.save_panel_settings(
+            db,
+            PanelSettingsPayload(bs_monthly_limit=7, subscription_legacy_secret_keys=["already-there"]),
+        )
+        panel_svc.add_legacy_subscription_secret_key(db, "external-panel-key")
+        panel_svc.add_legacy_subscription_secret_key(db, "external-panel-key")
+
+        saved = panel_svc.get_panel_settings(db)
+        assert saved["bs_monthly_limit"] == 7
+        assert saved[LEGACY_SECRET_KEYS_SETTING] == ["already-there", "external-panel-key"]
+    assert cleared == [True, True, True]
+
+
+def test_save_after_legacy_add_keeps_key_when_payload_omits_legacy_field():
+    """Оба пути берут одну row-lock, поэтому второй writer видит добавленный ключ."""
+    engine = _panel_db()
+    with Session(engine) as db:
+        panel_svc.save_panel_settings(db, PanelSettingsPayload(bs_monthly_limit=7))
+        panel_svc.add_legacy_subscription_secret_key(db, "external-panel-key")
+
+        saved = panel_svc.save_panel_settings(db, PanelSettingsPayload(bs_monthly_limit=9))
+
+    assert saved[LEGACY_SECRET_KEYS_SETTING] == ["external-panel-key"]
+    assert saved["bs_monthly_limit"] == 9
+
+
 def test_with_primary_jwt_secret_reads_jwt_table():
     engine = _panel_db()
     with Session(engine) as db:
