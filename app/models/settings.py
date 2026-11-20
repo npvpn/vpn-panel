@@ -244,6 +244,20 @@ def normalize_legacy_secret_keys(value: Any) -> list[str]:
     return out
 
 
+class LegacySubscriptionSecretKeyPayload(BaseModel):
+    """Один ключ старой внешней панели для проверки её выданных ссылок."""
+
+    secret_key: str = Field(min_length=1, max_length=64)
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, value: str) -> str:
+        key = value.strip()
+        if not key:
+            raise ValueError("secret_key must not be empty")
+        return key
+
+
 class PanelSettingsPayload(BaseModel):
     sub_custom_headers: str = ""
     bs_monthly_limit: int = 0
