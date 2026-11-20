@@ -517,7 +517,17 @@ export const UserDialog: FC<UserDialogProps> = () => {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} size="2xl">
+      {/* Устройства открываются второй модалкой поверх этой, а Chakra включает
+          RemoveScroll только первой — её лок гасил колесо мыши над списком
+          устройств (прокрутка шла только полосой). Пока открыты устройства, лок
+          этой модалки снимаем; закрывать её, как для закреплений (NPVPN-2072),
+          нельзя — потеряются несохранённые правки пользователя. */}
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        size="2xl"
+        blockScrollOnMount={!devicesOpen}
+      >
         <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
         <FormProvider {...form}>
           <ModalContent mx="3">
@@ -1139,10 +1149,13 @@ export const UserDialog: FC<UserDialogProps> = () => {
         </FormProvider>
       </Modal>
 
+      {/* inside: прокручивается список устройств, а шапка и кнопки остаются на
+          месте; с outside прокручивался внешний контейнер окна. */}
       <Modal
         isOpen={devicesOpen}
         onClose={() => setDevicesOpen(false)}
         size="6xl"
+        scrollBehavior="inside"
       >
         <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
         {/* по ширине содержимого, но не уже 448px: без устройств окно схлопывалось в узкую колонку */}

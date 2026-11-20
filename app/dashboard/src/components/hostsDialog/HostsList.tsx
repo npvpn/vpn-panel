@@ -1,4 +1,11 @@
 import {
+  AlertDialog,
+  AlertDialogBody,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogOverlay,
+  Button,
   VStack,
   Text,
   Box,
@@ -258,12 +265,32 @@ export const HostsList: FC<Props> = ({
     [move]
   );
 
+  // NPVPN-2366: корзина убирала хост из списка одним кликом, и после
+  // «Сохранить» он удалялся насовсем вместе с привязками. Сохранённый хост
+  // теперь удаляем только после подтверждения; новую, ещё не сохранённую
+  // строку — сразу, терять в ней нечего.
+  const [hostToRemove, setHostToRemove] = useState<{
+    index: number;
+    name: string;
+  } | null>(null);
+  const cancelRemoveRef = useRef<HTMLButtonElement>(null);
+
   const removeHost = useCallback(
     (index: number) => {
-      remove(index);
+      const host = form.getValues(`hosts.${index}`);
+      if (host?.host_id == null) {
+        remove(index);
+        return;
+      }
+      setHostToRemove({ index, name: host.remark || host.address || "" });
     },
-    [remove]
+    [form, remove]
   );
+
+  const confirmRemoveHost = () => {
+    if (hostToRemove) remove(hostToRemove.index);
+    setHostToRemove(null);
+  };
 
   // Order of the currently visible rows, used as the drag-and-drop item ids
   // (dnd-kit reorders among these; filtered-out rows are left untouched).
@@ -422,6 +449,41 @@ export const HostsList: FC<Props> = ({
           {rows}
         </VStack>
       )}
+      <AlertDialog
+        isOpen={!!hostToRemove}
+        leastDestructiveRef={cancelRemoveRef}
+        onClose={() => setHostToRemove(null)}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent mx={3}>
+            <AlertDialogHeader fontSize="md">
+              {t("hostsDialog.removeConfirm.title")}
+            </AlertDialogHeader>
+            <AlertDialogBody fontSize="sm">
+              <Text>
+                {t("hostsDialog.removeConfirm.prompt", {
+                  name: hostToRemove?.name ?? "",
+                })}
+              </Text>
+              {/* Необратимость — отдельной строкой: в общем абзаце её не
+                  замечали. */}
+              <Text mt={3}>{t("hostsDialog.removeConfirm.warning")}</Text>
+            </AlertDialogBody>
+            <AlertDialogFooter>
+              <Button
+                ref={cancelRemoveRef}
+                onClick={() => setHostToRemove(null)}
+              >
+                {t("cancel")}
+              </Button>
+              <Button colorScheme="red" ml={3} onClick={confirmRemoveHost}>
+                {t("delete")}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
     </Box>
   );
 };

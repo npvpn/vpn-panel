@@ -9,12 +9,16 @@ export type JSONEditorProps = {
   onChange: (value: string) => void;
   json: any;
   mode?: JSONEditorMode;
+  // Только чтение в том же текстовом виде: текст выделяется и копируется как обычно
+  // (в отличие от mode="view" — дерева, из которого JSON целиком не скопировать).
+  readOnly?: boolean;
 };
 export const JsonEditor = forwardRef<HTMLDivElement, JSONEditorProps>(
-  ({ json, onChange, mode = "code" }, ref) => {
+  ({ json, onChange, mode = "code", readOnly = false }, ref) => {
     const { colorMode } = useColorMode();
     const options: JSONEditorOptions = {
       mode,
+      ...(readOnly && { onEditable: () => false }),
       onChangeText: onChange,
       statusBar: false,
       mainMenuBar: false,
