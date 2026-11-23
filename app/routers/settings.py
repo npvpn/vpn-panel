@@ -71,7 +71,7 @@ def add_legacy_subscription_key(
 ) -> Response:
     """Атомарно добавить ключ внешней панели, сохранив остальные настройки."""
     del admin
-    panel_settings_service.add_legacy_subscription_secret_key(db, payload.secret_key)
+    panel_settings_service.add_legacy_subscription_secret_key(db, payload.secret_key, payload.bot_username)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

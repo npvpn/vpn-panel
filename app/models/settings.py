@@ -223,8 +223,20 @@ class ClientAppsPayload(BaseModel):
         return self
 
 
-def normalize_legacy_secret_keys(value: Any) -> list[str]:
-    """Trim, drop empties, dedupe; accept list or comma-separated string."""
+def _legacy_secret_record(item: Any) -> dict[str, str] | None:
+    if isinstance(item, dict):
+        secret = str(item.get("secret_key") or "").strip()
+        username = str(item.get("bot_username") or "").strip().lstrip("@")[:64]
+    else:
+        secret = str(item or "").strip()
+        username = ""
+    if not secret:
+        return None
+    return {"secret_key": secret, "bot_username": username}
+
+
+def normalize_legacy_secret_key_records(value: Any) -> list[dict[str, str]]:
+    """Trim, drop empties, dedupe by secret. The first record wins, including an empty username."""
     if value is None:
         return []
     if isinstance(value, str):
@@ -234,20 +246,31 @@ def normalize_legacy_secret_keys(value: Any) -> list[str]:
     else:
         return []
     seen: set[str] = set()
-    out: list[str] = []
+    out: list[dict[str, str]] = []
     for item in source:
-        key = str(item or "").strip()
-        if not key or key in seen:
+        record = _legacy_secret_record(item)
+        if record is None or record["secret_key"] in seen:
             continue
-        seen.add(key)
-        out.append(key)
+        seen.add(record["secret_key"])
+        out.append(record)
     return out
+
+
+def normalize_legacy_secret_keys(value: Any) -> list[str]:
+    """Секреты без username: проверка /sub/ и старые строковые значения."""
+    return [record["secret_key"] for record in normalize_legacy_secret_key_records(value)]
+
+
+DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_key_records(
+    DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING]
+)
 
 
 class LegacySubscriptionSecretKeyPayload(BaseModel):
     """Один ключ старой внешней панели для проверки её выданных ссылок."""
 
     secret_key: str = Field(min_length=1, max_length=64)
+    bot_username: str = ""
 
     @field_validator("secret_key")
     @classmethod
@@ -257,13 +280,18 @@ class LegacySubscriptionSecretKeyPayload(BaseModel):
             raise ValueError("secret_key must not be empty")
         return key
 
+    @field_validator("bot_username", mode="before")
+    @classmethod
+    def validate_bot_username(cls, value: Any) -> str:
+        return str(value or "").strip().lstrip("@")[:64]
+
 
 class PanelSettingsPayload(BaseModel):
     sub_custom_headers: str = ""
     bs_monthly_limit: int = 0
     sub_routing_happ: str = ""
     sub_routing_v2raytun: str = ""
-    subscription_legacy_secret_keys: list[str] = Field(default_factory=list)
+    subscription_legacy_secret_keys: list[dict[str, str]] = Field(default_factory=list)
     sub_client_note: str = ""
     sub_revoked_announce_text: str = ""
     sub_expired_announce_text: str = ""
@@ -279,8 +307,8 @@ class PanelSettingsPayload(BaseModel):
 
     @field_validator("subscription_legacy_secret_keys", mode="before")
     @classmethod
-    def validate_legacy_secret_keys(cls, value: Any) -> list[str]:
-        return normalize_legacy_secret_keys(value)
+    def validate_legacy_secret_keys(cls, value: Any) -> list[dict[str, str]]:
+        return normalize_legacy_secret_key_records(value)
 
     @field_validator(
         "sub_revoked_server_text",
@@ -307,7 +335,9 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
     `subscription_legacy_secret_keys`: ключа нет в JSON — env; ключ есть (в т.ч. []) — БД.
     """
     base = dict(DEFAULT_PANEL_SETTINGS)
-    base[LEGACY_SECRET_KEYS_SETTING] = list(DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING])
+    base[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_key_records(
+        DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING]
+    )
     if not raw:
         return base
     for key in PANEL_SETTING_KEYS:
@@ -320,7 +350,7 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
                 continue
             continue
         if key == LEGACY_SECRET_KEYS_SETTING:
-            base[key] = normalize_legacy_secret_keys(raw[key])
+            base[key] = normalize_legacy_secret_key_records(raw[key])
             continue
         if key in SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS:
             text = str(raw[key] or "")

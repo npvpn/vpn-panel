@@ -10,6 +10,7 @@ from app.models.settings import (
     PANEL_SETTINGS_KEY,
     PanelSettingsPayload,
     apply_panel_settings_fallback,
+    normalize_legacy_secret_key_records,
     normalize_legacy_secret_keys,
 )
 
@@ -27,8 +28,8 @@ def get_panel_settings(db: Session) -> dict[str, Any]:
 
 
 def get_legacy_subscription_secret_keys(db: Session) -> list[str]:
-    """Legacy-ключи проверки /sub/: из JSON настроек или env, если поля ещё нет."""
-    return list(get_panel_settings(db).get(LEGACY_SECRET_KEYS_SETTING) or [])
+    """Секреты legacy-ключей для проверки /sub/. Username в подпись не входит."""
+    return normalize_legacy_secret_keys(get_panel_settings(db).get(LEGACY_SECRET_KEYS_SETTING))
 
 
 @cache
@@ -55,13 +56,23 @@ def with_primary_jwt_secret(db: Session, settings: dict[str, Any]) -> dict[str, 
     return payload
 
 
-def add_legacy_subscription_secret_key(db: Session, secret_key: str) -> None:
-    """Добавить ключ к существующим legacy-ключам, не перезаписывая настройки панели."""
+def add_legacy_subscription_secret_key(db: Session, secret_key: str, bot_username: str = "") -> None:
+    """Добавить ключ, не перезаписывая настройки панели и username уже лежащего секрета."""
     row = _panel_settings_row_for_update(db)
     data = dict(row.data) if row is not None and row.data else {}
-    data[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_keys(
-        [*normalize_legacy_secret_keys(data.get(LEGACY_SECRET_KEYS_SETTING)), secret_key]
-    )
+    if LEGACY_SECRET_KEYS_SETTING in data:
+        records = normalize_legacy_secret_key_records(data.get(LEGACY_SECRET_KEYS_SETTING))
+    else:
+        records = normalize_legacy_secret_key_records(apply_panel_settings_fallback(None)[LEGACY_SECRET_KEYS_SETTING])
+    key = secret_key.strip()
+    if key and not any(record["secret_key"] == key for record in records):
+        records.append(
+            {
+                "secret_key": key,
+                "bot_username": str(bot_username or "").strip().lstrip("@")[:64],
+            }
+        )
+    data[LEGACY_SECRET_KEYS_SETTING] = records
     if row is None:
         db.add(GlobalSetting(key=PANEL_SETTINGS_KEY, data=data))
     else:
@@ -83,9 +94,11 @@ def save_panel_settings(db: Session, payload: PanelSettingsPayload) -> dict[str,
     data = payload.model_dump()
     if LEGACY_SECRET_KEYS_SETTING not in payload.model_fields_set:
         if LEGACY_SECRET_KEYS_SETTING in existing:
-            data[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_keys(existing[LEGACY_SECRET_KEYS_SETTING])
+            data[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_key_records(existing[LEGACY_SECRET_KEYS_SETTING])
         else:
-            data[LEGACY_SECRET_KEYS_SETTING] = list(apply_panel_settings_fallback(None)[LEGACY_SECRET_KEYS_SETTING])
+            data[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_key_records(
+                apply_panel_settings_fallback(None)[LEGACY_SECRET_KEYS_SETTING]
+            )
     if "sub_device_limit_hard_mode" not in payload.model_fields_set:
         if "sub_device_limit_hard_mode" in existing:
             data["sub_device_limit_hard_mode"] = bool(existing["sub_device_limit_hard_mode"])

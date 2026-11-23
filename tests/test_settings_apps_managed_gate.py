@@ -130,7 +130,7 @@ def test_post_legacy_subscription_key_is_sudo_only_and_validates_payload(setting
     monkeypatch.setattr(
         settings_router.panel_settings_service,
         "add_legacy_subscription_secret_key",
-        lambda db, secret_key: calls.append((db, secret_key)),
+        lambda db, secret_key, bot_username="": calls.append((db, secret_key, bot_username)),
     )
     app = FastAPI()
     app.include_router(settings_router.router)
@@ -139,11 +139,16 @@ def test_post_legacy_subscription_key_is_sudo_only_and_validates_payload(setting
     app.dependency_overrides[settings_router.Admin.check_sudo_admin] = lambda: object()
     with TestClient(app) as client:
         response = client.post("/api/settings/panel/legacy-subscription-key", json={"secret_key": " external-key "})
+        named = client.post(
+            "/api/settings/panel/legacy-subscription-key",
+            json={"secret_key": "other-key", "bot_username": " @partner "},
+        )
         invalid = client.post("/api/settings/panel/legacy-subscription-key", json={"secret_key": "  "})
 
     assert response.status_code == 204
+    assert named.status_code == 204
     assert invalid.status_code == 422
-    assert calls == [(db, "external-key")]
+    assert calls == [(db, "external-key", ""), (db, "other-key", "partner")]
 
     denied = FastAPI()
     denied.include_router(settings_router.router)

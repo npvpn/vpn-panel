@@ -85,19 +85,33 @@ def test_panel_settings_service_roundtrip():
         assert panel_svc.get_bs_monthly_limit(None) == 0
 
 
+def _legacy(*pairs: tuple[str, str]) -> list[dict[str, str]]:
+    return [{"secret_key": secret, "bot_username": username} for secret, username in pairs]
+
+
 def test_legacy_keys_absent_uses_env(monkeypatch):
     monkeypatch.setitem(DEFAULT_PANEL_SETTINGS, LEGACY_SECRET_KEYS_SETTING, ["from-env"])
-    assert apply_panel_settings_fallback(None)[LEGACY_SECRET_KEYS_SETTING] == ["from-env"]
-    assert apply_panel_settings_fallback({})[LEGACY_SECRET_KEYS_SETTING] == ["from-env"]
+    assert apply_panel_settings_fallback(None)[LEGACY_SECRET_KEYS_SETTING] == _legacy(("from-env", ""))
+    assert apply_panel_settings_fallback({})[LEGACY_SECRET_KEYS_SETTING] == _legacy(("from-env", ""))
     assert apply_panel_settings_fallback({LEGACY_SECRET_KEYS_SETTING: []})[LEGACY_SECRET_KEYS_SETTING] == []
     assert apply_panel_settings_fallback({LEGACY_SECRET_KEYS_SETTING: ["a", "a", " b "]})[
         LEGACY_SECRET_KEYS_SETTING
-    ] == ["a", "b"]
+    ] == _legacy(("a", ""), ("b", ""))
 
 
-def test_legacy_keys_payload_normalizes_comma_string():
+def test_legacy_keys_payload_normalizes_comma_string_and_keeps_first_username():
     payload = PanelSettingsPayload.model_validate({"subscription_legacy_secret_keys": "one, two, one"})
-    assert payload.subscription_legacy_secret_keys == ["one", "two"]
+    assert payload.subscription_legacy_secret_keys == _legacy(("one", ""), ("two", ""))
+    mixed = PanelSettingsPayload.model_validate(
+        {
+            "subscription_legacy_secret_keys": [
+                "plain",
+                {"secret_key": " plain ", "bot_username": "@later"},
+                {"secret_key": "fresh", "bot_username": " @bot "},
+            ]
+        }
+    )
+    assert mixed.subscription_legacy_secret_keys == _legacy(("plain", ""), ("fresh", "bot"))
 
 
 def _panel_db():
@@ -112,13 +126,13 @@ def test_save_legacy_keys_and_omitted_field_keeps_existing():
         saved = panel_svc.save_panel_settings(
             db, PanelSettingsPayload(subscription_legacy_secret_keys=["keep-me", "keep-me", " other "])
         )
-        assert saved[LEGACY_SECRET_KEYS_SETTING] == ["keep-me", "other"]
+        assert saved[LEGACY_SECRET_KEYS_SETTING] == _legacy(("keep-me", ""), ("other", ""))
         assert panel_svc.get_legacy_subscription_secret_keys(db) == ["keep-me", "other"]
 
         omitted = PanelSettingsPayload(bs_monthly_limit=7)
         assert LEGACY_SECRET_KEYS_SETTING not in omitted.model_fields_set
         kept = panel_svc.save_panel_settings(db, omitted)
-        assert kept[LEGACY_SECRET_KEYS_SETTING] == ["keep-me", "other"]
+        assert kept[LEGACY_SECRET_KEYS_SETTING] == _legacy(("keep-me", ""), ("other", ""))
         assert kept["bs_monthly_limit"] == 7
 
         emptied = panel_svc.save_panel_settings(db, PanelSettingsPayload(subscription_legacy_secret_keys=[]))
@@ -148,8 +162,49 @@ def test_add_legacy_key_preserves_other_settings_and_is_idempotent(monkeypatch):
 
         saved = panel_svc.get_panel_settings(db)
         assert saved["bs_monthly_limit"] == 7
-        assert saved[LEGACY_SECRET_KEYS_SETTING] == ["already-there", "external-panel-key"]
+        assert saved[LEGACY_SECRET_KEYS_SETTING] == _legacy(("already-there", ""), ("external-panel-key", ""))
     assert cleared == [True, True, True]
+
+
+def test_add_legacy_key_keeps_env_keys_when_the_field_is_absent(monkeypatch):
+    monkeypatch.setitem(DEFAULT_PANEL_SETTINGS, LEGACY_SECRET_KEYS_SETTING, ["from-env"])
+    engine = _panel_db()
+    with Session(engine) as db:
+        db.add(GlobalSetting(key=PANEL_SETTINGS_KEY, data={"bs_monthly_limit": 3}))
+        db.commit()
+        panel_svc.add_legacy_subscription_secret_key(db, "new-key", "@bot")
+        assert panel_svc.get_legacy_subscription_secret_keys(db) == ["from-env", "new-key"]
+        assert panel_svc.get_panel_settings(db)["bs_monthly_limit"] == 3
+
+
+def test_add_legacy_key_does_not_restore_env_when_the_saved_list_is_empty(monkeypatch):
+    monkeypatch.setitem(DEFAULT_PANEL_SETTINGS, LEGACY_SECRET_KEYS_SETTING, ["from-env"])
+    engine = _panel_db()
+    with Session(engine) as db:
+        panel_svc.save_panel_settings(db, PanelSettingsPayload(subscription_legacy_secret_keys=[]))
+        panel_svc.add_legacy_subscription_secret_key(db, "new-key", "bot")
+        assert panel_svc.get_legacy_subscription_secret_keys(db) == ["new-key"]
+
+
+def test_stored_string_keys_are_read_with_empty_username():
+    engine = _panel_db()
+    with Session(engine) as db:
+        db.add(GlobalSetting(key=PANEL_SETTINGS_KEY, data={LEGACY_SECRET_KEYS_SETTING: ["stored-plain"]}))
+        db.commit()
+        assert panel_svc.get_panel_settings(db)[LEGACY_SECRET_KEYS_SETTING] == _legacy(("stored-plain", ""))
+        assert panel_svc.get_legacy_subscription_secret_keys(db) == ["stored-plain"]
+
+
+def test_add_legacy_key_keeps_existing_username_empty_and_stores_a_new_one():
+    engine = _panel_db()
+    with Session(engine) as db:
+        panel_svc.save_panel_settings(db, PanelSettingsPayload(subscription_legacy_secret_keys=["already-there"]))
+        panel_svc.add_legacy_subscription_secret_key(db, "already-there", "later-bot")
+        panel_svc.add_legacy_subscription_secret_key(db, "fresh-key", "@fresh-bot")
+
+        saved = panel_svc.get_panel_settings(db)
+        assert saved[LEGACY_SECRET_KEYS_SETTING] == _legacy(("already-there", ""), ("fresh-key", "fresh-bot"))
+        assert panel_svc.get_legacy_subscription_secret_keys(db) == ["already-there", "fresh-key"]
 
 
 def test_save_after_legacy_add_keeps_key_when_payload_omits_legacy_field():
@@ -161,7 +216,7 @@ def test_save_after_legacy_add_keeps_key_when_payload_omits_legacy_field():
 
         saved = panel_svc.save_panel_settings(db, PanelSettingsPayload(bs_monthly_limit=9))
 
-    assert saved[LEGACY_SECRET_KEYS_SETTING] == ["external-panel-key"]
+    assert saved[LEGACY_SECRET_KEYS_SETTING] == _legacy(("external-panel-key", ""))
     assert saved["bs_monthly_limit"] == 9
 
 
