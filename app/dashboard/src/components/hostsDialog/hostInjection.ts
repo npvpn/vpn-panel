@@ -132,6 +132,7 @@ type InjectionTemplate = {
   id: number;
   slug: string;
   body: string;
+  archived_at?: string | null;
   effective_injection?: unknown;
   effective_injection_error?: boolean;
 };
@@ -140,7 +141,11 @@ export function templateInjection(
   host: { client_config_id?: number | null },
   templates: InjectionTemplate[]
 ): HostInjection | null {
-  const chosen = templates.find((t) => t.id === host.client_config_id);
+  // Архивный конфиг хост не получает — подписка берёт default (NPVPN-2366),
+  // значит и инъекция считается от default.
+  const chosen = templates.find(
+    (t) => t.id === host.client_config_id && t.archived_at == null
+  );
   const fallback = templates.find((t) => t.slug === "default");
   const resolved = chosen || fallback;
   if (resolved?.effective_injection_error)

@@ -1,7 +1,6 @@
 import {
   Box,
   FormControl,
-  FormHelperText,
   Text,
   Popover,
   PopoverArrow,
@@ -1283,74 +1282,39 @@ export const HostAdvancedOptions = memo(
                   spacingY={3}
                   w="full"
                 >
-                {/* На всю ширину сетки, а селект — прежней ширины колонки: так подсказка
-                    про архивный конфиг (NPVPN-2366) не переносится по узкой колонке. */}
-                <FormControl gridColumn="1 / -1">
+                <FormControl>
                   <FormLabel>{t("hostsDialog.clientConfig")}</FormLabel>
                   <Controller
                     control={control}
                     name={`${hostKey}.${index}.client_config_id`}
                     render={({ field }) => {
-                      // NPVPN-2366: архивный конфиг нельзя назначить, но уже имеющуюся
-                      // привязку не теряем — показываем её неактивной опцией, и при
-                      // сохранении хоста значение остаётся прежним.
+                      // Архивного конфига в списке нет. Если хост всё ещё к нему привязан,
+                      // селект показывает «По умолчанию» — это то, что получит клиент.
+                      // Значение формы не трогаем, пока админ сам не выберет другой конфиг.
                       const archivedCurrent = clientConfigs.find(
                         (p) => p.id === field.value && p.archived_at != null
                       );
                       return (
-                        <>
-                          {/* Привязан архивный конфиг: поле показывает то, что хост
-                              реально получает, — «По умолчанию», но значение формы не
-                              трогаем (привязка к архивному сохраняется до явного выбора
-                              другого), а про архивный говорит подсказка. */}
-                          <Select
-                            size="sm"
-                            maxW={{ md: "calc(50% - 6px)" }}
-                            value={archivedCurrent ? "" : field.value ?? ""}
-                            onChange={(e) =>
-                              field.onChange(
-                                e.target.value === "" ? null : Number(e.target.value)
-                              )
-                            }
-                          >
-                            <option value="">
-                              {t("hostsDialog.clientConfigDefault")}
-                            </option>
-                            {clientConfigs
-                              .filter((p) => p.archived_at == null)
-                              .map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.title}
-                                </option>
-                              ))}
-                            {/* Архивные видны, но не выбираются: конфиг не пропал, а лежит
-                                в архиве. Отдельной группой — не смешиваются с рабочими. */}
-                            {clientConfigs.some((p) => p.archived_at != null) && (
-                              <optgroup label={t("hostsDialog.clientConfigArchiveGroup")}>
-                                {clientConfigs
-                                  .filter((p) => p.archived_at != null)
-                                  .map((p) => (
-                                    <option key={p.id} value={`archived-${p.id}`} disabled>
-                                      {t("hostsDialog.clientConfigArchived", {
-                                        title: p.title,
-                                      })}
-                                    </option>
-                                  ))}
-                              </optgroup>
-                            )}
-                          </Select>
-                          {archivedCurrent && (
-                            <FormHelperText>
-                              {t("hostsDialog.clientConfigArchivedHint", {
-                                title: archivedCurrent.title,
-                              })}
-                              <br />
-                              {t("hostsDialog.clientConfigArchivedPath", {
-                                title: archivedCurrent.title,
-                              })}
-                            </FormHelperText>
-                          )}
-                        </>
+                        <Select
+                          size="sm"
+                          value={archivedCurrent ? "" : field.value ?? ""}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value === "" ? null : Number(e.target.value)
+                            )
+                          }
+                        >
+                          <option value="">
+                            {t("hostsDialog.clientConfigDefault")}
+                          </option>
+                          {clientConfigs
+                            .filter((p) => p.archived_at == null)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.title}
+                              </option>
+                            ))}
+                        </Select>
                       );
                     }}
                   />

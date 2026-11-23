@@ -34,6 +34,9 @@ type ArchiveConfigModalProps = {
   doc: XrayTemplateDocument | null;
   onClose: () => void;
   onArchived: (id: number) => void;
+  // В архив уходит выбранный конфиг с несохранёнными правками: черновик пропадёт,
+  // и «Отменить» в тосте его не вернёт — предупреждаем до подтверждения.
+  hasUnsavedChanges?: boolean;
 };
 
 // Подтверждение архивации клиентского конфига (NPVPN-2366). Охват показываем до
@@ -43,6 +46,7 @@ export const ArchiveConfigModal: FC<ArchiveConfigModalProps> = ({
   doc,
   onClose,
   onArchived,
+  hasUnsavedChanges = false,
 }) => {
   const { t } = useTranslation();
   const toast = useToast();
@@ -71,8 +75,21 @@ export const ArchiveConfigModal: FC<ArchiveConfigModalProps> = ({
       .finally(() => setLoading(false));
   };
 
+  // Пока запрос идёт, окно не закрывается: иначе ответ пришёл бы, когда админ уже
+  // выбрал другой конфиг, и onArchived сработал бы по устаревшему выбору.
+  const close = () => {
+    if (!loading) onClose();
+  };
+
   return (
-    <Modal isCentered isOpen={!!doc} onClose={onClose} size={{ base: "sm", md: "md" }}>
+    <Modal
+      isCentered
+      isOpen={!!doc}
+      onClose={close}
+      closeOnEsc={!loading}
+      closeOnOverlayClick={!loading}
+      size={{ base: "sm", md: "md" }}
+    >
       <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
       <ModalContent mx="3">
         <ModalHeader pt={6}>
@@ -80,7 +97,7 @@ export const ArchiveConfigModal: FC<ArchiveConfigModalProps> = ({
             <ArchiveIcon />
           </Icon>
         </ModalHeader>
-        <ModalCloseButton mt={3} />
+        <ModalCloseButton mt={3} isDisabled={loading} />
         <ModalBody>
           <Text fontWeight="semibold" fontSize="lg">
             {t("panelSettings.xrayTemplates.archiveTitle", {
@@ -94,13 +111,32 @@ export const ArchiveConfigModal: FC<ArchiveConfigModalProps> = ({
               flexShrink=0: иначе при переполнении maxH flex сжимал строки с
               noOfLines (overflow hidden → min-height 0) до нулевой высоты. */}
           {!!doc?.hosts.length && (
-            <Box mt={3} borderWidth="1px" borderRadius="md" bg={hostsBg} px={3} py={2}>
-              <Text fontSize="sm" _dark={{ color: "gray.400" }} color="gray.600">
+            <Box
+              mt={3}
+              borderWidth="1px"
+              borderRadius="md"
+              bg={hostsBg}
+              px={3}
+              py={2}
+            >
+              <Text
+                fontSize="sm"
+                _dark={{ color: "gray.400" }}
+                color="gray.600"
+              >
                 {t("panelSettings.xrayTemplates.archiveHostsEffect", {
                   count: doc.hosts.length,
                 })}
               </Text>
-              <VStack as="ul" listStyleType="none" align="stretch" spacing={1} mt={2} maxH="180px" overflowY="auto">
+              <VStack
+                as="ul"
+                listStyleType="none"
+                align="stretch"
+                spacing={1}
+                mt={2}
+                maxH="180px"
+                overflowY="auto"
+              >
                 {doc.hosts.map((host, i) => (
                   <Tooltip
                     key={`${host.inbound_tag}-${i}`}
@@ -115,7 +151,18 @@ export const ArchiveConfigModal: FC<ArchiveConfigModalProps> = ({
               </VStack>
             </Box>
           )}
-          <HStack mt={3} spacing={2} align="flex-start" _dark={{ color: "gray.400" }} color="gray.600">
+          {hasUnsavedChanges && (
+            <Text mt={3} fontSize="sm" color="red.500">
+              {t("panelSettings.xrayTemplates.archiveUnsavedWarning")}
+            </Text>
+          )}
+          <HStack
+            mt={3}
+            spacing={2}
+            align="flex-start"
+            _dark={{ color: "gray.400" }}
+            color="gray.600"
+          >
             <InfoIcon flexShrink={0} mt="2px" />
             <Text fontSize="sm">
               {t("panelSettings.xrayTemplates.archiveRestoreNote")}
@@ -123,7 +170,14 @@ export const ArchiveConfigModal: FC<ArchiveConfigModalProps> = ({
           </HStack>
         </ModalBody>
         <ModalFooter display="flex">
-          <Button size="sm" onClick={onClose} mr={3} w="full" variant="outline">
+          <Button
+            size="sm"
+            onClick={close}
+            isDisabled={loading}
+            mr={3}
+            w="full"
+            variant="outline"
+          >
             {t("cancel")}
           </Button>
           <Button

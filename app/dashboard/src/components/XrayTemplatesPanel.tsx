@@ -1,6 +1,4 @@
 import {
-  Alert,
-  AlertDescription,
   AlertDialog,
   AlertDialogBody,
   AlertDialogContent,
@@ -41,7 +39,7 @@ import {
 } from "@heroicons/react/24/outline";
 import dayjs from "dayjs";
 import { FC, useEffect, useRef, useState } from "react";
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 import {
   XrayTemplateDocument,
   XrayTemplateVersionMeta,
@@ -102,15 +100,14 @@ const normalizeBody = (body: string): string => {
 // кольцо-outline с отступом снаружи пилюли, только по клавиатуре (_focusVisible).
 //
 // Кнопка архивации лежит СНАРУЖИ <label> (позиционируется поверх правого края пилюли):
-// внутри <label> клик по ней заодно переключал бы радио. Архивный конфиг — та же
-// пилюля в той же радиогруппе, но приглушённая, с пунктиром и без крестика (NPVPN-2366).
+// внутри <label> клик по ней заодно переключал бы радио. Архивные конфиги в список не
+// попадают (NPVPN-2366).
 const ConfigPill: FC<
   UseRadioProps & {
     doc: XrayTemplateDocument;
     onArchive: (doc: XrayTemplateDocument) => void;
-    isHighlighted?: boolean;
   }
-> = ({ doc, onArchive, isHighlighted = false, ...radioProps }) => {
+> = ({ doc, onArchive, ...radioProps }) => {
   const { t } = useTranslation();
   const { getInputProps, getRadioProps, state } = useRadio(radioProps);
   const idleBorder = useColorModeValue("gray.300", "gray.600");
@@ -118,8 +115,7 @@ const ConfigPill: FC<
   const focusRing = useColorModeValue("gray.700", "gray.200");
   const archiveColor = useColorModeValue("gray.500", "gray.400");
   const isChecked = state.isChecked;
-  const isArchived = doc.archived_at != null;
-  const canArchive = doc.archivable && !isArchived;
+  const canArchive = doc.archivable;
 
   return (
     <Box position="relative" display="inline-flex">
@@ -132,11 +128,7 @@ const ConfigPill: FC<
           pr={canArchive ? 8 : 3}
           py={1}
           borderWidth="1px"
-          borderStyle={isArchived && !isHighlighted ? "dashed" : "solid"}
-          borderColor={isHighlighted ? "orange.400" : idleBorder}
-          boxShadow={isHighlighted ? "0 0 0 3px var(--chakra-colors-orange-200)" : undefined}
-          transition="box-shadow 0.3s, border-color 0.3s"
-          color={isArchived ? archiveColor : undefined}
+          borderColor={idleBorder}
           borderRadius="full"
           cursor="pointer"
           _hover={{ bg: idleHoverBg }}
@@ -239,7 +231,6 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [archiving, setArchiving] = useState<XrayTemplateDocument | null>(null);
-  const [restoring, setRestoring] = useState(false);
   // Конфиг, на который хотят перейти при несохранённых правках, — ждёт подтверждения.
   const [pendingSwitchId, setPendingSwitchId] = useState<number | null>(null);
   const cancelSwitchRef = useRef<HTMLButtonElement>(null);
@@ -247,23 +238,18 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
   // секунды, за это время выбор мог смениться — замыкание видело бы старый).
   const selectedIdRef = useRef<number | null>(null);
   selectedIdRef.current = selectedId;
-  // Архив свёрнут по умолчанию — список может разрастись; заметность даёт рамка
-  // секции со счётчиком.
-  const [showArchive, setShowArchive] = useState(false);
-  // Архивный конфиг, на который надо указать (занял slug нового) — подсвечивается на пару секунд.
-  const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const helpBg = useColorModeValue("gray.100", "whiteAlpha.100");
 
+  // В списке только активные конфиги. Вернуть только что архивированный можно
+  // кнопкой «Отменить» в тосте — он снова появляется среди остальных.
+  // archivedDocuments нужен для ошибки о slug, занятом архивным конфигом.
   const activeDocuments = documents.filter((d) => d.archived_at == null);
   const archivedDocuments = documents.filter((d) => d.archived_at != null);
-  const selectedDoc = documents.find((d) => d.id === selectedId) ?? null;
-  // Архивный конфиг только просматривается: правка и откат версий — после восстановления.
-  const isArchived = selectedDoc?.archived_at != null;
+  const selectedDoc = activeDocuments.find((d) => d.id === selectedId) ?? null;
   // Несохранённое: тело отличается от текущей версии или введён комментарий.
   // normalizeBody с обеих сторон — «{}» и пустое тело считаются одним и тем же.
   const isDirty =
     selectedDoc != null &&
-    !isArchived &&
     (normalizeBody(body) !== normalizeBody(selectedDoc.body ?? "") ||
       comment.trim() !== "");
 
@@ -310,14 +296,25 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
     return listTemplates()
       .then((docs) => {
         setDocuments(docs);
+        // Выбрать можно только активный конфиг: архивный в списке не виден.
+        const active = docs.filter((d) => d.archived_at == null);
+        // Пока шёл запрос, админ сам выбрал другой конфиг (и его тело уже в
+        // редакторе) — устаревший ответ выбор не перебивает, только обновляет список.
+        const latestId = selectedIdRef.current;
+        if (
+          latestId !== currentId &&
+          latestId != null &&
+          active.some((d) => d.id === latestId)
+        )
+          return docs;
         const candidates = [desiredId, currentId];
         const next =
           candidates.find(
-            (id): id is number => id != null && docs.some((d) => d.id === id)
+            (id): id is number => id != null && active.some((d) => d.id === id)
           ) ??
-          docs[0]?.id ??
+          (active.find((d) => !d.archivable) ?? active[0])?.id ??
           null;
-        const doc = docs.find((d) => d.id === next);
+        const doc = active.find((d) => d.id === next);
         setSelectedId(next);
         if (keepDraft && next === currentId) return docs;
         setBody(doc?.body ?? "");
@@ -437,15 +434,11 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
       .catch((err) => {
         if (err?.response?.status === 409) {
           // Архивный конфиг держит свой slug (иначе после восстановления было бы
-          // два одинаковых), но в свёрнутом архиве его не видно — говорим прямо
-          // и раскрываем архив, чтобы было видно, какой конфиг занял slug.
+          // два одинаковых), но в списке его не видно — говорим прямо, кто занял slug.
           const archivedOwner = archivedDocuments.find(
             (d) => d.slug === newSlug.trim()
           );
           if (archivedOwner) {
-            setShowArchive(true);
-            setHighlightedId(archivedOwner.id);
-            window.setTimeout(() => setHighlightedId(null), 4000);
             toast({
               title: t("panelSettings.xrayTemplates.slugArchived", {
                 title: archivedOwner.title,
@@ -471,28 +464,19 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
     if (doc.archivable && doc.archived_at == null) setArchiving(doc);
   };
 
-  const restore = (id: number) => {
-    setRestoring(true);
-    return restoreConfig(id)
+  // «Отменить» в тосте снимает архив и возвращает конфиг в список действующих.
+  // Выбор и черновик текущего конфига не трогаем.
+  const restore = (id: number) =>
+    restoreConfig(id)
       .then(() => {
-        toast({
-          title: t("panelSettings.xrayTemplates.restored"),
-          status: "success",
-          isClosable: true,
-          position: "top",
-        });
-        // Восстановили выбранный (кнопка на плашке) — показываем его. Восстановили
-        // другой («Отменить» в тосте) — выбор и черновик в редакторе не трогаем.
         const currentId = selectedIdRef.current;
-        return currentId === id || currentId == null
+        return currentId == null
           ? loadDocuments(id)
           : loadDocuments(currentId, { keepDraft: true });
       })
       .catch((err) =>
         showErrorToast("panelSettings.xrayTemplates.restoreFailed", err)
-      )
-      .finally(() => setRestoring(false));
-  };
+      );
 
   // Архивация применяется сразу, без «Сохранить», — поэтому сообщаем о ней явно
   // и даём отменить из тоста: передумал или кликнул случайно.
@@ -501,8 +485,9 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
   const handleArchived = (id: number) => {
     const title = archiving?.title ?? "";
     setArchiving(null);
-    // Ушёл в архив другой конфиг — черновик выбранного сохраняется.
-    if (id === selectedId) loadDocuments(defaultDocId());
+    // Ушёл в архив выбранный — loadDocuments сам вернёт на конфиг по умолчанию.
+    // Ушёл другой — черновик выбранного сохраняется.
+    if (id === selectedId) loadDocuments();
     else loadDocuments(selectedId, { keepDraft: true });
     const toastId = toast({
       status: "success",
@@ -528,19 +513,6 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
     });
   };
 
-  // Сворачивая архив, админ уходит из него: выбор возвращается на конфиг по
-  // умолчанию, иначе статус архивного конфига висел бы без видимой пилюли.
-  const toggleArchive = () => {
-    const fallbackId = defaultDocId();
-    if (showArchive && isArchived && fallbackId != null) {
-      handleSelectDocument(fallbackId);
-    }
-    setShowArchive((v) => !v);
-  };
-
-  const defaultDocId = () =>
-    (activeDocuments.find((d) => !d.archivable) ?? activeDocuments[0])?.id;
-
   return (
     <VStack spacing={4} align="stretch">
       <FormControl>
@@ -553,8 +525,6 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
         {/* Видов документов больше нет: каждая строка — целый самодостаточный
             конфиг. Дефолтный отличается только тем, что достаётся серверам без
             явного выбора и не удаляется (NPVPN-2024). */}
-        {/* Одна радиогруппа на оба ряда: архивный конфиг выбирается так же, как
-            активный, — чтобы посмотреть его и восстановить. */}
         <Box {...getRootProps()} aria-label={t("panelSettings.xrayTemplates.config")}>
           <Box display="flex" flexWrap="wrap" alignItems="center" gap={2}>
             {activeDocuments.map((doc) => (
@@ -615,96 +585,12 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
               </Button>
             </HStack>
           </Collapse>
-          {/* Архив — отдельная секция в рамке (как группы во вкладке «Сообщения»):
-              пилюли и статус выбранного архивного конфига — внутри неё, одним целым. */}
-          {archivedDocuments.length > 0 && (
-            <Box mt={3} border="1px solid" borderColor="inherit" borderRadius="md" p={3}>
-              <Button
-                size="xs"
-                variant="unstyled"
-                display="flex"
-                alignItems="center"
-                gap={1}
-                h="auto"
-                fontWeight="semibold"
-                color="gray.500"
-                textTransform="uppercase"
-                letterSpacing="wide"
-                onClick={toggleArchive}
-                aria-expanded={showArchive}
-              >
-                {t("panelSettings.xrayTemplates.archiveToggle", {
-                  count: archivedDocuments.length,
-                })}
-                <ChevronDownIcon
-                  width={14}
-                  height={14}
-                  style={{
-                    transform: showArchive ? "rotate(180deg)" : "rotate(0deg)",
-                  }}
-                />
-              </Button>
-              <Collapse in={showArchive} animateOpacity>
-                <Box display="flex" flexWrap="wrap" alignItems="center" gap={2} mt={3} p="3px">
-                  {archivedDocuments.map((doc) => (
-                    <ConfigPill
-                      key={doc.id}
-                      {...getRadioProps({ value: String(doc.id) })}
-                      doc={doc}
-                      onArchive={handleArchive}
-                      isHighlighted={highlightedId === doc.id}
-                    />
-                  ))}
-                </Box>
-              </Collapse>
-              {/* Статус выбранного архивного конфига — не уведомление, а его
-                  состояние: не закрывается, уходит при выборе другого конфига
-                  или после восстановления. Вне Collapse — виден и при свёрнутом архиве. */}
-                {selectedDoc && isArchived && (
-                  <Alert status="warning" borderRadius="md" fontSize="sm" mt={3}>
-                    <AlertDescription flex="1">
-                      {/* Жирным — какой конфиг и что делать, остальное — справочно. */}
-                      <Trans
-                        // Автор неизвестен — строка без «· автор», а не с прочерком.
-                        i18nKey={
-                          selectedDoc.archived_by
-                            ? "panelSettings.xrayTemplates.archivedBanner"
-                            : "panelSettings.xrayTemplates.archivedBannerNoAuthor"
-                        }
-                        values={{
-                          title: selectedDoc.title,
-                          date: dayjs(selectedDoc.archived_at).format("YYYY-MM-DD HH:mm"),
-                          by: selectedDoc.archived_by,
-                        }}
-                        components={{ b: <b /> }}
-                      />
-                      {selectedDoc.hosts.length > 0 && (
-                        <Text>
-                          {t("panelSettings.xrayTemplates.archivedBannerHosts", {
-                            count: selectedDoc.hosts.length,
-                          })}
-                        </Text>
-                      )}
-                    </AlertDescription>
-                    <Button
-                      size="sm"
-                      colorScheme="primary"
-                      ml={3}
-                      flexShrink={0}
-                      isLoading={restoring}
-                      onClick={() => restore(selectedDoc.id)}
-                    >
-                      {t("panelSettings.xrayTemplates.restoreConfig")}
-                    </Button>
-                  </Alert>
-                )}
-            </Box>
-          )}
         </Box>
         <ArchiveConfigModal
           doc={archiving}
           onClose={() => setArchiving(null)}
           onArchived={handleArchived}
+          hasUnsavedChanges={archiving?.id === selectedId && isDirty}
         />
         {/* Как «Закрыть без сохранения?» у окна настроек — тот же вид и тексты. */}
         <AlertDialog
@@ -753,15 +639,7 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
 
       <FormControl isInvalid={!!validationError}>
         <Box minH="220px">
-          {/* Архивный — тот же текстовый редактор, но только для чтения: JSON
-              можно выделить и скопировать, чтобы взять за основу нового.
-              key: опции JsonEditor задаются при создании — пересоздаём при смене. */}
-          <JsonEditor
-            key={isArchived ? "readonly" : "edit"}
-            json={editorJson}
-            onChange={setBody}
-            readOnly={isArchived}
-          />
+          <JsonEditor json={editorJson} onChange={setBody} />
         </Box>
         {validationError && (
           <FormErrorMessage>{validationError}</FormErrorMessage>
@@ -773,7 +651,6 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
         <Input
           size="sm"
           value={comment}
-          isDisabled={isArchived}
           placeholder={t("panelSettings.xrayTemplates.versionCommentHint")}
           onChange={(e) => setComment(e.target.value)}
         />
@@ -851,7 +728,7 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
                         <Badge colorScheme="green" variant="subtle">
                           {t("panelSettings.xrayTemplates.currentVersion")}
                         </Badge>
-                      ) : !isArchived && (
+                      ) : (
                         <Button
                           size="xs"
                           variant="outline"
