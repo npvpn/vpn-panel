@@ -82,6 +82,7 @@ const emptySettings: PanelSettings = {
   sub_unsupported_client_server_text: [],
   sub_bs_limit_server_text: [],
   sub_device_limit_hard_mode: false,
+  sub_update_interval: "",
 };
 
 const SERVER_TEXT_FIELDS: SubscriptionMessageServerField[] = [
@@ -145,6 +146,7 @@ const SUBSCRIPTION_FIELDS = [
   "sub_custom_headers",
   "bs_monthly_limit",
   "sub_device_limit_hard_mode",
+  "sub_update_interval",
 ] as const;
 
 const MESSAGE_TEXT_FIELDS = [
@@ -397,7 +399,11 @@ export const PanelSettingsDialog: FC = () => {
     const empty = t("panelSettings.emptyValue");
     const rows: ResetDiffRow[] = [];
     const addText = (
-      field: "sub_routing_happ" | "sub_routing_v2raytun" | "sub_custom_headers",
+      field:
+        | "sub_routing_happ"
+        | "sub_routing_v2raytun"
+        | "sub_custom_headers"
+        | "sub_update_interval",
       labelKey: string
     ) => {
       if (settings[field] === target[field]) return;
@@ -411,6 +417,7 @@ export const PanelSettingsDialog: FC = () => {
     addText("sub_routing_happ", "panelSettings.subRoutingHapp");
     addText("sub_routing_v2raytun", "panelSettings.subRoutingV2raytun");
     addText("sub_custom_headers", "panelSettings.subCustomHeaders");
+    addText("sub_update_interval", "panelSettings.subUpdateInterval");
     const addMessageText = (
       field: (typeof MESSAGE_TEXT_FIELDS)[number],
       labelKey: string
@@ -689,6 +696,22 @@ export const PanelSettingsDialog: FC = () => {
                       />
                       <FormHelperText>
                         {t("panelSettings.subCustomHeadersHint")}
+                      </FormHelperText>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>
+                        {t("panelSettings.subUpdateInterval")}
+                      </FormLabel>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={settings.sub_update_interval}
+                        onChange={(e) =>
+                          updateSettings({ sub_update_interval: e.target.value })
+                        }
+                      />
+                      <FormHelperText>
+                        {t("panelSettings.subUpdateIntervalHint")}
                       </FormHelperText>
                     </FormControl>
                     <FormControl>

@@ -169,7 +169,7 @@ export const HappSubscriptionPreview: FC<Props> = ({
     substitutePlaceholders(botSettings?.sub_profile_title || "") ||
     bots.find((bot) => bot.username === botUsername)?.title ||
     t("botSettings.subProfileTitle");
-  const interval = botSettings?.sub_update_interval || "12";
+  const interval = settings.sub_update_interval || "12";
   const selectedBot = bots.find((bot) => bot.username === botUsername);
 
   return (

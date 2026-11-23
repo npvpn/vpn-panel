@@ -47,7 +47,6 @@ import {
 } from "@heroicons/react/24/outline";
 
 const emptySettings: BotSettings = {
-  sub_update_interval: "",
   sub_support_url: "",
   sub_profile_title: "",
   sub_profile_url: "",
@@ -335,9 +334,6 @@ export const BotSettingsDialog: FC = () => {
 
   const mergeWithDefaults = (current: BotSettings): BotSettings => {
     return {
-      sub_update_interval:
-        current.sub_update_interval.trim() ||
-        defaultSettings.sub_update_interval,
       sub_support_url:
         current.sub_support_url.trim() || defaultSettings.sub_support_url,
       sub_profile_title:
@@ -901,25 +897,6 @@ export const BotSettingsDialog: FC = () => {
                         {isManaged
                           ? t("botSettings.managedFieldHint")
                           : t("botSettings.subSubscriptionDomainHint")}
-                      </FormHelperText>
-                    </FormControl>
-                  </SimpleGrid>
-
-                  <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                    <FormControl isDisabled={isManaged}>
-                      <FormLabel>
-                        {t("botSettings.subUpdateInterval")}
-                      </FormLabel>
-                      <Input
-                        value={settings.sub_update_interval}
-                        onChange={(e) =>
-                          updateSettings({
-                            sub_update_interval: e.target.value,
-                          })
-                        }
-                      />
-                      <FormHelperText>
-                        {fieldHint("botSettings.subUpdateIntervalHint")}
                       </FormHelperText>
                     </FormControl>
                   </SimpleGrid>
