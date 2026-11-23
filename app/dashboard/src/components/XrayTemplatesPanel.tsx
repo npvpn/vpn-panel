@@ -238,6 +238,8 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
   // секунды, за это время выбор мог смениться — замыкание видело бы старый).
   const selectedIdRef = useRef<number | null>(null);
   selectedIdRef.current = selectedId;
+  // Повторный клик «Отменить», пока восстановление ещё идёт.
+  const restoringRef = useRef(false);
   const helpBg = useColorModeValue("gray.100", "whiteAlpha.100");
 
   // В списке только активные конфиги. Вернуть только что архивированный можно
@@ -329,8 +331,16 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
 
   const loadVersions = (id: number) => {
     listVersions(id)
-      .then(setVersions)
-      .catch(() => showErrorToast("panelSettings.loadFailed"));
+      .then((versions) => {
+        // Ответ мог прийти уже после перехода на другой конфиг: иначе таблица
+        // покажет чужую историю, а откат уйдёт в текущий id.
+        if (selectedIdRef.current !== id) return;
+        setVersions(versions);
+      })
+      .catch(() => {
+        if (selectedIdRef.current !== id) return;
+        showErrorToast("panelSettings.loadFailed");
+      });
   };
 
   useEffect(() => {
@@ -474,9 +484,11 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
           ? loadDocuments(id)
           : loadDocuments(currentId, { keepDraft: true });
       })
-      .catch((err) =>
-        showErrorToast("panelSettings.xrayTemplates.restoreFailed", err)
-      );
+      .then(() => true)
+      .catch((err) => {
+        showErrorToast("panelSettings.xrayTemplates.restoreFailed", err);
+        return false;
+      });
 
   // Архивация применяется сразу, без «Сохранить», — поэтому сообщаем о ней явно
   // и даём отменить из тоста: передумал или кликнул случайно.
@@ -503,8 +515,16 @@ export const XrayTemplatesPanel: FC<XrayTemplatesPanelProps> = ({
           colorScheme="whiteAlpha"
           color="white"
           onClick={() => {
-            toast.close(toastId);
-            restore(id);
+            if (restoringRef.current) return;
+            restoringRef.current = true;
+            // Тост живёт 8 секунд и закрывался сразу по клику. Если восстановление
+            // падает, списка архива нет — кнопку оставляем, чтобы можно было повторить.
+            toast.update(toastId, { duration: null });
+            restore(id).then((ok) => {
+              restoringRef.current = false;
+              if (ok) toast.close(toastId);
+              else toast.update(toastId, { duration: 8000 });
+            });
           }}
         >
           {t("panelSettings.xrayTemplates.undoArchive")}
