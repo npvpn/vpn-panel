@@ -122,7 +122,7 @@ def apply_managed_bot_push(
     version: str,
     source: str,
 ) -> dict[str, Any]:
-    from app.db.models import Bot, BotSettings, ManagedSetting
+    from app.db.models import Bot, BotSettings, ManagedSetting, User
 
     section = MANAGED_BOT_SECTIONS[key]
     normalized = section.validate(data)
@@ -169,6 +169,7 @@ def apply_managed_bot_push(
     if bot is None:
         from app.db import crud
 
+        is_first_bot = crud.count_bots(db) == 0
         crud.bind_all_hosts_to_only_bot(db)
         bot = Bot(
             username=normalized["username"],
@@ -178,6 +179,8 @@ def apply_managed_bot_push(
         )
         db.add(bot)
         db.flush()
+        if is_first_bot:
+            db.query(User).update({User.bot_id: bot.id}, synchronize_session=False)
         logger.info(
             "managed bot push: created panel bot id=%s username=%s source_bot_id=%s",
             bot.id,

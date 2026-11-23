@@ -407,6 +407,8 @@
   "panelSettings.discard": "Close without saving",
   "botSettings.title": "تنظیمات سرویس",
   "botSettings.createBotToSelect": "برای انتخاب، حداقل یک سرویس ایجاد کنید",
+  "botSettings.firstServiceConfirmTitle": "اولین سرویس اضافه شود؟",
+  "botSettings.firstServiceConfirmBody": "همهٔ میزبان‌های موجود برای همهٔ سرویس‌ها در دسترس می‌شوند و همهٔ کاربران موجود به اولین سرویس متصل خواهند شد.",
   "botSettings.saved": "تنظیمات سرویس ذخیره شد",
   "botSettings.bot": "سرویس",
   "botSettings.selectBot": "سرویس را انتخاب کنید",

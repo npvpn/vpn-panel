@@ -499,6 +499,8 @@
   "botSettings.bsExtraResetPoolOnProlongHint": "Включено: пул обнулится при отдельном запросе на сброс после продления. Выключено: остаток сохранится даже при таком запросе.",
   "botSettings.subUnsupportedClientServerText": "Текст серверов для неподдерживаемого клиента",
   "botSettings.createBot": "Добавить сервис",
+  "botSettings.firstServiceConfirmTitle": "Добавить первый сервис?",
+  "botSettings.firstServiceConfirmBody": "Все существующие хосты станут доступны всем сервисам, а все существующие пользователи будут подключены к первому сервису.",
   "botSettings.deleteBot": "Удалить сервис",
   "botSettings.created": "Сервис создан",
   "botSettings.deleted": "Сервис удален",

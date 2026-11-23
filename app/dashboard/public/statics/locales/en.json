@@ -499,6 +499,8 @@
   "botSettings.bsExtraResetPoolOnProlongHint": "On: a separate reset request after plan renewal clears the extra data pool. Off: the remaining pool is kept even if a reset is requested.",
   "botSettings.subUnsupportedClientServerText": "Unsupported client server text",
   "botSettings.createBot": "Add service",
+  "botSettings.firstServiceConfirmTitle": "Add the first service?",
+  "botSettings.firstServiceConfirmBody": "All existing hosts will become available to all services, and all existing users will be assigned to the first service.",
   "botSettings.deleteBot": "Delete a service",
   "botSettings.created": "Service created",
   "botSettings.deleted": "Service deleted",

@@ -403,6 +403,8 @@
   "panelSettings.discard": "Close without saving",
   "botSettings.title": "服务设置",
   "botSettings.createBotToSelect": "请至少创建一个服务后再选择",
+  "botSettings.firstServiceConfirmTitle": "添加第一个服务？",
+  "botSettings.firstServiceConfirmBody": "所有现有主机将对所有服务可用，所有现有用户将分配给第一个服务。",
   "botSettings.saved": "服务设置已保存",
   "botSettings.bot": "服务",
   "botSettings.selectBot": "选择服务",

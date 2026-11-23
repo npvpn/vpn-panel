@@ -679,6 +679,7 @@ def create_bot(
         if get_bot(db, normalized):
             raise ValueError(f'Bot "{normalized}" already exists')
 
+        is_first_bot = count_bots(db) == 0
         bind_all_hosts_to_only_bot(db)
         bot = Bot(
             username=normalized,
@@ -687,6 +688,12 @@ def create_bot(
             admin_sync_enabled=admin_sync_enabled,
         )
         db.add(bot)
+        db.flush()
+        if is_first_bot:
+            # До первого сервиса пользователи не имеют привязки. Назначаем их
+            # одновременно с его созданием, чтобы подписки продолжили получать
+            # те же хосты после перехода панели из solo-режима.
+            db.query(User).update({User.bot_id: bot.id}, synchronize_session=False)
         db.commit()
         db.refresh(bot)
 

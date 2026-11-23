@@ -21,7 +21,7 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.db import crud  # noqa: E402
 from app.db.base import Base  # noqa: E402
-from app.db.models import Bot, ProxyHost, ProxyInbound, host_bot_association  # noqa: E402
+from app.db.models import Bot, ProxyHost, ProxyInbound, User, host_bot_association  # noqa: E402
 
 if sys.modules.get("app.subscription.share") is _share_stub:
     del sys.modules["app.subscription.share"]
@@ -79,6 +79,29 @@ def test_second_bot_keeps_every_host_on_the_first(db):
     rented = {row.host_id: row.rented_at for row in db.execute(host_bot_association.select()).all()}
     assert rented[free.id] is None
     assert rented[kept.id] is None
+
+
+def test_first_bot_is_assigned_to_existing_users(db):
+    users = [User(username="first_user"), User(username="second_user")]
+    db.add_all(users)
+    db.commit()
+
+    first = crud.create_bot(db, "first")
+
+    assert {user.bot_id for user in db.query(User).all()} == {first.id}
+
+
+def test_first_managed_bot_is_assigned_to_existing_users(db):
+    from app.services import managed_settings as svc
+
+    users = [User(username="first_user"), User(username="second_user")]
+    db.add_all(users)
+    db.commit()
+
+    svc.apply_managed_bot_push(db, svc.BOT_SETTINGS_KEY, 42, data=_MANAGED, version="v1", source="telegram")
+
+    first = db.query(Bot).one()
+    assert {user.bot_id for user in db.query(User).all()} == {first.id}
 
 
 def test_managed_push_of_second_bot_binds_hosts_to_the_first(db):
