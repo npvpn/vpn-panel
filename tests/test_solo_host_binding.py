@@ -111,3 +111,60 @@ def test_repeat_managed_push_does_not_bind_again(db):
     svc.apply_managed_bot_push(db, svc.BOT_SETTINGS_KEY, 7, data=_MANAGED, version="v2", source="telegram")
 
     assert db.query(Bot).one().hosts == []
+
+
+class _LockResult:
+    def scalar(self):
+        return 1
+
+
+class _MySQLLockConnection:
+    def __init__(self, events: list[str]):
+        self.events = events
+
+    def execute(self, statement):
+        query = str(statement)
+        self.events.append("release" if "RELEASE_LOCK" in query else "acquire")
+        return _LockResult()
+
+    def close(self):
+        self.events.append("close")
+
+
+class _MySQLLockDB:
+    bind = types.SimpleNamespace(dialect=types.SimpleNamespace(name="mysql"))
+
+    def __init__(self, events: list[str]):
+        self.events = events
+        self.connection = _MySQLLockConnection(events)
+        self.engine = self
+
+    def get_bind(self):
+        return self
+
+    def connect(self):
+        self.events.append("connect")
+        return self.connection
+
+
+def test_mysql_creation_lock_stays_open_until_work_is_complete():
+    events: list[str] = []
+    db = _MySQLLockDB(events)
+
+    with crud._lock_bot_creation(db):
+        events.append("commit")
+        assert events == ["connect", "acquire", "commit"]
+
+    assert events == ["connect", "acquire", "commit", "release", "close"]
+
+
+def test_mysql_creation_lock_is_released_when_work_fails():
+    events: list[str] = []
+    db = _MySQLLockDB(events)
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        with crud._lock_bot_creation(db):
+            events.append("commit")
+            raise RuntimeError("commit failed")
+
+    assert events == ["connect", "acquire", "commit", "release", "close"]

@@ -64,7 +64,9 @@ export const BotSettingsDialog: FC = () => {
   const toast = useToast();
   const [bots, setBots] = useState<Bot[]>([]);
   const [selectedBot, setSelectedBot] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
+  const [isBotSettingsLoading, setIsBotSettingsLoading] = useState(false);
+  const [botSettingsLoaded, setBotSettingsLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -88,6 +90,7 @@ export const BotSettingsDialog: FC = () => {
 
   const saveDraftTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const botsRequestId = useRef(0);
+  const loading = isInitialLoading || isBotSettingsLoading;
 
   const saveDraft = (
     newSettings: BotSettings,
@@ -147,7 +150,7 @@ export const BotSettingsDialog: FC = () => {
         ++botsRequestId.current;
       };
     }
-    setLoading(true);
+    setIsInitialLoading(true);
     setSelectedBot("");
     setBotUsername("");
     setBotTitle("");
@@ -177,7 +180,7 @@ export const BotSettingsDialog: FC = () => {
         })
         .catch(() => undefined),
     ]).finally(() => {
-      if (requestId === botsRequestId.current) setLoading(false);
+      if (requestId === botsRequestId.current) setIsInitialLoading(false);
     });
     return () => {
       ++botsRequestId.current;
@@ -194,6 +197,7 @@ export const BotSettingsDialog: FC = () => {
       setBotTitle("");
       replaceSettings(emptySettings);
       setServerSettings(emptySettings);
+      setBotSettingsLoaded(false);
       const newDraft = localStorage.getItem(NEW_BOT_DRAFT_KEY);
       setHasDraft(!!newDraft);
       return;
@@ -201,7 +205,8 @@ export const BotSettingsDialog: FC = () => {
     const selected = bots.find((bot) => bot.username === selectedBot);
     setBotUsername(selected?.username || "");
     setBotTitle(selected?.title || "");
-    setLoading(true);
+    setIsBotSettingsLoading(true);
+    setBotSettingsLoaded(false);
 
     let cancelled = false;
 
@@ -219,9 +224,13 @@ export const BotSettingsDialog: FC = () => {
         } else {
           setHasDraft(false);
         }
+        setBotSettingsLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setBotSettingsLoaded(false);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setIsBotSettingsLoading(false);
       });
 
     return () => {
@@ -272,7 +281,7 @@ export const BotSettingsDialog: FC = () => {
   const adminSyncEnabled = selectedBotModel?.admin_sync_enabled ?? true;
 
   const setAdminSync = (enabled: boolean) => {
-    if (!selectedBot) return;
+    if (!selectedBot || !botSettingsLoaded) return;
     setSyncingAdmin(true);
     fetch<Bot | { admin_sync_enabled: boolean }>(
       `/bots/${selectedBot}/admin-sync`,
@@ -346,7 +355,7 @@ export const BotSettingsDialog: FC = () => {
   };
 
   const save = () => {
-    if (!selectedBot) return;
+    if (!selectedBot || !botSettingsLoaded) return;
     const normalizedUsername = botUsername.trim().replace(/^@/, "");
     if (!normalizedUsername) return;
     const normalizedTitle = botTitle.trim();
@@ -422,7 +431,7 @@ export const BotSettingsDialog: FC = () => {
   };
 
   const createBot = () => {
-    if (!botUsername.trim()) return;
+    if (isInitialLoading || !botUsername.trim()) return;
     setCreating(true);
     fetch<Bot>("/bots", {
       method: "POST",
@@ -960,7 +969,7 @@ export const BotSettingsDialog: FC = () => {
                 colorScheme="green"
                 onClick={createBot}
                 isLoading={creating}
-                isDisabled={!!selectedBot || !botUsername.trim()}
+                isDisabled={isInitialLoading || !!selectedBot || !botUsername.trim()}
               >
                 {t("botSettings.createBot")}
               </Button>
@@ -987,7 +996,7 @@ export const BotSettingsDialog: FC = () => {
                 colorScheme="primary"
                 onClick={save}
                 isLoading={saving}
-                isDisabled={loading || !selectedBot || !botUsername.trim()}
+                isDisabled={loading || !botSettingsLoaded || !selectedBot || !botUsername.trim()}
               >
                 {t("core.save")}
               </Button>

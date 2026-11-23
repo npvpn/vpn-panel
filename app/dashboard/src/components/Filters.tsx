@@ -114,14 +114,6 @@ export const Filters: FC<FilterProps> = ({ ...props }) => {
       .then((items) => {
         setBots(items);
         setBotsLoaded(true);
-        if (items.length === 1) {
-          setSelectedBotId(items[0].id);
-          useDashboard.getState().onFilterChange({
-            ...useDashboard.getState().filters,
-            offset: 0,
-            bot_username: items[0].username,
-          });
-        }
       })
       .catch(() => setBots([]));
   }, []);

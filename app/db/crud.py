@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session, joinedload, selectinload
 from sqlalchemy.sql.functions import coalesce
@@ -85,14 +86,22 @@ _BOT_CREATION_LOCK = Lock()
 def _lock_bot_creation(db: Session):
     """Serialize the 0→1→2 transition that materializes host bindings."""
     if db.bind is not None and db.bind.dialect.name == "mysql":
-        connection = db.connection()
-        acquired = connection.execute(text("SELECT GET_LOCK('npvpn_bot_creation', 10)")).scalar()
-        if acquired != 1:
-            raise ValueError("Could not acquire bot creation lock")
+        # Advisory locks live on a MySQL connection, while Session.commit() may
+        # return the session connection to the pool. Keep a dedicated connection
+        # open so RELEASE_LOCK always addresses the one that acquired the lock.
+        bind = db.get_bind()
+        engine = bind if isinstance(bind, Engine) else bind.engine
+        connection = engine.connect()
         try:
-            yield
+            acquired = connection.execute(text("SELECT GET_LOCK('npvpn_bot_creation', 10)")).scalar()
+            if acquired != 1:
+                raise ValueError("Could not acquire bot creation lock")
+            try:
+                yield
+            finally:
+                connection.execute(text("SELECT RELEASE_LOCK('npvpn_bot_creation')"))
         finally:
-            connection.execute(text("SELECT RELEASE_LOCK('npvpn_bot_creation')"))
+            connection.close()
         return
 
     with _BOT_CREATION_LOCK:
