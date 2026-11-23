@@ -45,6 +45,7 @@ import ReactApexChart from "react-apexcharts";
 import ReactDatePicker from "react-datepicker";
 import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { datePickerLocale } from "locales/i18n";
 import {
   ProxyKeys,
   ProxyType,
@@ -290,7 +291,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
   );
 
   const toast = useToast();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
 
   const { colorMode } = useColorMode();
 
@@ -854,7 +855,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
                                 return (
                                   <>
                                     <ReactDatePicker
-                                      locale={i18n.language.toLocaleLowerCase()}
+                                      locale={datePickerLocale()}
                                       dateFormat={t("dateFormat")}
                                       minDate={new Date()}
                                       selected={

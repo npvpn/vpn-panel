@@ -55,14 +55,13 @@ i18n.on("languageChanged", (lng) => {
 });
 
 // DataPicker
-// Календарю передают i18n.language в нижнем регистре, а детектор отдаёт язык
-// браузера с регионом («ru-RU» → «ru-ru»): регистрируем и короткую, и региональную
-// форму, иначе календарь падал на английский с предупреждением в консоли.
-registerLocale("zh-cn", zh);
+// Детектор отдаёт язык браузера с регионом («ru-RU», «ru-UA»), а локали календаря
+// зарегистрированы по основному коду — календарю передаём datePickerLocale().
 registerLocale("zh", zh);
 registerLocale("ru", ru);
-registerLocale("ru-ru", ru);
 registerLocale("fa", fa);
-registerLocale("fa-ir", fa);
+
+export const datePickerLocale = () =>
+    i18n.language.split("-")[0].toLowerCase();
 
 export default i18n;
