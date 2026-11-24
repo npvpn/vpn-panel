@@ -111,7 +111,9 @@ def modify_hosts(
     try:
         for hosts in modified_hosts.values():
             for host in hosts:
-                xray_templates_service.assert_config_exists(db, host.client_config_id)
+                if host.is_placeholder:
+                    continue
+                xray_templates_service.assert_host_config_assignment(db, host.id, host.client_config_id)
     except xray_templates_service.XrayTemplateError as exc:
         raise HTTPException(status_code=422, detail={"client_config_id": str(exc)}) from exc
 

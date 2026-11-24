@@ -97,6 +97,9 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
       </Text>
       <Box overflow="auto" css={{ direction: "rtl" }}>
         <HStack alignItems="center">
+          {/* Обёртка: HStack ставит детям margin, а меню без портала кладёт свой
+              popper-контейнер прямо сюда — Popper ругался на margin в консоли. */}
+          <Box>
           <Menu>
             <MenuButton
               as={IconButton}
@@ -177,6 +180,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
               </Link>
             </MenuList>
           </Menu>
+          </Box>
 
           {isSudo() && (
             <IconButton

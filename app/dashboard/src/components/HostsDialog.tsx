@@ -608,8 +608,9 @@ export const HostsDialog: FC = () => {
                         <Box flexShrink={0}>
                           {/* SEARCH + FILTERS. Flex с gap, а не HStack:
                               отступы HStack — margin слева, и при переносе
-                              строки первый элемент новой строки съезжал. */}
-                          <Flex mt={1} gap={2} flexWrap="wrap">
+                              строки первый элемент новой строки съезжал.
+                              p="2px": кольцо фокуса поиска не обрезается краем. */}
+                          <Flex mt={1} p="2px" gap={2} flexWrap="wrap">
                             <InputGroup flex="2" minW="180px" size="sm">
                               <InputLeftElement pointerEvents="none">
                                 <MagnifyingGlassIcon
@@ -623,6 +624,8 @@ export const HostsDialog: FC = () => {
                                   t("hostsDialog.search") ??
                                   "Search by remark or address..."
                                 }
+                                // Плейсхолдер обрезается в узком окне — полный текст при наведении.
+                                title={t("hostsDialog.search") ?? undefined}
                                 {...filterFieldProps}
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}

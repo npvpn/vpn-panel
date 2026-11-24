@@ -155,6 +155,9 @@ class XrayTemplate(Base):
     title = Column(String(128), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # NPVPN-2366: null — документ в работе. Архив не удаляет версии и не обнуляет привязку хоста.
+    archived_at = Column(DateTime, nullable=True)
+    archived_by = Column(String(34), nullable=True)
 
     versions = relationship(
         "XrayTemplateVersion",

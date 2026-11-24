@@ -8,19 +8,47 @@ export type XrayTemplateVersionMeta = {
   size: number;
 };
 
+export type XrayTemplateHost = {
+  remark: string;
+  inbound_tag: string;
+};
+
 export type XrayTemplateDocument = {
   id: number;
   slug: string;
   title: string;
   body: string;
-  deletable: boolean;
+  // Можно ли отправить в архив (default — нельзя). Решает бэк, не фронт.
+  archivable: boolean;
+  // null — активный конфиг; иначе ISO-дата архивации (NPVPN-2366).
+  archived_at: string | null;
+  archived_by: string | null;
+  // Хосты, привязанные к конфигу (у архивного они получают default) — чтобы перед
+  // архивацией было видно, кого именно затронет.
+  hosts: XrayTemplateHost[];
   effective_injection?: unknown;
   effective_injection_error?: boolean;
   current: XrayTemplateVersionMeta | null;
 };
 
-export const listTemplates = () =>
-  fetch("/settings/xray-templates") as Promise<XrayTemplateDocument[]>;
+// Защита от бэка без полей архива (старый ответ с `deletable` или частичная
+// доработка): без неё `archivable` = undefined, и бейдж «по умолчанию» вставал на
+// каждый конфиг, а `hosts.length` падал. Старое поле — запасной источник права.
+const normalizeDocument = (
+  doc: Partial<XrayTemplateDocument> & { deletable?: boolean }
+): XrayTemplateDocument =>
+  ({
+    ...doc,
+    archivable: doc.archivable ?? doc.deletable ?? doc.slug !== "default",
+    archived_at: doc.archived_at ?? null,
+    archived_by: doc.archived_by ?? null,
+    hosts: doc.hosts ?? [],
+  } as XrayTemplateDocument);
+
+export const listTemplates = (): Promise<XrayTemplateDocument[]> =>
+  fetch("/settings/xray-templates").then(
+    (docs: Partial<XrayTemplateDocument>[]) => docs.map(normalizeDocument)
+  );
 
 export const listVersions = (id: number) =>
   fetch(`/settings/xray-templates/${id}/versions`) as Promise<
@@ -51,5 +79,10 @@ export const createConfig = (slug: string, title: string) =>
     body: { slug, title },
   }) as Promise<{ id: number; slug: string; title: string }>;
 
-export const deleteConfig = (id: number) =>
-  fetch(`/settings/xray-templates/${id}`, { method: "DELETE" });
+// Архив вместо удаления (NPVPN-2366, ADR 0005): привязки хостов сохраняются,
+// восстановление возвращает конфиг вместе с ними и с историей версий.
+export const archiveConfig = (id: number): Promise<void> =>
+  fetch(`/settings/xray-templates/${id}/archive`, { method: "POST" });
+
+export const restoreConfig = (id: number): Promise<void> =>
+  fetch(`/settings/xray-templates/${id}/restore`, { method: "POST" });

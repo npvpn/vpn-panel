@@ -88,6 +88,26 @@ def test_effective_mode_uses_selected_default_and_form_precedence():
     assert run_form(op="effective", host={"client_config_id": 2}, templates=templates) is None
 
 
+def test_archived_client_config_uses_default_injection():
+    """Подписка архивный конфиг не отдаёт. Форма хоста считает инъекцию так же:
+    от default, а не от тела, которое уже не уходит клиенту."""
+    default_directive = HostInjection(addVirtualHostAsOutbound=True).model_dump(mode="json")
+    archived_directive = HostInjection(
+        injectHosts=[{"selector": {"type": "ids", "values": [1]}, "tagPrefix": "proxy", "selectFrom": "ALL"}]
+    ).model_dump(mode="json")
+    templates = [
+        {"id": 1, "slug": "default", "body": "", "effective_injection": default_directive, "archived_at": None},
+        {
+            "id": 2,
+            "slug": "old",
+            "body": "",
+            "effective_injection": archived_directive,
+            "archived_at": "2026-11-23T00:00:00",
+        },
+    ]
+    assert run_form(op="effective", host={"client_config_id": 2}, templates=templates) == default_directive
+
+
 def test_file_template_injection_comes_from_server_metadata():
     directive = HostInjection(addVirtualHostAsOutbound=True).model_dump(mode="json")
     templates = [
