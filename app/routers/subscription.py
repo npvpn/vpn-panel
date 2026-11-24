@@ -1,10 +1,13 @@
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Path, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.routing import APIRoute
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
+from starlette.routing import BaseRoute
 
 from app import logger, xray
 from app.db import GetDB, Session, crud, get_db
@@ -64,6 +67,22 @@ client_config: dict[str, SubscriptionClientConfigEntry] = {
 }
 
 router = APIRouter(tags=["Subscription"], prefix=f"/{XRAY_SUBSCRIPTION_PATH}")
+
+
+def subscription_path_taken(routes: Iterable[BaseRoute]) -> bool:
+    """Занят ли путь подписки чужим маршрутом приложения (проверка при старте панели).
+
+    Собственные маршруты этого роутера не в счёт: /sub и /sub/ отдают 404 на
+    ссылку без токена (NPVPN-2374) и конфликтом не являются.
+    """
+    own_endpoints = {route.endpoint for route in router.routes if isinstance(route, APIRoute)}
+    # path есть у Route и Mount, но не объявлен в BaseRoute. Слеш на конце
+    # нормализуем: маршрут "/sub/" иначе дал бы "/sub//" и конфликт не нашёлся бы
+    paths = {
+        f"{getattr(r, 'path', '').rstrip('/')}/" for r in routes if getattr(r, "endpoint", None) not in own_endpoints
+    }
+    paths.add("/api/")
+    return f"/{XRAY_SUBSCRIPTION_PATH}/" in paths
 
 
 def resolve_subscription_context(token: str, db: Session):
@@ -239,6 +258,17 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
     return Response(content=conf, media_type=plan.media_type, headers=ctx.response_headers)
 
 
+@router.get("/", include_in_schema=False)
+@router.get("", include_in_schema=False)
+def subscription_without_token(request: Request, db: Session = Depends(get_db)):
+    """Ссылка подписки с отрезанным токеном (/sub/): та же 404, что на неверный токен.
+
+    Без этого FastAPI отдаёт браузеру голый JSON {"detail": "Not Found"} — тупик
+    без кнопки и без подписи платформы (NPVPN-2374).
+    """
+    return render_not_found(request, db, "")
+
+
 @router.get("/{token}/")
 @router.get("/{token}", include_in_schema=False)
 def user_subscription(
@@ -363,7 +393,10 @@ def user_get_usage(
 def user_subscription_with_client_type(
     request: Request,
     token: str,
-    client_type: str = Path(..., regex="sing-box|clash-meta|clash|outline|v2ray|v2ray-json|incy"),
+    # Без regex в Path: неизвестный тип FastAPI отбил бы 422 с голым JSON
+    # ещё до нас, а браузеру нужна страница 404 (NPVPN-2374). Допустимые
+    # значения — ключи client_config, проверка ниже.
+    client_type: str = Path(..., description=f"One of: {', '.join(client_config)}"),
     db: Session = Depends(get_db),
     user_agent: str = Header(default=""),
     x_hwid: str | None = Header(default=None),
@@ -374,6 +407,16 @@ def user_subscription_with_client_type(
     """Provides a subscription link based on the specified client type (e.g., Clash, V2Ray)."""
     # Эндпоинт с явным client_type: схема похожа на /{token}, но план
     # рендера выбирается не по UA, а по параметру пути.
+    try:
+        plan = resolve_subscription_plan_by_client_type(
+            client_type,
+            client_config=client_config,
+            use_custom_json_default=USE_CUSTOM_JSON_DEFAULT,
+        )
+    except ValueError:
+        # Опечатка в типе клиента — тот же тупик, что и неверный токен
+        return render_not_found(request, db, token)
+
     dbuser, is_revoked, _ = resolve_subscription_context(token, db)
     if not dbuser:
         return render_not_found(request, db, token)
@@ -400,13 +443,33 @@ def user_subscription_with_client_type(
         x_device_model=x_device_model,
     )
 
-    try:
-        # Централизованный выбор формата/типов ответа по client_type.
-        plan = resolve_subscription_plan_by_client_type(
-            client_type,
-            client_config=client_config,
-            use_custom_json_default=USE_CUSTOM_JSON_DEFAULT,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Unknown client type") from exc
     return render_subscription(db, ctx, plan)
+
+
+# Токен потерялся в середине ссылки (/sub//v2ray): пустой сегмент не подходит под
+# {token}, и без этого маршрута браузеру ушёл бы голый JSON 404 (NPVPN-2392)
+@router.get("//{rest:path}", include_in_schema=False)
+def subscription_empty_token(request: Request, rest: str, db: Session = Depends(get_db)):
+    return render_not_found(request, db, "")
+
+
+# Адреса после /sub/<токен>/, у которых есть что отдать: на них ведёт снятие слеша
+_SUFFIXES_WITH_ROUTE = frozenset(client_config) | {"info", "usage"}
+
+
+# Последним: только то, что не подошло ни под один адрес выше
+# (/sub/<токен>/лишний/хвост). Иначе браузеру — голый JSON 404 (NPVPN-2374).
+@router.get("/{token}/{rest:path}", include_in_schema=False)
+def subscription_unknown_path(request: Request, token: str, rest: str, db: Session = Depends(get_db)):
+    # Слеш на конце (/sub/<токен>/v2ray/) раньше снимал redirect_slashes Starlette,
+    # но он срабатывает, только если не подошёл ни один маршрут, а этот подходит
+    # под всё. Снимаем сами, иначе рабочие ссылки со слешем получат 404.
+    # Только на известный адрес: редирект на другой 404 клиенту без поддержки
+    # редиректов дал бы 307 вместо 404 (NPVPN-2392).
+    # Адрес относительный: панель за nginx, схема соединения тут http
+    if rest.endswith("/") and rest.rstrip("/") in _SUFFIXES_WITH_ROUTE:
+        url = request.url.path.rstrip("/")
+        if request.url.query:
+            url = f"{url}?{request.url.query}"
+        return RedirectResponse(url, status_code=307)
+    return render_not_found(request, db, token)
