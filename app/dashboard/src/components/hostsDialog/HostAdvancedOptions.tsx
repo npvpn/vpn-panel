@@ -26,6 +26,7 @@ import {
   TabPanel,
   TabPanels,
   Tabs,
+  Tooltip,
   useDisclosure,
 } from "@chakra-ui/react";
 import {
@@ -879,8 +880,7 @@ export const HostAdvancedOptions = memo(
                   spacingY={3}
                   w="full"
                 >
-                {bots.length > 0 && (
-                  <FormControl
+                <FormControl
                     isInvalid={!!accordionErrors?.bot_usernames}
                     gridColumn={{ md: "1 / -1" }}
                   >
@@ -891,7 +891,9 @@ export const HostAdvancedOptions = memo(
                       _dark={{ color: "gray.400" }}
                       mb={2}
                     >
-                      {t("hostsDialog.availableBots.info")}
+                      {bots.length === 0
+                        ? t("hostsDialog.availableBots.soloHint")
+                        : t("hostsDialog.availableBots.info")}
                     </Text>
                     <Controller
                       control={control}
@@ -915,6 +917,11 @@ export const HostAdvancedOptions = memo(
                           : bots;
 
                         return (
+                          <Tooltip
+                            label={t("botSettings.createBotToSelect")}
+                            isDisabled={bots.length > 0}
+                          >
+                          <Box>
                           <Popover
                             isLazy
                             placement="bottom-start"
@@ -931,11 +938,14 @@ export const HostAdvancedOptions = memo(
                                 size="sm"
                                 w="full"
                                 justifyContent="space-between"
+                                isDisabled={bots.length === 0}
                               >
                                 <Text as="span" noOfLines={1}>
-                                  {/* NPVPN-2044: пустая привязка — «никому», а не
-                                      «всем»; «все» — это выбраны все боты. */}
-                                  {selectedBots.length === 0
+                                  {/* Пустая привязка — «никому» при двух и более
+                                      ботах; в режиме без ботов хост получают все. */}
+                                  {bots.length === 0
+                                    ? t("hostsDialog.availableBots.solo")
+                                    : selectedBots.length === 0
                                     ? t("hostsDialog.availableBots.nobody")
                                     : selectedBots.length === bots.length &&
                                       bots.length > 1
@@ -1062,6 +1072,8 @@ export const HostAdvancedOptions = memo(
                               </PopoverContent>
                             </Portal>
                           </Popover>
+                          </Box>
+                          </Tooltip>
                         );
                       }}
                     />
@@ -1069,7 +1081,6 @@ export const HostAdvancedOptions = memo(
                       <Error>{t(accordionErrors.bot_usernames.message)}</Error>
                     )}
                   </FormControl>
-                )}
                 {!isPlaceholder && (
                 <>
                 {nodes.filter((n) => n.id != null).length > 0 && (

@@ -44,7 +44,8 @@ BOT_MANAGED_JSON_FIELDS = frozenset(
         "sub_profile_url",
         # Заголовок профиля задаётся только в панели, отдельно на каждого бота.
         # Старый пуш ещё может прислать public_name — поле принимается схемой, но не пишется.
-        "sub_update_interval",
+        # Интервал обновления профиля теперь принадлежит настройкам панели.
+        # Поле по-прежнему принимается схемой старого managed-пуша, но не пишется.
         "bs_extra_reset_pool_on_prolong",
     }
 )
@@ -121,8 +122,6 @@ def apply_managed_bot_push(
     version: str,
     source: str,
 ) -> dict[str, Any]:
-    from app.db.models import Bot, BotSettings, ManagedSetting
-
     section = MANAGED_BOT_SECTIONS[key]
     normalized = section.validate(data)
     logger.info(
@@ -133,6 +132,35 @@ def apply_managed_bot_push(
         version,
         source,
     )
+
+    from app.db import crud
+
+    # Тот же лок, что у ручного создания: два первых сервиса не должны оба
+    # увидеть пустую панель и пропустить перенос привязок хостов.
+    with crud._lock_bot_creation(db):
+        return _apply_locked_managed_bot_push(
+            db,
+            source_bot_id,
+            normalized=normalized,
+            data=data,
+            version=version,
+            source=source,
+            section=section,
+        )
+
+
+def _apply_locked_managed_bot_push(
+    db: Session,
+    source_bot_id: int,
+    *,
+    normalized: dict[str, Any],
+    data: dict[str, Any],
+    version: str,
+    source: str,
+    section: Any,
+) -> dict[str, Any]:
+    from app.db import crud
+    from app.db.models import Bot, BotSettings, ManagedSetting, User
 
     bot = db.query(Bot).filter(Bot.source_bot_id == source_bot_id).first()
     username_match = db.query(Bot).filter(Bot.username == normalized["username"]).first()
@@ -166,6 +194,8 @@ def apply_managed_bot_push(
         raise ManagedBotConflictError("bot_username_conflict")
 
     if bot is None:
+        is_first_bot = crud.count_bots(db) == 0
+        crud.bind_all_hosts_to_only_bot(db)
         bot = Bot(
             username=normalized["username"],
             title=normalized["title"],
@@ -174,6 +204,8 @@ def apply_managed_bot_push(
         )
         db.add(bot)
         db.flush()
+        if is_first_bot:
+            db.query(User).update({User.bot_id: bot.id}, synchronize_session=False)
         logger.info(
             "managed bot push: created panel bot id=%s username=%s source_bot_id=%s",
             bot.id,

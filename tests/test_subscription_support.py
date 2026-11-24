@@ -109,7 +109,7 @@ def test_defaults_have_empty_chat_fields():
         assert getattr(BotSettingsPayload(), key) == ""
 
 
-def _response_headers(bot_settings: dict, *, revoked: bool = False) -> dict:
+def _response_headers(bot_settings: dict, *, revoked: bool = False, interval: int = 12) -> dict:
     from types import SimpleNamespace
 
     from app.subscription.subscription_service import build_subscription_response_headers
@@ -121,11 +121,10 @@ def _response_headers(bot_settings: dict, *, revoked: bool = False) -> dict:
             "sub_profile_url": "",
             "sub_profile_title": "t",
             "bot_url": "",
-            "sub_update_interval": 12,
             "sub_support_url": "",
             **bot_settings,
         },
-        panel_settings={},
+        panel_settings={"sub_update_interval": interval},
         announce_text="",
         subscription_userinfo="",
         user_agent="",
@@ -148,6 +147,10 @@ def test_announce_url_prefers_web_url():
     )
     assert _response_headers({"web_url": "  ", "bot_url": "https://t.me/bot"})["announce-url"] == "https://t.me/bot"
     assert _response_headers({"bot_url": "https://t.me/bot"})["announce-url"] == "https://t.me/bot"
+
+
+def test_response_headers_take_profile_update_interval_from_panel():
+    assert _response_headers({}, interval=7)["profile-update-interval"] == "7"
 
 
 @pytest.mark.parametrize(("revoked", "mode", "has_chat"), [(False, "menu", True), (True, "telegram", False)])

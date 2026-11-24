@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypedDict
 
 from fastapi import Request
 
+from app.models.settings import DEFAULT_PANEL_SETTINGS
 from app.subscription.address_context import AddressContext
 from app.subscription.bs_context import BsContext
 from app.subscription.custom_headers import parse_custom_headers
@@ -123,7 +124,9 @@ def build_subscription_response_headers(
         "profile-title": encode_title(bot_settings["sub_profile_title"]),
         "announce": encode_title(announce_text),
         "announce-url": (str(bot_settings.get("web_url") or "").strip() or bot_settings["bot_url"]),
-        "profile-update-interval": str(bot_settings["sub_update_interval"]),
+        "profile-update-interval": str(
+            panel_settings.get("sub_update_interval") or DEFAULT_PANEL_SETTINGS["sub_update_interval"]
+        ),
         "subscription-userinfo": subscription_userinfo,
     }
     headers.update(get_routing_header(user_agent, panel_settings))

@@ -19,6 +19,7 @@ from config import (
     SUB_ROUTING_V2RAYTUN,
     SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
     SUB_UNSUPPORTED_CLIENT_SERVER_TEXT,
+    SUB_UPDATE_INTERVAL,
     SUBSCRIPTION_LEGACY_SECRET_KEYS,
 )
 
@@ -54,6 +55,7 @@ PANEL_SETTING_KEYS: tuple[str, ...] = (
     "sub_routing_v2raytun",
     "subscription_legacy_secret_keys",
     "sub_device_limit_hard_mode",
+    "sub_update_interval",
     *SUBSCRIPTION_MESSAGE_KEYS,
 )
 
@@ -88,6 +90,7 @@ DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "sub_unsupported_client_server_text": normalize_server_text(SUB_UNSUPPORTED_CLIENT_SERVER_TEXT),
     "sub_bs_limit_server_text": [],
     "sub_device_limit_hard_mode": False,
+    "sub_update_interval": str(SUB_UPDATE_INTERVAL),
 }
 
 PLATFORMS: tuple[str, ...] = ("ios", "macos", "android", "androidtv", "windows", "linux")
@@ -325,6 +328,7 @@ class PanelSettingsPayload(BaseModel):
     sub_unsupported_client_server_text: list[str] = Field(default_factory=list)
     sub_bs_limit_server_text: list[str] = Field(default_factory=list)
     sub_device_limit_hard_mode: bool = False
+    sub_update_interval: str = ""
 
     @field_validator("subscription_legacy_secret_keys", mode="before")
     @classmethod
@@ -379,6 +383,11 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
             continue
         if key == LEGACY_SECRET_KEYS_SETTING:
             base[key] = normalize_legacy_secret_key_records(raw[key])
+            continue
+        if key == "sub_update_interval":
+            value = str(raw[key] or "").strip()
+            if value:
+                base[key] = value
             continue
         if key in SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS:
             text = str(raw[key] or "")

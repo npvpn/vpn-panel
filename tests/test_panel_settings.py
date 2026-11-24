@@ -39,6 +39,11 @@ def test_panel_fallback_fills_defaults():
     assert apply_panel_settings_fallback({})["bs_monthly_limit"] == 0
     assert apply_panel_settings_fallback({"bs_monthly_limit": 10})["bs_monthly_limit"] == 10
     assert apply_panel_settings_fallback({"bs_monthly_limit": "nope"})["bs_monthly_limit"] == 0
+    assert apply_panel_settings_fallback(None)["sub_update_interval"] == DEFAULT_PANEL_SETTINGS["sub_update_interval"]
+    assert (
+        apply_panel_settings_fallback({"sub_update_interval": ""})["sub_update_interval"]
+        == DEFAULT_PANEL_SETTINGS["sub_update_interval"]
+    )
 
 
 def test_bot_fallback_ignores_legacy_panel_keys():
@@ -72,6 +77,7 @@ def test_panel_settings_service_roundtrip():
             sub_custom_headers="routing-enable: 0",
             bs_monthly_limit=1024,
             sub_routing_happ="happ://r",
+            sub_update_interval="8",
             sub_client_note="panel note",
             sub_revoked_server_text=["one", "two"],
         )
@@ -79,6 +85,7 @@ def test_panel_settings_service_roundtrip():
         assert saved["sub_custom_headers"] == "routing-enable: 0"
         assert saved["bs_monthly_limit"] == 1024
         assert saved["sub_routing_happ"] == "happ://r"
+        assert saved["sub_update_interval"] == "8"
         assert saved["sub_client_note"] == "panel note"
         assert saved["sub_revoked_server_text"] == ["one", "two"]
         assert panel_svc.get_bs_monthly_limit(db) == 1024

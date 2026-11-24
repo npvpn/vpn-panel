@@ -202,8 +202,10 @@ export const BotHostsTab: FC<Props> = ({
         .map((field, index) => {
           const host = watchedHosts?.[index];
           const botUsernames: string[] = host?.bot_usernames || [];
-          // NPVPN-2044: доступ даёт только привязка — исключений больше нет.
-          const isAvailable = botUsernames.includes(selectedBot);
+          // При нуле и одном боте хосты выдаются всем автоматически;
+          // привязки начинают ограничивать выдачу только со второго бота.
+          const isAvailable =
+            bots.length < 2 || botUsernames.includes(selectedBot);
           // Аренда — отдельная отметка: в счёт идёт только отмеченный хост,
           // служебную привязку (на время разбирательства) тарифицировать нельзя.
           const isRented = (host?.rented_bot_usernames || []).includes(selectedBot);
@@ -216,7 +218,9 @@ export const BotHostsTab: FC<Props> = ({
             address: host?.address ?? "",
             isHostDisabled: !!host?.is_disabled,
             botsLabel:
-              botUsernames.length === 0
+              bots.length === 0
+                ? t("hostsDialog.availableBots.solo")
+                : botUsernames.length === 0
                 ? t("hostsDialog.availableBots.none")
                 : botUsernames.map((username) => `@${username}`).join(", "),
             botsTooltip: botUsernames
@@ -279,7 +283,7 @@ export const BotHostsTab: FC<Props> = ({
   const canEnableAll = rows.some((row) => !row.isAvailable);
   const canDisableAll = rows.some((row) => row.isAvailable);
 
-  const bindingsLocked = selectedBot === "";
+  const bindingsLocked = selectedBot === "" || bots.length < 2;
 
   const toggleHost = useCallback(
     (index: number, enable: boolean) => {
@@ -368,19 +372,27 @@ export const BotHostsTab: FC<Props> = ({
         {/* С поиском: ботов бывает много, а в обычном select название не
             начать вводить. */}
         <Box w={{ base: "full", md: "240px" }}>
-          <ReactSelect<BotOption>
-            aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
-            options={botOptions}
-            value={selectedBotOption}
-            onChange={(option: BotOption | null) =>
-              option && setSelectedBot(option.value)
-            }
-            noOptionsMessage={() => t("botSettings.noBotsFound")}
-            isSearchable
-            styles={botSelectStyles}
-            menuPortalTarget={document.body}
-            menuPosition="fixed"
-          />
+          <Tooltip
+            label={t("botSettings.createBotToSelect")}
+            isDisabled={bots.length > 0}
+          >
+            <Box>
+              <ReactSelect<BotOption>
+                aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
+                options={botOptions}
+                value={selectedBotOption}
+                onChange={(option: BotOption | null) =>
+                  option && setSelectedBot(option.value)
+                }
+                noOptionsMessage={() => t("botSettings.noBotsFound")}
+                isSearchable
+                isDisabled={bots.length === 0}
+                styles={botSelectStyles}
+                menuPortalTarget={document.body}
+                menuPosition="fixed"
+              />
+            </Box>
+          </Tooltip>
         </Box>
 
         <InputGroup

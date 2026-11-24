@@ -39,21 +39,43 @@ def test_save_without_hard_mode_keeps_stored_value():
         assert turned_off["sub_device_limit_hard_mode"] is False
 
 
-def test_user_with_bot_takes_hard_mode_from_panel_settings():
+def test_user_with_bot_takes_panel_wide_subscription_settings():
     from app.models.settings import PanelSettingsPayload
     from app.services.panel_settings import save_panel_settings
     from app.subscription.bot_settings import resolve_bot_settings
 
     with _db() as db:
-        save_panel_settings(db, PanelSettingsPayload(sub_device_limit_hard_mode=True))
+        save_panel_settings(db, PanelSettingsPayload(sub_device_limit_hard_mode=True, sub_update_interval="5"))
         bot = Bot(username="only")
         db.add(bot)
         db.flush()
-        db.add(BotSettings(bot_id=bot.id, data={"sub_device_limit_hard_mode": False, "sub_profile_title": "Бот"}))
+        db.add(
+            BotSettings(
+                bot_id=bot.id,
+                data={
+                    "sub_device_limit_hard_mode": False,
+                    "sub_update_interval": "99",
+                    "sub_profile_title": "Бот",
+                },
+            )
+        )
         user = User(username="member", status=UserStatus.active, bot=bot)
         db.add(user)
         db.commit()
 
         settings = resolve_bot_settings(user)
         assert settings["sub_device_limit_hard_mode"] is True
+        assert settings["sub_update_interval"] == "5"
         assert settings["sub_profile_title"] == "Бот"
+
+
+def test_user_without_bot_uses_env_defaults():
+    from app.models.bot import apply_bot_settings_fallback
+    from app.subscription.bot_settings import resolve_bot_settings
+
+    with _db() as db:
+        user = User(username="solo", status=UserStatus.active)
+        db.add(user)
+        db.commit()
+
+        assert resolve_bot_settings(user)["sub_profile_title"] == apply_bot_settings_fallback(None)["sub_profile_title"]

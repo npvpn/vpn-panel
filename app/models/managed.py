@@ -27,6 +27,8 @@ class ManagedBotSettingsPayload(BaseModel):
     # Панель владеет заголовком. Поле остаётся в схеме: бот ещё шлёт public_name,
     # и extra=forbid иначе роняет весь синк. Значение не применяется.
     sub_profile_title: str | None = None
+    # Интервал обновления профиля принадлежит панели. Оставляем поле для
+    # совместимости со старыми отправителями, но не применяем.
     sub_update_interval: str | None = None
     bs_extra_reset_pool_on_prolong: bool | None = None
     # Панель владеет жёсткой заглушкой. Поле остаётся в схеме: старый бот ещё шлёт его,

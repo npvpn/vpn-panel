@@ -67,25 +67,6 @@ export function flattenHosts(
   return hosts.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
-export function hostsForBot(
-  hosts: HappPreviewHost[],
-  botUsername: string,
-  bsNodeIds: Set<number>
-): Array<HappPreviewHost & { isBs: boolean }> {
-  const username = botUsername.trim().toLowerCase();
-  return hosts
-    .filter((host) => !host.is_disabled)
-    .filter((host) =>
-      (host.bot_usernames || []).some(
-        (name) => name.trim().toLowerCase() === username
-      )
-    )
-    .map((host) => ({
-      ...host,
-      isBs: (host.node_ids || []).some((id) => bsNodeIds.has(id)),
-    }));
-}
-
 export function bsStubRemark(lines: string[]): string {
   return lines.map((line) => line.trim()).filter(Boolean).join(" ");
 }
