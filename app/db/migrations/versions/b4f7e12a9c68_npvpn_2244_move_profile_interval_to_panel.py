@@ -1,7 +1,7 @@
 """NPVPN-2244 move profile update interval to panel settings
 
 Revision ID: b4f7e12a9c68
-Revises: d35990c1e6fe
+Revises: c7e4a91b2366
 Create Date: 2026-11-23 14:00:00.000000
 
 The interval is shared by every subscription in a panel and comes from
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "b4f7e12a9c68"
-down_revision = "d35990c1e6fe"
+down_revision = "c7e4a91b2366"
 branch_labels = None
 depends_on = None
 
