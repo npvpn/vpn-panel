@@ -220,6 +220,124 @@ def test_save_after_legacy_add_keeps_key_when_payload_omits_legacy_field():
     assert saved["bs_monthly_limit"] == 9
 
 
+def test_stale_form_save_keeps_key_imported_in_another_session(monkeypatch):
+    """Форма открыта, импорт в другой сессии, сохранение чужого поля не затирает ключ."""
+    engine = _panel_db()
+    with Session(engine) as setup:
+        panel_svc.save_panel_settings(
+            setup,
+            PanelSettingsPayload(bs_monthly_limit=1, subscription_legacy_secret_keys=["loaded-key"]),
+        )
+
+    with Session(engine) as opened:
+        baseline = panel_svc.get_panel_settings(opened)[LEGACY_SECRET_KEYS_SETTING]
+
+    with Session(engine) as importer:
+        panel_svc.add_legacy_subscription_secret_key(importer, "imported-key", "bot")
+
+    with Session(engine) as saver:
+        saved = panel_svc.save_panel_settings(
+            saver,
+            PanelSettingsPayload(
+                bs_monthly_limit=9,
+                subscription_legacy_secret_keys=baseline,
+                subscription_legacy_secret_keys_baseline=baseline,
+            ),
+        )
+        secrets = panel_svc.get_legacy_subscription_secret_keys(saver)
+        stored = dict(saver.query(GlobalSetting).filter(GlobalSetting.key == PANEL_SETTINGS_KEY).one().data)
+
+    assert saved["bs_monthly_limit"] == 9
+    assert saved[LEGACY_SECRET_KEYS_SETTING] == _legacy(("loaded-key", ""), ("imported-key", "bot"))
+    assert secrets == ["loaded-key", "imported-key"]
+    assert "subscription_legacy_secret_keys_baseline" not in stored
+
+    monkeypatch.setattr("app.utils.jwt.get_secret_key", lambda: "primary-secret")
+    monkeypatch.setattr(panel_svc, "get_cached_legacy_subscription_secret_keys", lambda: tuple(secrets))
+    token = _signed_sub_token("user_1", 1000, "imported-key")
+    payload = get_subscription_payload(token)
+    assert payload is not None
+    assert payload["username"] == "user_1"
+
+
+def test_key_edits_keep_keys_added_since_the_form_loaded():
+    """Удаление и username считаются от снимка загрузки, импортированный ключ остаётся."""
+    engine = _panel_db()
+    with Session(engine) as setup:
+        panel_svc.save_panel_settings(
+            setup,
+            PanelSettingsPayload(
+                subscription_legacy_secret_keys=[
+                    {"secret_key": "keep", "bot_username": ""},
+                    {"secret_key": "drop", "bot_username": "old"},
+                ]
+            ),
+        )
+
+    with Session(engine) as opened:
+        baseline = panel_svc.get_panel_settings(opened)[LEGACY_SECRET_KEYS_SETTING]
+
+    with Session(engine) as importer:
+        panel_svc.add_legacy_subscription_secret_key(importer, "imported-key", "bot")
+
+    with Session(engine) as saver:
+        saved = panel_svc.save_panel_settings(
+            saver,
+            PanelSettingsPayload(
+                subscription_legacy_secret_keys=[
+                    {"secret_key": "keep", "bot_username": "renamed"},
+                    {"secret_key": "typed", "bot_username": "@manual"},
+                ],
+                subscription_legacy_secret_keys_baseline=baseline,
+            ),
+        )
+
+    assert saved[LEGACY_SECRET_KEYS_SETTING] == _legacy(
+        ("keep", "renamed"),
+        ("typed", "manual"),
+        ("imported-key", "bot"),
+    )
+
+
+def test_empty_baseline_keeps_key_imported_after_the_form_loaded():
+    """Пустой снимок — валидное «ключей не было», а не сигнал заменить список."""
+    engine = _panel_db()
+    with Session(engine) as setup:
+        panel_svc.save_panel_settings(setup, PanelSettingsPayload(subscription_legacy_secret_keys=[]))
+
+    with Session(engine) as opened:
+        baseline = panel_svc.get_panel_settings(opened)[LEGACY_SECRET_KEYS_SETTING]
+        assert baseline == []
+
+    with Session(engine) as importer:
+        panel_svc.add_legacy_subscription_secret_key(importer, "imported-key", "bot")
+
+    with Session(engine) as saver:
+        saved = panel_svc.save_panel_settings(
+            saver,
+            PanelSettingsPayload(
+                bs_monthly_limit=4,
+                subscription_legacy_secret_keys=baseline,
+                subscription_legacy_secret_keys_baseline=baseline,
+            ),
+        )
+
+    assert saved["bs_monthly_limit"] == 4
+    assert saved[LEGACY_SECRET_KEYS_SETTING] == _legacy(("imported-key", "bot"))
+
+
+def test_add_legacy_key_creates_settings_row_and_keeps_env_key(monkeypatch):
+    monkeypatch.setitem(DEFAULT_PANEL_SETTINGS, LEGACY_SECRET_KEYS_SETTING, ["from-env"])
+    engine = _panel_db()
+    with Session(engine) as db:
+        assert db.query(GlobalSetting).filter(GlobalSetting.key == PANEL_SETTINGS_KEY).first() is None
+        panel_svc.add_legacy_subscription_secret_key(db, "new-key", "@bot")
+        saved = panel_svc.get_panel_settings(db)
+        assert saved["bs_monthly_limit"] == 0
+        assert saved[LEGACY_SECRET_KEYS_SETTING] == _legacy(("from-env", ""), ("new-key", "bot"))
+        assert db.query(GlobalSetting).filter(GlobalSetting.key == PANEL_SETTINGS_KEY).count() == 1
+
+
 def test_with_primary_jwt_secret_reads_jwt_table():
     engine = _panel_db()
     with Session(engine) as db:

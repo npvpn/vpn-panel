@@ -580,6 +580,12 @@ export const PanelSettingsDialog: FC = () => {
       subscription_legacy_secret_keys: normalizeLegacyKeys(
         settings.subscription_legacy_secret_keys
       ),
+      // Снимок на момент загрузки: сохранение другого поля не затирает ключ,
+      // который импортировался, пока форма была открыта. Правка самих ключей
+      // считается от этого снимка.
+      subscription_legacy_secret_keys_baseline: normalizeLegacyKeys(
+        initial.subscription_legacy_secret_keys
+      ),
       sub_revoked_server_text: toList(listFieldTexts.sub_revoked_server_text),
       sub_expired_server_text: toList(listFieldTexts.sub_expired_server_text),
       sub_device_limit_server_text: toList(

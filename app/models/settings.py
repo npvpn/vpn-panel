@@ -261,6 +261,24 @@ def normalize_legacy_secret_keys(value: Any) -> list[str]:
     return [record["secret_key"] for record in normalize_legacy_secret_key_records(value)]
 
 
+def merge_legacy_secret_keys_since_load(baseline: Any, edited: Any, current: Any) -> list[dict[str, str]]:
+    """Список формы плюс ключи, которых не было в снимке на момент её загрузки.
+
+    Удаление и правка username относятся к ключам, которые форма уже видела.
+    Ключ, добавленный другой сессией после загрузки, в снимке отсутствует и остаётся.
+    """
+    known = {record["secret_key"] for record in normalize_legacy_secret_key_records(baseline)}
+    merged = normalize_legacy_secret_key_records(edited)
+    seen = {record["secret_key"] for record in merged}
+    for record in normalize_legacy_secret_key_records(current):
+        secret = record["secret_key"]
+        if secret in known or secret in seen:
+            continue
+        merged.append(record)
+        seen.add(secret)
+    return merged
+
+
 DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_key_records(
     DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING]
 )
@@ -292,6 +310,9 @@ class PanelSettingsPayload(BaseModel):
     sub_routing_happ: str = ""
     sub_routing_v2raytun: str = ""
     subscription_legacy_secret_keys: list[dict[str, str]] = Field(default_factory=list)
+    # Снимок списка на момент загрузки формы. В настройки не пишется: по нему
+    # сохранение отличает правку ключей от списка, устаревшего из-за импорта.
+    subscription_legacy_secret_keys_baseline: list[dict[str, str]] | None = Field(default=None, exclude=True)
     sub_client_note: str = ""
     sub_revoked_announce_text: str = ""
     sub_expired_announce_text: str = ""
@@ -308,6 +329,13 @@ class PanelSettingsPayload(BaseModel):
     @field_validator("subscription_legacy_secret_keys", mode="before")
     @classmethod
     def validate_legacy_secret_keys(cls, value: Any) -> list[dict[str, str]]:
+        return normalize_legacy_secret_key_records(value)
+
+    @field_validator("subscription_legacy_secret_keys_baseline", mode="before")
+    @classmethod
+    def validate_legacy_secret_keys_baseline(cls, value: Any) -> list[dict[str, str]] | None:
+        if value is None:
+            return None
         return normalize_legacy_secret_key_records(value)
 
     @field_validator(
