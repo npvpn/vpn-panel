@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 import types
 
 _saved_stubs: dict[str, types.ModuleType] = {}
@@ -119,6 +120,58 @@ def test_managed_push_of_second_bot_binds_hosts_to_the_first(db):
 
     assert {item.remark for item in db.query(Bot).filter(Bot.username == "only").one().hosts} == {"Свободный"}
     assert db.query(Bot).filter(Bot.username == "synced_bot").one().hosts == []
+
+
+def test_parallel_managed_creation_binds_hosts_to_the_first_service(tmp_path):
+    from app.services import managed_settings as svc
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'solo.db'}",
+        connect_args={"check_same_thread": False, "timeout": 5},
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        inbound = ProxyInbound(tag="VLESS")
+        session.add(inbound)
+        session.flush()
+        session.add(ProxyHost(remark="Свободный", address="1.1.1.1", inbound=inbound))
+        session.commit()
+
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(2)
+
+    def push(source_id: int, username: str) -> None:
+        payload = {**_MANAGED, "username": username, "bot_url": f"https://t.me/{username}"}
+        try:
+            barrier.wait(timeout=5)
+            with Session(engine) as session:
+                svc.apply_managed_bot_push(
+                    session,
+                    svc.BOT_SETTINGS_KEY,
+                    source_id,
+                    data=payload,
+                    version="v1",
+                    source="telegram",
+                )
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=push, args=(1, "alpha_bot")),
+        threading.Thread(target=push, args=(2, "beta_bot")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert errors == []
+    assert all(not thread.is_alive() for thread in threads)
+    with Session(engine) as session:
+        bots = session.query(Bot).order_by(Bot.id).all()
+        assert {bot.username for bot in bots} == {"alpha_bot", "beta_bot"}
+        assert {item.remark for item in bots[0].hosts} == {"Свободный"}
+        assert list(bots[1].hosts) == []
 
 
 def test_repeat_managed_push_does_not_bind_again(db):

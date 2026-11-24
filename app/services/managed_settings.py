@@ -122,8 +122,6 @@ def apply_managed_bot_push(
     version: str,
     source: str,
 ) -> dict[str, Any]:
-    from app.db.models import Bot, BotSettings, ManagedSetting, User
-
     section = MANAGED_BOT_SECTIONS[key]
     normalized = section.validate(data)
     logger.info(
@@ -134,6 +132,35 @@ def apply_managed_bot_push(
         version,
         source,
     )
+
+    from app.db import crud
+
+    # Тот же лок, что у ручного создания: два первых сервиса не должны оба
+    # увидеть пустую панель и пропустить перенос привязок хостов.
+    with crud._lock_bot_creation(db):
+        return _apply_locked_managed_bot_push(
+            db,
+            source_bot_id,
+            normalized=normalized,
+            data=data,
+            version=version,
+            source=source,
+            section=section,
+        )
+
+
+def _apply_locked_managed_bot_push(
+    db: Session,
+    source_bot_id: int,
+    *,
+    normalized: dict[str, Any],
+    data: dict[str, Any],
+    version: str,
+    source: str,
+    section: Any,
+) -> dict[str, Any]:
+    from app.db import crud
+    from app.db.models import Bot, BotSettings, ManagedSetting, User
 
     bot = db.query(Bot).filter(Bot.source_bot_id == source_bot_id).first()
     username_match = db.query(Bot).filter(Bot.username == normalized["username"]).first()
@@ -167,8 +194,6 @@ def apply_managed_bot_push(
         raise ManagedBotConflictError("bot_username_conflict")
 
     if bot is None:
-        from app.db import crud
-
         is_first_bot = crud.count_bots(db) == 0
         crud.bind_all_hosts_to_only_bot(db)
         bot = Bot(

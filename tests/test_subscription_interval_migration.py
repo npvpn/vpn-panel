@@ -44,7 +44,7 @@ def _engine():
     return engine
 
 
-def test_upgrade_sets_one_hour_on_panel_and_strips_every_bot(monkeypatch):
+def test_upgrade_strips_bot_intervals_without_writing_panel(monkeypatch):
     migration = _module()
     engine = _engine()
     with engine.begin() as conn:
@@ -66,21 +66,21 @@ def test_upgrade_sets_one_hour_on_panel_and_strips_every_bot(monkeypatch):
         migration.upgrade()
 
         panel = json.loads(conn.execute(text("SELECT data FROM global_settings WHERE \"key\" = 'panel'")).scalar())
-        assert panel == {"bs_monthly_limit": 10, "sub_update_interval": "1"}
+        assert panel == {"bs_monthly_limit": 10}
         first = json.loads(conn.execute(text("SELECT data FROM bot_settings WHERE bot_id = 1")).scalar())
         second = json.loads(conn.execute(text("SELECT data FROM bot_settings WHERE bot_id = 2")).scalar())
         assert first == {"show_ads": False}
         assert second == {"web_url": "https://cab"}
 
 
-def test_upgrade_without_panel_or_bots_creates_one_hour_setting(monkeypatch):
+def test_upgrade_without_panel_or_bots_does_not_create_interval(monkeypatch):
     migration = _module()
     engine = _engine()
     with engine.begin() as conn:
         monkeypatch.setattr(migration, "op", _Op(conn))
         migration.upgrade()
-        panel = json.loads(conn.execute(text("SELECT data FROM global_settings WHERE \"key\" = 'panel'")).scalar())
-        assert panel == {"sub_update_interval": "1"}
+        panel = conn.execute(text("SELECT data FROM global_settings WHERE \"key\" = 'panel'")).scalar()
+        assert panel is None
 
 
 def test_downgrade_restores_panel_value_to_every_bot_and_removes_it_from_panel(monkeypatch):

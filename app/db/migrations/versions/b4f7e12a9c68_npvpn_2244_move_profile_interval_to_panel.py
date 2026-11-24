@@ -4,8 +4,10 @@ Revision ID: b4f7e12a9c68
 Revises: d35990c1e6fe
 Create Date: 2026-11-23 14:00:00.000000
 
-The interval is shared by every subscription in a panel. Existing installations
-start with one hour by product decision; per-service values are removed.
+The interval is shared by every subscription in a panel and comes from
+SUB_UPDATE_INTERVAL when the panel setting is empty. This migration only
+removes the old per-service copies. It does not write an hour into panel
+settings: a fresh install must keep the environment default.
 """
 
 import json
@@ -21,7 +23,6 @@ depends_on = None
 
 PANEL_SETTINGS_KEY = "panel"
 UPDATE_INTERVAL_KEY = "sub_update_interval"
-MIGRATED_UPDATE_INTERVAL = "1"
 DEFAULT_UPDATE_INTERVAL = "12"
 
 
@@ -57,32 +58,6 @@ def _strip_interval(payload: dict) -> dict:
 
 def upgrade() -> None:
     bind = op.get_bind()
-    now = datetime.utcnow()
-    gs = _global_settings_table()
-    row = bind.execute(sa.select(gs.c.data).where(gs.c.key == PANEL_SETTINGS_KEY)).fetchone()
-    panel = _parse_json(row[0]) if row else {}
-    if not isinstance(panel, dict):
-        panel = {}
-    panel[UPDATE_INTERVAL_KEY] = MIGRATED_UPDATE_INTERVAL
-
-    if row is None:
-        bind.execute(
-            sa.insert(gs).values(
-                {
-                    "key": PANEL_SETTINGS_KEY,
-                    "data": _dump_json(panel),
-                    "created_at": now,
-                    "updated_at": now,
-                }
-            )
-        )
-    else:
-        bind.execute(
-            sa.update(gs)
-            .where(gs.c.key == PANEL_SETTINGS_KEY)
-            .values(data=_dump_json(panel), updated_at=now)
-        )
-
     for bot_id, data in bind.execute(sa.text("SELECT bot_id, data FROM bot_settings")).fetchall():
         payload = _parse_json(data)
         cleaned = _strip_interval(payload)
@@ -101,6 +76,8 @@ def downgrade() -> None:
     panel = _parse_json(row[0]) if row else {}
     if not isinstance(panel, dict):
         panel = {}
+    if UPDATE_INTERVAL_KEY not in panel:
+        return
     interval = str(panel.get(UPDATE_INTERVAL_KEY) or DEFAULT_UPDATE_INTERVAL)
 
     for bot_id, data in bind.execute(sa.text("SELECT bot_id, data FROM bot_settings")).fetchall():
