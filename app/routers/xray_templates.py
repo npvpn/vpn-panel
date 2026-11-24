@@ -89,6 +89,8 @@ def revert_template(
         return service.revert(db, template_id, version, admin)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except service.XrayTemplateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/settings/xray-templates", response_model=CreatedConfig)
@@ -101,6 +103,37 @@ def create_config(
         return service.create_config(db, payload.slug, payload.title, admin)
     except service.XrayTemplateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/settings/xray-templates/{template_id}/archive")
+def archive_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.check_sudo_admin),
+):
+    try:
+        service.archive_config(db, template_id, admin)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except service.XrayTemplateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {}
+
+
+@router.post("/settings/xray-templates/{template_id}/restore")
+def restore_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.check_sudo_admin),
+):
+    del admin
+    try:
+        service.restore_config(db, template_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except service.XrayTemplateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {}
 
 
 @router.delete("/settings/xray-templates/{template_id}")

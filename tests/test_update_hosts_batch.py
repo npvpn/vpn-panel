@@ -24,7 +24,7 @@ sys.modules.setdefault("app.subscription.share", _share_stub)
 
 from app.db import crud
 from app.db.base import Base
-from app.db.models import Bot, Node, ProxyHost, ProxyInbound, User, UserNodePin, host_bot_association
+from app.db.models import Bot, Node, ProxyHost, ProxyInbound, User, UserNodePin, XrayTemplate, host_bot_association
 from app.models.proxy import ProxyHost as Payload
 from app.models.proxy import ProxyHostALPN, ProxyHostFingerprint
 
@@ -391,3 +391,54 @@ def test_http_invalid_batch_keeps_database_and_cache(api, db, catalog, failure):
     assert db.get(ProxyHost, catalog.moving.id).inbound_tag == "SOURCE"
     assert db.query(UserNodePin).count() == 1
     assert cached == []
+
+
+def test_http_archived_config_assignment(api, db, catalog):
+    """Повтор того же архивного id проходит. Новое назначение и чужой архивный id — 422."""
+    archived = XrayTemplate(slug="archived", title="Архив", archived_at=datetime(2026, 11, 24), archived_by="sudo")
+    other = XrayTemplate(slug="other", title="Другой", archived_at=datetime(2026, 11, 24), archived_by="sudo")
+    db.add_all([archived, other])
+    db.commit()
+    catalog.moving.client_config_id = archived.id
+    db.commit()
+    client, _cached = api
+
+    def put(source_hosts):
+        return client.put(
+            "/api/hosts",
+            json={
+                "SOURCE": [host.model_dump(mode="json") for host in source_hosts],
+                "DEST": [payload(catalog.anchor).model_dump(mode="json")],
+            },
+        )
+
+    kept = put([payload(catalog.moving, client_config_id=archived.id), payload(catalog.staying)])
+    assert kept.status_code == 200, kept.text
+    assert db.get(ProxyHost, catalog.moving.id).client_config_id == archived.id
+
+    switched = put([payload(catalog.moving, client_config_id=other.id), payload(catalog.staying)])
+    assert switched.status_code == 422, switched.text
+    assert db.get(ProxyHost, catalog.moving.id).client_config_id == archived.id
+
+    created = put(
+        [
+            payload(catalog.moving, client_config_id=archived.id),
+            payload(catalog.staying),
+            Payload(remark="new", address="new.example", client_config_id=archived.id),
+        ]
+    )
+    assert created.status_code == 422, created.text
+    assert db.query(ProxyHost).filter(ProxyHost.remark == "new").count() == 0
+
+    placeholder = put(
+        [
+            payload(catalog.moving, client_config_id=archived.id),
+            payload(catalog.staying),
+            Payload(remark="info", is_placeholder=True, client_config_id=archived.id),
+        ]
+    )
+    assert placeholder.status_code == 200, placeholder.text
+    info = db.query(ProxyHost).filter(ProxyHost.remark == "info").one()
+    assert info.is_placeholder is True
+    assert info.client_config_id is None
+    assert db.get(ProxyHost, catalog.moving.id).client_config_id == archived.id

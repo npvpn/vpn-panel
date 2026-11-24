@@ -113,7 +113,10 @@ export const DevicesModal = ({
   };
 
   return (
-    <ModalBody overflow="auto" p={4}>
+    // Скроллится само тело (у окна scrollBehavior="inside"). contain: докрутив
+    // список до конца, колесо не прокручивает страницу под окном (лок прокрутки
+    // страницы на время этого окна снят, см. UserDialog).
+    <ModalBody overflow="auto" p={4} sx={{ overscrollBehavior: "contain" }}>
       {devicesError && (
         <Alert status="error" mb={3}>
           <AlertIcon />
@@ -133,11 +136,22 @@ export const DevicesModal = ({
               borderRadius="lg"
               mb={2}
             >
-              <AccordionButton
+              {/* Удаление — рядом с AccordionButton, а не внутри: <button> в
+                  <button> — невалидная разметка (React предупреждал в консоли),
+                  и клик по корзине пришлось бы глушить stopPropagation. */}
+              <Flex
+                align="center"
+                borderRadius="lg"
                 _hover={{ bg: "gray.100", _dark: { bg: "gray.600" } }}
+                pr={2}
+              >
+              <AccordionButton
+                _hover={{}}
                 borderRadius="lg"
                 px={3}
                 py={2}
+                flex="1"
+                minW={0}
               >
                 <Flex flex="1" align="center" minW={0} gap={4}>
                   {/* HWID */}
@@ -221,27 +235,24 @@ export const DevicesModal = ({
                     {device.status || "active"}
                   </Badge>
 
-                  <Tooltip label={t("delete")} placement="top">
-                    <IconButton
-                      aria-label={t("delete")}
-                      size="xs"
-                      variant="ghost"
-                      colorScheme="red"
-                      icon={<DeleteDeviceIcon />}
-                      isLoading={deletingDeviceId === device.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeviceToDelete(device);
-                      }}
-                      flexShrink={0}
-                      minW="28px"
-                      h="28px"
-                    />
-                  </Tooltip>
-
                   <AccordionIcon flexShrink={0} />
                 </Flex>
               </AccordionButton>
+                <Tooltip label={t("delete")} placement="top">
+                  <IconButton
+                    aria-label={t("delete")}
+                    size="xs"
+                    variant="ghost"
+                    colorScheme="red"
+                    icon={<DeleteDeviceIcon />}
+                    isLoading={deletingDeviceId === device.id}
+                    onClick={() => setDeviceToDelete(device)}
+                    flexShrink={0}
+                    minW="28px"
+                    h="28px"
+                  />
+                </Tooltip>
+              </Flex>
 
               <AccordionPanel pb={4} pt={3}>
                 <VStack align="start" spacing={2.5} divider={<Divider />}>
