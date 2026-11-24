@@ -1,13 +1,4 @@
 import { fetch } from "service/http";
-import {
-  decorateTemplates,
-  mockArchive,
-  mockRestore,
-} from "service/xrayTemplatesMock";
-
-// NPVPN-2366: пока бэк не умеет архивировать, архив обслуживает мок (только dev-флаг).
-// Бэк, подключив archive/restore, удаляет флаг, эти ветки и xrayTemplatesMock.ts.
-const MOCK_ARCHIVE = import.meta.env.VITE_MOCK_XRAY_ARCHIVE === "true";
 
 export type XrayTemplateVersionMeta = {
   version: number;
@@ -54,12 +45,10 @@ const normalizeDocument = (
     hosts: doc.hosts ?? [],
   } as XrayTemplateDocument);
 
-export const listTemplates = (): Promise<XrayTemplateDocument[]> => {
-  const request = fetch("/settings/xray-templates");
-  return (MOCK_ARCHIVE ? request.then(decorateTemplates) : request).then(
+export const listTemplates = (): Promise<XrayTemplateDocument[]> =>
+  fetch("/settings/xray-templates").then(
     (docs: Partial<XrayTemplateDocument>[]) => docs.map(normalizeDocument)
   );
-};
 
 export const listVersions = (id: number) =>
   fetch(`/settings/xray-templates/${id}/versions`) as Promise<
@@ -93,11 +82,7 @@ export const createConfig = (slug: string, title: string) =>
 // Архив вместо удаления (NPVPN-2366, ADR 0005): привязки хостов сохраняются,
 // восстановление возвращает конфиг вместе с ними и с историей версий.
 export const archiveConfig = (id: number): Promise<void> =>
-  MOCK_ARCHIVE
-    ? mockArchive(id)
-    : fetch(`/settings/xray-templates/${id}/archive`, { method: "POST" });
+  fetch(`/settings/xray-templates/${id}/archive`, { method: "POST" });
 
 export const restoreConfig = (id: number): Promise<void> =>
-  MOCK_ARCHIVE
-    ? mockRestore(id)
-    : fetch(`/settings/xray-templates/${id}/restore`, { method: "POST" });
+  fetch(`/settings/xray-templates/${id}/restore`, { method: "POST" });

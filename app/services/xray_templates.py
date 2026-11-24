@@ -5,6 +5,7 @@ Append-only: активная редакция — версия с максим�
 
 from __future__ import annotations
 
+from datetime import datetime
 from functools import cache
 from typing import Any, cast
 
@@ -33,9 +34,9 @@ def get_active_bodies(db: Session) -> dict[str, Any]:
     """{"configs": {id: body}, "default_id": int | None}.
 
     Документы самодостаточны (NPVPN-2024): каждое тело — ПОЛНЫЙ клиентский конфиг,
-    видов документов больше нет. В "configs" попадают только НЕпустые тела: пустое
-    тело означает «документ не заполнен», и рендер уходит фолбэком на дефолтный
-    документ (см. app.xray.client_configs.select_config).
+    видов документов больше нет. В "configs" попадают только НЕпустые тела активных
+    документов. Пустое тело и архив (archived_at, NPVPN-2366) означают «использовать
+    фолбэк» на дефолтный документ (см. app.xray.client_configs.select_config).
 
     "default_id" — id документа со slug `default`; он вторая ступень фолбэка и
     отдаётся отдельно именно потому, что при пустом теле в "configs" его нет.
@@ -61,6 +62,7 @@ def get_active_bodies(db: Session) -> dict[str, Any]:
             (latest.c.template_id == XrayTemplateVersion.template_id)
             & (latest.c.max_version == XrayTemplateVersion.version),
         )
+        .filter(XrayTemplate.archived_at.is_(None))
         .all()
     )
     bodies: dict[str, Any] = {"configs": {}, "default_id": None}
@@ -86,7 +88,7 @@ def invalidate(db: Session) -> None:
 
 
 class XrayTemplateError(Exception):
-    """Нарушение правил документов: дубль slug, удаление неудаляемого. → 409."""
+    """Нарушение правил документов: дубль slug, архив default, правка архивного. → 409."""
 
 
 class InvalidTemplateBody(Exception):
@@ -159,11 +161,19 @@ def list_documents(db: Session) -> list[dict[str, Any]]:
         injection = None
         injection_error = False
         try:
-            resolved = template_injection(lookup(template.id))
+            # Архивное тело не входит в активный lookup (подписка берёт default),
+            # но в списке настроек у документа остаётся его собственный инжект.
+            raw_body = str(latest.body or "") if latest is not None else ""
+            if template.archived_at is not None and raw_body.strip():
+                source = parse_json_object(raw_body)
+            else:
+                source = lookup(template.id)
+            resolved = template_injection(source) if source is not None else None
             injection = resolved.model_dump(mode="json") if resolved else None
         except ValueError:
             # An invalid historical document must remain editable in the UI.
             injection_error = True
+        archivable = template.slug != DEFAULT_CONFIG_SLUG
         out.append(
             {
                 "effective_injection": injection,
@@ -173,10 +183,24 @@ def list_documents(db: Session) -> list[dict[str, Any]]:
                 "title": template.title,
                 "current": _version_dict(latest) if latest else None,
                 "body": latest.body if latest else "",
-                "deletable": template.slug != DEFAULT_CONFIG_SLUG,
+                "deletable": archivable,
+                "archivable": archivable,
+                "archived_at": template.archived_at,
+                "archived_by": template.archived_by,
+                "hosts": _bound_hosts(db, cast(int, template.id)),
             }
         )
     return out
+
+
+def _bound_hosts(db: Session, template_id: int) -> list[dict[str, str]]:
+    rows = (
+        db.query(ProxyHost.remark, ProxyHost.inbound_tag)
+        .filter(ProxyHost.client_config_id == template_id)
+        .order_by(ProxyHost.id)
+        .all()
+    )
+    return [{"remark": remark, "inbound_tag": inbound_tag} for remark, inbound_tag in rows]
 
 
 def list_versions(db: Session, template_id: int, limit: int, offset: int) -> list[dict[str, Any]]:
@@ -202,12 +226,20 @@ def get_version(db: Session, template_id: int, version: int) -> XrayTemplateVers
     return row
 
 
+def _reject_archived(template: XrayTemplate) -> None:
+    if template.archived_at is not None:
+        raise XrayTemplateError("archived config cannot be edited")
+
+
 def save_version(db: Session, template_id: int, body: str | None, comment: str | None, admin) -> dict[str, Any]:
-    _get_template(db, template_id)
+    template = _get_template(db, template_id)
+    _reject_archived(template)
     return _append_version(db, template_id, _validate(body), comment, admin)
 
 
 def revert(db: Session, template_id: int, version: int, admin) -> dict[str, Any]:
+    template = _get_template(db, template_id)
+    _reject_archived(template)
     source = get_version(db, template_id, version)
     return _append_version(db, template_id, _validate(str(source.body or "")), f"откат на версию {version}", admin)
 
@@ -256,19 +288,49 @@ def assert_config_exists(db: Session, template_id: int | None) -> None:
         raise XrayTemplateError("unknown client config")
 
 
-def delete_config(db: Session, template_id: int) -> None:
+def assert_host_config_assignment(db: Session, host_id: int | None, client_config_id: int | None) -> None:
+    """Новое назначение архивного конфига запрещено. Уже сохранённая привязка остаётся."""
+    if client_config_id is None:
+        return
+    template = db.query(XrayTemplate).filter(XrayTemplate.id == client_config_id).first()
+    if template is None:
+        raise XrayTemplateError("unknown client config")
+    if template.archived_at is None:
+        return
+    if host_id is None:
+        raise XrayTemplateError("archived client config cannot be assigned")
+    current = db.query(ProxyHost.client_config_id).filter(ProxyHost.id == host_id).scalar()
+    if current != client_config_id:
+        raise XrayTemplateError("archived client config cannot be assigned")
+
+
+def archive_config(db: Session, template_id: int, admin) -> None:
     template = _get_template(db, template_id)
     if template.slug == DEFAULT_CONFIG_SLUG:
-        raise XrayTemplateError("the default config cannot be deleted")
-    # ON DELETE SET NULL в БД возвращает хосты на default (NPVPN-2024: привязка живёт
-    # на ProxyHost, а не на Node); в ORM-сессии делаем то же явно, иначе уже
-    # загруженные объекты останутся с висячим id.
-    db.query(ProxyHost).filter(ProxyHost.client_config_id == template_id).update(
-        {"client_config_id": None}, synchronize_session=False
-    )
-    db.delete(template)
+        raise XrayTemplateError("the default config cannot be archived")
+    if template.archived_at is not None:
+        raise XrayTemplateError("config is already archived")
+    template.archived_at = datetime.utcnow()
+    template.archived_by = str(getattr(admin, "username", "") or "")
     db.commit()
     invalidate(db)
+
+
+def restore_config(db: Session, template_id: int) -> None:
+    template = _get_template(db, template_id)
+    if template.archived_at is None:
+        raise XrayTemplateError("config is not archived")
+    # Column() в модели mypy видит как Column[T], и None туда не присваивается.
+    setattr(template, "archived_at", None)
+    setattr(template, "archived_by", None)
+    db.commit()
+    invalidate(db)
+
+
+def delete_config(db: Session, template_id: int) -> None:
+    """Жёсткого удаления нет. Отсутствующий документ — 404, существующий — 409."""
+    _get_template(db, template_id)
+    raise XrayTemplateError("client configs are archived, not deleted")
 
 
 def build_template_lookup(bodies):
