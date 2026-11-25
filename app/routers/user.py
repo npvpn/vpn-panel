@@ -173,6 +173,7 @@ def add_user(
     Add a new user
 
     - **username**: 3 to 32 characters, can include a-z, 0-9, and underscores.
+    - **created_at**: Optional registration datetime in UTC. An offset is converted to UTC. A future value is rejected, because the issued link would never open.
     - **status**: User's status, defaults to `active`. Special rules if `on_hold`.
     - **expire**: UTC timestamp for account expiration. Use `0` for unlimited.
     - **data_limit**: Max data usage in bytes (e.g., `1073741824` for 1GB). `0` means unlimited.

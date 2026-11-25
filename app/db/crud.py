@@ -3,7 +3,7 @@ Functions for managing proxy hosts, users, user templates, nodes, and administra
 """
 
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from threading import Lock
 from typing import Any, Literal, cast
@@ -928,6 +928,19 @@ def get_users_count(db: Session, status: UserStatus = None, admin: Admin = None)
     return query.count()
 
 
+def _registration_created_at(value: datetime) -> datetime:
+    """Привести дату регистрации к naive UTC и не сохранять время позже выпуска токена.
+
+    Колонка users.created_at без часового пояса. Смещение вроде +03:00 иначе
+    записывается как есть, и проверка ссылки считает запись новее токена.
+    """
+    if value.tzinfo is not None and value.utcoffset() is not None:
+        value = value.astimezone(UTC).replace(tzinfo=None)
+    if value > datetime.now(UTC).replace(tzinfo=None):
+        raise ValueError("created_at is in the future")
+    return value
+
+
 def create_user(db: Session, user: UserCreate, admin: Admin = None) -> User:
     """
     Creates a new user with provided details.
@@ -952,6 +965,9 @@ def create_user(db: Session, user: UserCreate, admin: Admin = None) -> User:
     if user.bot_username and not bot:
         raise ValueError(f'Bot "{user.bot_username}" not found')
 
+    created_at_kwargs: dict[str, datetime] = {}
+    if user.created_at is not None:
+        created_at_kwargs["created_at"] = _registration_created_at(user.created_at)
     dbuser = User(
         username=user.username,
         proxies=proxies,
@@ -974,6 +990,7 @@ def create_user(db: Session, user: UserCreate, admin: Admin = None) -> User:
         )
         if user.next_plan
         else None,
+        **created_at_kwargs,
     )
     # Ensure stable subscription token exists from day one
     dbuser.subscription_token = create_subscription_token(user.username)
