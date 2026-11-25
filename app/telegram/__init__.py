@@ -9,8 +9,17 @@ from config import TELEGRAM_API_TOKEN, TELEGRAM_PROXY_URL
 
 bot = None
 if TELEGRAM_API_TOKEN:
-    apihelper.proxy = {"http": TELEGRAM_PROXY_URL, "https": TELEGRAM_PROXY_URL}
+    apihelper.proxy = {"http": TELEGRAM_PROXY_URL, "https": TELEGRAM_PROXY_URL}  # type: ignore[assignment]  # SDK types this documented mutable setting as None
     bot = TeleBot(TELEGRAM_API_TOKEN)
+
+
+def get_bot() -> TeleBot:
+    """Обработчики регистрируются только для включённого Telegram-бота."""
+    if bot is None:
+        error = "Telegram bot is not configured"
+        raise RuntimeError(error)
+    return bot
+
 
 handler_names = ["admin", "report", "user"]
 

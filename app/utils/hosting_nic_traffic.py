@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Any, cast
 
-from sqlalchemy import func
+from sqlalchemy import Row, func
 from sqlalchemy.orm import Session
 
 from app.db.models import NodeHostingNicDaily, NodeHostingTrafficAdjustment
@@ -31,7 +31,7 @@ def nic_usage_from_daily(db: Session, start: datetime, end: datetime) -> dict[in
     if day_to < day_from:
         day_from, day_to = day_to, day_from
 
-    rows = (
+    rows: Sequence[Row[int, int | None]] = (
         db.query(NodeHostingNicDaily.node_id, func.sum(NodeHostingNicDaily.used_bytes))
         .filter(NodeHostingNicDaily.day >= day_from, NodeHostingNicDaily.day <= day_to)
         .group_by(NodeHostingNicDaily.node_id)
@@ -46,7 +46,7 @@ def nic_usage_from_daily(db: Session, start: datetime, end: datetime) -> dict[in
         .astimezone(UTC)
         .replace(tzinfo=None)
     )
-    adjustments = (
+    adjustments: Sequence[Row[int, int]] = (
         db.query(NodeHostingTrafficAdjustment.node_id, func.sum(NodeHostingTrafficAdjustment.delta_bytes))
         .filter(
             NodeHostingTrafficAdjustment.cancelled_at.is_(None),

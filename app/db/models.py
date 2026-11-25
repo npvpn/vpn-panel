@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import date, datetime
 from typing import cast
 
 from sqlalchemy import (
@@ -927,8 +927,8 @@ class NodeHostingTrafficAdjustment(Base):
     actual_bytes = Column(BigInteger, nullable=False)
     delta_bytes = Column(BigInteger, nullable=False)
     reason = Column(String(500), nullable=False)
-    created_at = Column(DateTime, nullable=False, index=True)  # UTC
-    cancelled_at = Column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)  # UTC
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cancel_reason = Column(String(500), nullable=True)
 
 
@@ -945,7 +945,7 @@ class NodeHostingNicDaily(Base):
     id = Column(Integer, primary_key=True)
     node_id = Column(Integer, ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
     node = relationship("Node", back_populates="hosting_nic_daily")
-    day = Column(Date, nullable=False, index=True)
+    day: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     used_bytes = Column(BigInteger, nullable=False, default=0, server_default=text("0"))
     updated_at = Column(DateTime, nullable=True)
 
