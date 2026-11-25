@@ -86,6 +86,10 @@ def invalidate(db: Session) -> None:
     db.info.pop(_SESSION_CACHE_KEY, None)
     get_cached_active_bodies.cache_clear()
 
+    from app.services.location_history import topology_changed
+
+    topology_changed()
+
 
 class XrayTemplateError(Exception):
     """Нарушение правил документов: дубль slug, архив default, правка архивного. → 409."""

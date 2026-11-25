@@ -163,6 +163,10 @@ def update_bot_settings(
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
     data = payload.model_dump()
+    if "subscription_delivery_mode" not in payload.model_fields_set:
+        data["subscription_delivery_mode"] = (bot.settings.data if bot.settings else {}).get(
+            "subscription_delivery_mode", "standard"
+        )
     try:
         managed_svc.ensure_bot_settings_update_allowed(db, bot, data)
     except managed_svc.ManagedFieldChangeError:

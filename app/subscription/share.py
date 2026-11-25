@@ -82,6 +82,7 @@ def _render(
     subset: AddressContext | None = None,
     bs_usage_suffix: Callable[[], str] | None = None,
     template_for: Callable[[dict], dict] | None = None,
+    per_tunnel: bool = False,
 ) -> list | str:
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
@@ -104,6 +105,7 @@ def _render(
         subset=subset,
         bs_usage_suffix=bs_usage_suffix,
         template_for=template_for,
+        per_tunnel=per_tunnel,
     )
 
 
@@ -339,6 +341,7 @@ def generate_subscription(
                 bs=bs,
                 stub=stub,
                 conf=conf,
+                per_tunnel=resolved_settings.get("subscription_delivery_mode") == "per_tunnel",
                 subset=subset,
                 bs_usage_suffix=bs_usage_suffix,
                 template_for=lambda host: template_lookup(host.get("client_config_id")),
@@ -468,6 +471,7 @@ def process_inbounds_and_tags(
     subset: AddressContext | None = None,
     bs_usage_suffix: Callable[[], str] | None = None,
     template_for: Callable[[dict], dict] | None = None,
+    per_tunnel: bool = False,
 ) -> list | str:
     bs = bs or BsContext.empty()
     stub = stub or ZERO_STUB
@@ -490,7 +494,8 @@ def process_inbounds_and_tags(
         template_for=template_for,
         bs=bs,
         stub=stub,
-        subset=subset,
+        per_tunnel=per_tunnel,
+        subset=None if per_tunnel else subset,
         panel_bot_count=getattr(xray, "panel_bot_count", None),
     )
     bs_usage_label = None
@@ -512,6 +517,31 @@ def process_inbounds_and_tags(
     for item in candidates:
         if item["host"].get("is_hidden"):
             continue
+        if per_tunnel and isinstance(conf, V2rayJsonConfig):
+            if item.get("is_placeholder") or (item["injection"] is None and item["blocked"]):
+                continue
+            try:
+                if item["injection"] is None:
+                    members = item["endpoints"]
+                else:
+                    selected, _, _ = compose_endpoints(item, candidates)
+                    members = [endpoint for _, endpoint in selected]
+            except InjectionError as exc:
+                logger.warning("Host %s: %s", item["host"].get("id"), exc.code)
+                continue
+            if not members:
+                logger.warning("Host %s: no available probe endpoints", item["host"].get("id"))
+            seen = set()
+            for endpoint in members:
+                key = (endpoint.host_id, endpoint.address)
+                if key in seen:
+                    continue
+                seen.add(key)
+                name = item["remark"]
+                if len(members) > 1 or item["injection"] is not None:
+                    name = f"{name} · {endpoint.host_id} · {endpoint.address}"
+                conf.add_probe_endpoint(name, endpoint)
+            continue
         if item.get("is_placeholder"):
             from app.subscription.sub_stub import add_information_placeholder
 
@@ -521,19 +551,30 @@ def process_inbounds_and_tags(
             if not isinstance(conf, V2rayJsonConfig):
                 continue
             try:
-                endpoints, is_bs, all_blocked = compose_endpoints(item, candidates)
+                targets = getattr(subset, "tunnel_pins", {}).get(item["host"].get("id"))
+                endpoints, is_bs, all_blocked = compose_endpoints(item, candidates, targets=targets)
+                if targets and not endpoints:
+                    endpoints, is_bs, all_blocked = compose_endpoints(item, candidates)
                 if not endpoints:
                     if all_blocked:
                         conf.add_blocked(bs.stub_text, stub)
                     else:
                         logger.warning("Host %s: empty_injection", item["host"].get("id"))
                     continue
-                conf.add_composed(
-                    with_bs_label(item["remark"], is_bs),
-                    endpoints,
-                    item["host"].get("client_config_id"),
-                    item["balancing"],
-                )
+                remark = with_bs_label(item["remark"], is_bs)
+                config_id = item["host"].get("client_config_id")
+                try:
+                    conf.add_composed(remark, endpoints, config_id, item["balancing"])
+                except InjectionError as exc:
+                    if not targets or exc.code not in {"empty_balancer_selector", "unresolved_outbound_tag"}:
+                        raise
+                    # Manual routing may refer to multiple named tags even for a
+                    # single pinned transport. Keep those aliases inside the pin.
+                    original, _, _ = compose_endpoints(item, candidates)
+                    aliases = dict(endpoints)
+                    for index, (tag, _) in enumerate(original):
+                        aliases.setdefault(tag, endpoints[index % len(endpoints)][1])
+                    conf.add_composed(remark, list(aliases.items()), config_id, item["balancing"])
             except InjectionError as exc:
                 logger.warning("Host %s: %s", item["host"].get("id"), exc.code)
             continue

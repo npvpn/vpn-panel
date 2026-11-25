@@ -11,6 +11,7 @@ from app.xray.config import XRayConfig
 from app.xray.core import XRayCore
 from app.xray.host_addresses import (
     addresses_from_nodes,
+    entry_nodes_by_address,
     host_has_bs_node,
     resolve_host_addresses,
     resolve_host_node_ids,
@@ -87,6 +88,7 @@ def hosts(storage: dict):
                     # Инвариант: адреса и node_ids строятся по одному множеству нод —
                     # обе функции живут рядом в host_addresses.py.
                     "node_ids": resolve_host_node_ids(host),
+                    "entry_node_ids": {a: n.id for a, n in entry_nodes_by_address(host).items()},
                     # БС-хост для суффикса расхода в имени: хотя бы одна видимая нода с is_bs.
                     # Считается здесь, чтобы /sub не ходил в БД за признаком.
                     "is_bs": host_has_bs_node(host),
@@ -133,6 +135,10 @@ def hosts(storage: dict):
                 for host in inbound_hosts
                 if not host.is_disabled
             ]
+
+    from app.services.location_history import topology_changed
+
+    topology_changed()
 
 
 __all__ = [

@@ -60,7 +60,9 @@ def _get(app: FastAPI, path: str) -> tuple[int, bytes]:
     return status, body
 
 
-def _request(app: FastAPI, path: str, query: str = "") -> tuple[int, dict[bytes, bytes], bytes]:
+def _request(
+    app: FastAPI, path: str, query: str = "", *, checker: bool = False
+) -> tuple[int, dict[bytes, bytes], bytes]:
     messages: list[dict] = []
     scope = {
         "type": "http",
@@ -68,7 +70,9 @@ def _request(app: FastAPI, path: str, query: str = "") -> tuple[int, dict[bytes,
         "path": path,
         "raw_path": path.encode(),
         "query_string": query.encode(),
-        "headers": [(b"accept", b"text/html"), (b"host", b"panel.test")],
+        "headers": [(b"accept", b"*/*"), (b"user-agent", b"Xray-Checker")]
+        if checker
+        else [(b"accept", b"text/html"), (b"host", b"panel.test")],
         "scheme": "http",
         "server": ("panel.test", 80),
         "client": ("127.0.0.1", 1),
@@ -199,3 +203,24 @@ def test_foreign_route_on_subscription_path_is_detected(sub, suffix):
     app.include_router(foreign)
 
     assert sub.subscription_path_taken(app.routes) is True
+
+
+@pytest.mark.parametrize("suffix", ["", "/v2ray"])
+@pytest.mark.parametrize("mode,expected", [("standard", "v2ray"), ("per_tunnel", "v2ray-json")])
+def test_checker_format_depends_on_subscription_owner(sub, monkeypatch, suffix, mode, expected):
+    dbuser = MagicMock(expire=None)
+    ctx = MagicMock(bot_settings={"subscription_delivery_mode": mode}, panel_settings={}, response_headers={})
+    generate = MagicMock(return_value="payload")
+    monkeypatch.setattr(sub, "resolve_subscription_context", lambda token, db: (dbuser, False, None))
+    monkeypatch.setattr(sub, "crud", MagicMock())
+    monkeypatch.setattr(sub, "UserResponse", MagicMock())
+    monkeypatch.setattr(sub, "resolve_bot_settings", lambda user: ctx.bot_settings)
+    monkeypatch.setattr(sub, "get_panel_settings", lambda db: {})
+    monkeypatch.setattr(sub, "build_render_context", lambda *args, **kwargs: ctx)
+    monkeypatch.setattr(sub, "generate_subscription", generate)
+    monkeypatch.setattr(sub, "_update_user_sub_bg", lambda *args: None)
+    status, headers, _ = _request(_app(sub), f"/sub/{_TOKEN}{suffix}", checker=True)
+    assert status == 200
+    assert generate.call_args.kwargs["config_format"] == expected
+    assert generate.call_args.kwargs["as_base64"] == (mode == "standard")
+    assert headers[b"content-type"].startswith(b"application/json" if mode == "per_tunnel" else b"text/plain")

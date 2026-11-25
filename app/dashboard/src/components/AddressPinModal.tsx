@@ -53,9 +53,10 @@ const DeletePinIcon = chakra(TrashIcon, {
   },
 });
 
-type AssignmentSource = "pin" | "auto" | "unknown";
+type AssignmentSource = "pin" | "auto" | "pool" | "unknown";
 
 type PinResponse = {
+  tunnel_targets?: { source_host_id: number; node_id: number }[] | null;
   host_id: number;
   node_ids: number[];
   created_at: string;
@@ -69,6 +70,7 @@ type HostAssignment = {
   remark: string;
   source: AssignmentSource;
   restorable: boolean;
+  source_host_ids?: number[];
   node_ids: number[];
   addresses: string[];
 };
@@ -80,6 +82,8 @@ type DayAssignments = {
 };
 
 type PinnableNode = {
+  source_host_id?: number | null;
+  source_name?: string | null;
   node_id: number;
   name: string;
 };
@@ -89,6 +93,9 @@ type PinnableHost = {
   remark: string;
   nodes: PinnableNode[];
 };
+
+const nodeKey = (node: PinnableNode) => node.source_host_id == null
+  ? String(node.node_id) : `${node.source_host_id}/${node.node_id}`;
 
 const HISTORY_DAYS = 14;
 // Тот же горизонт, что MAX_PIN_TTL_DAYS (app/services/address_history.py) и
@@ -261,11 +268,15 @@ export const AddressPinModal: FC = () => {
     if (!user || !canCreatePin) return;
     setCreating(true);
     setCreateError(null);
+    const nodes = selectedHost?.nodes.filter(node => selectedNodeIds.includes(nodeKey(node))) || [];
     fetch(`/user/${user.username}/pins`, {
       method: "POST",
       body: {
         host_id: Number(selectedHostId),
-        node_ids: selectedNodeIds.map(Number),
+        node_ids: [...new Set(nodes.map(n => n.node_id))],
+        tunnel_targets: nodes[0]?.source_host_id == null ? undefined : nodes.map(n => ({
+          source_host_id: n.source_host_id, node_id: n.node_id,
+        })),
         ttl_days: ttlDaysNumber,
         note: note.trim() ? note.trim() : undefined,
       },
@@ -383,11 +394,11 @@ export const AddressPinModal: FC = () => {
                             <SimpleGrid columns={{ base: 1, sm: 2 }} spacing={1}>
                               {selectedHost.nodes.map((node) => (
                                 <Checkbox
-                                  key={node.node_id}
-                                  value={String(node.node_id)}
+                                  key={nodeKey(node)}
+                                  value={nodeKey(node)}
                                   fontSize="sm"
                                 >
-                                  {node.name}
+                                  {node.name}{node.source_name && ` · ${node.source_name} (#${node.source_host_id})`}
                                 </Checkbox>
                               ))}
                             </SimpleGrid>
@@ -491,7 +502,12 @@ export const AddressPinModal: FC = () => {
                               {hostLabel(pin.host_id)}
                             </Text>
                             <Text fontSize="xs" color="gray.500">
-                              {t("addressPins.nodeIds")}: {pin.node_ids.join(", ")}
+                              {t("addressPins.nodeIds")}: {pin.tunnel_targets?.map(target => {
+                                const entry = pinnableHosts.find(h => h.host_id === pin.host_id)?.nodes.find(
+                                  n => n.source_host_id === target.source_host_id && n.node_id === target.node_id);
+                                return entry ? `${entry.name} · ${entry.source_name}` :
+                                  `#${target.source_host_id}/${target.node_id} · ${t("addressPins.unavailable")}`;
+                              }).join(", ") || pin.node_ids.join(", ")}
                             </Text>
                             <Text fontSize="xs" color="gray.500">
                               {t("addressPins.expiresAt")}:{" "}
@@ -585,7 +601,7 @@ export const AddressPinModal: FC = () => {
                                         addresses. Показываем адреса — они информативнее
                                         для саппорта и заполнены в обеих ветках. */}
                                     {host.addresses.length
-                                      ? host.addresses.join(", ")
+                                      ? host.addresses.map((addr, i) => host.source_host_ids?.[i] ? `#${host.source_host_ids[i]} · ${addr}` : addr).join(", ")
                                       : host.node_ids.length
                                         ? host.node_ids.join(", ")
                                         : "-"}

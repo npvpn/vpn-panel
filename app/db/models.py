@@ -12,6 +12,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
@@ -19,7 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.mysql import LONGTEXT
+from sqlalchemy.dialects.mysql import DATETIME, LONGTEXT
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 from sqlalchemy.sql.expression import select, text
@@ -908,6 +909,7 @@ class UserNodePin(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     host_id = Column(Integer, ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False, index=True)
     node_ids = Column(JSON, nullable=False)
+    tunnel_targets: Mapped[list[dict[str, int]] | None] = mapped_column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)
     created_by = Column(String(64), nullable=False)
@@ -972,3 +974,31 @@ class NotificationReminder(Base):
     threshold = Column(Integer, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class LocationRefreshLock(Base):
+    __tablename__ = "location_refresh_lock"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+
+class LocationMembership(Base):
+    """Observed audience membership intervals. Keep historical IDs after deletion."""
+
+    __tablename__ = "location_memberships"
+    __table_args__ = (
+        Index("ix_location_audience_node", "bot_id", "node_id", "valid_until", "valid_from"),
+        Index("ix_location_active", "valid_until"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int]
+    host_id: Mapped[int]
+    source_host_id: Mapped[int]
+    node_id: Mapped[int | None]
+    address: Mapped[str] = mapped_column(Text)
+    remark: Mapped[str] = mapped_column(Text)
+    source_name: Mapped[str] = mapped_column(Text)
+    inbound: Mapped[str] = mapped_column(Text)
+    source_inbound: Mapped[str] = mapped_column(Text)
+    composite: Mapped[bool]
+    valid_from: Mapped[datetime] = mapped_column(DateTime().with_variant(DATETIME(fsp=6), "mysql"))
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime().with_variant(DATETIME(fsp=6), "mysql"))

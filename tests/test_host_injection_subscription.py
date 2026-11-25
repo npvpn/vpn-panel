@@ -38,6 +38,7 @@ def scenario(
     bs=None,
     subset=None,
     tags=None,
+    per_tunnel=False,
 ):
     a = {
         **_host("same.example", node_ids=[1], remark="AU-1"),
@@ -81,6 +82,7 @@ def scenario(
         conf,
         bs=bs,
         subset=subset,
+        **({"per_tunnel": True} if per_tunnel else {}),
     )
     return conf, output
 
@@ -313,3 +315,116 @@ def test_invalid_final_tag_graph_omits_only_composite(monkeypatch, kind):
     conf, _ = scenario(monkeypatch, template=template, source_changes={1: {"is_hidden": False}})
     # Ordinary source remains compatible; a broken composed document is not emitted.
     assert len(conf.config) == 1 and conf.config[0]["remarks"] == "AU-1"
+
+
+def test_per_tunnel_retains_source_transport_and_fragment(monkeypatch):
+    conf, _ = scenario(monkeypatch, per_tunnel=True, source_changes={2: {"fragment_setting": "10-20,1-2,tlshello"}})
+    assert len(conf.config) == 2
+    first, second = conf.config
+    assert first["remarks"] != second["remarks"]
+    assert len(first["outbounds"]) == 1
+    proxy, helper = second["outbounds"]
+    assert proxy["streamSettings"]["realitySettings"]["serverName"] == "au2.example"
+    assert proxy["streamSettings"]["sockopt"]["dialerProxy"] == helper["tag"]
+    assert helper["settings"]["fragment"]["length"] == "10-20"
+
+
+def test_per_tunnel_respects_bot_access(monkeypatch):
+    conf, _ = scenario(monkeypatch, per_tunnel=True, source_changes={2: {"bot_usernames": ["foreign"]}})
+    assert len(conf.config) == 1
+    assert "au2.example" not in json.dumps(conf.config)
+
+
+def test_probe_includes_every_own_address_and_only_allowed_injected_sources(monkeypatch):
+    class NoPersonalSelection:
+        def pick(self, *args, **kwargs):
+            pytest.fail("Probe applied personal address selection")
+
+    conf, _ = scenario(
+        monkeypatch,
+        per_tunnel=True,
+        directive=injection((2,), addVirtualHostAsOutbound=True),
+        recipient_changes={"address": ["nl04.test", "nl05.test"]},
+        subset=NoPersonalSelection(),
+    )
+    addresses = [entry["outbounds"][0]["settings"]["vnext"][0]["address"] for entry in conf.config]
+    assert addresses == ["nl04.test", "nl05.test", "same.example"]
+    assert len({entry["remarks"] for entry in conf.config}) == 3
+
+
+def test_probe_checks_reused_source_once(monkeypatch):
+    directive = injection((2,))
+    directive["injectHosts"].append({**directive["injectHosts"][0], "tagPrefix": "backup"})
+    conf, _ = scenario(monkeypatch, per_tunnel=True, directive=directive)
+    assert len(conf.config) == 1
+
+
+def test_recipient_tunnel_pin_keeps_selected_source_transport(monkeypatch):
+    from app.subscription.address_context import AddressContext
+
+    subset = AddressContext(user_id=7, enabled=True, tunnel_pins={3: {(2, 1)}})
+    conf, _ = scenario(monkeypatch, subset=subset, source_changes={2: {"entry_node_ids": {"same.example": 1}}})
+    assert len(endpoints(conf)) == 1
+    assert endpoints(conf)[0]["streamSettings"]["realitySettings"]["serverName"] == "au2.example"
+    conf, _ = scenario(monkeypatch, subset=subset, source_changes={2: {"bot_usernames": ["foreign"]}})
+    assert len(endpoints(conf)) == 1
+    assert endpoints(conf)[0]["streamSettings"]["realitySettings"]["serverName"] == "au1.example"
+
+
+def test_tunnel_pin_preserves_manual_routing_tags(monkeypatch):
+    from app.subscription.address_context import AddressContext
+
+    directive = injection((1,))
+    directive["injectHosts"].append(
+        {"selector": {"type": "ids", "values": [2]}, "selectFrom": "ALL", "tagPrefix": "backup"}
+    )
+    template = deepcopy(FILE_TEMPLATE)
+    template["routing"] = {
+        "balancers": [{"tag": "manual", "selector": ["proxy"], "fallbackTag": "backup"}],
+        "rules": [{"type": "field", "network": "tcp,udp", "balancerTag": "manual"}],
+    }
+    conf, _ = scenario(
+        monkeypatch,
+        directive=directive,
+        template=template,
+        subset=AddressContext(user_id=1, tunnel_pins={3: {(2, 7)}}),
+        source_changes={2: {"entry_node_ids": {"same.example": 7}}},
+    )
+    assert len(conf.config) == 1
+    assert {o["tag"] for o in endpoints(conf)} == {"proxy", "backup"}
+    assert {o["streamSettings"]["realitySettings"]["serverName"] for o in endpoints(conf)} == {"au2.example"}
+
+
+def test_probe_transport_stays_stable_across_reads(monkeypatch):
+    import tests.test_host_injection_subscription as module
+
+    inbound = {**_inbound(), "sids": ["ff", "aa"]}
+    monkeypatch.setattr(module, "_inbound", lambda: inbound)
+    changes = {
+        2: {
+            "address": ["*.proxy.example"],
+            "sni": ["*.edge.example", "z.example"],
+            "host": ["z.example", "a.example"],
+            "port": "8443,443",
+            "random_user_agent": True,
+        }
+    }
+    first, _ = scenario(monkeypatch, per_tunnel=True, source_changes=changes)
+    second, _ = scenario(monkeypatch, per_tunnel=True, source_changes=changes)
+    assert first.config == second.config
+    proxy = first.config[1]["outbounds"][0]
+    assert proxy["streamSettings"]["realitySettings"]["shortId"] == "aa"
+    assert proxy["settings"]["vnext"][0]["address"].endswith(".proxy.example")
+
+
+def test_probe_keeps_reachable_source_when_recipient_is_blocked(monkeypatch):
+    conf, _ = scenario(
+        monkeypatch,
+        per_tunnel=True,
+        bs=BsContext(frozenset({1}), "BS limit"),
+        recipient_changes={"node_ids": [1]},
+        source_changes={2: {"node_ids": [2]}},
+        directive=injection(addVirtualHostAsOutbound=True),
+    )
+    assert len(conf.config) == 1
+    assert conf.config[0]["outbounds"][0]["streamSettings"]["realitySettings"]["serverName"] == "au2.example"

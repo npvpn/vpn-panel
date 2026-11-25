@@ -154,6 +154,7 @@ class _FakeXrayConfig:
 
     def __init__(self, inbounds_by_protocol: dict) -> None:
         self.inbounds_by_protocol = inbounds_by_protocol
+        self.inbounds_by_tag = {i["tag"]: i for entries in inbounds_by_protocol.values() for i in entries}
 
 
 def _grant_inbound_access(
@@ -871,4 +872,5 @@ def test_range_does_not_scale_queries_with_days(db, monkeypatch):
 
     assert week == quarter, f"запросы выросли с длиной диапазона: {week} -> {quarter}"
     # +1 за активные шаблоны клиента, +1 за число ботов (режим соло/один/много).
-    assert quarter <= 12, f"слишком много запросов на диапазон: {quarter}"
+    # Один запрос на интервалы состава за весь диапазон.
+    assert quarter <= 13, f"слишком много запросов на диапазон: {quarter}"

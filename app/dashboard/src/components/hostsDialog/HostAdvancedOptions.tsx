@@ -49,6 +49,7 @@ import { XrayTemplateDocument, listTemplates } from "service/xrayTemplates";
 import { Bot } from "types/Bot";
 import { InfoIcon, PencilIcon, Error, Select } from "./constants";
 import { Trans } from "react-i18next";
+import { SavedHostComposition } from "./SavedHostComposition";
 import { HostInjectionOptions } from "./HostInjectionOptions";
 import { templateInjection } from "./hostInjection";
 import { isSameHostValues } from "./hostValues";
@@ -1331,6 +1332,7 @@ export const HostAdvancedOptions = memo(
                   />
                 </FormControl>
                 {templateError && <Text color="red.500" gridColumn="1 / -1">{t("hostsDialog.injection.invalidTemplate")}</Text>}
+                {(currentHost.host_id || currentHost.id) && <SavedHostComposition hostId={currentHost.host_id || currentHost.id} bots={bots} />}
                 <HostInjectionOptions
                   path={`${hostKey}.${index}`}
                   errors={accordionErrors}

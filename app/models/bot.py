@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -24,6 +24,7 @@ DEFAULT_BOT_SETTINGS: dict[str, Any] = {
     "chat_identity_url": "",
     "bs_extra_reset_pool_on_prolong": False,
     "show_ads": True,
+    "subscription_delivery_mode": "standard",
     # NPVPN-2072. Источник истины — админка бота; здесь дефолт на случай, когда синк
     # ещё не доехал. Выключено по умолчанию: включение меняет выдачу адресов всем сразу.
 }
@@ -75,6 +76,7 @@ class BotSettingsPayload(BaseModel):
     chat_identity_url: str = ""
     bs_extra_reset_pool_on_prolong: bool = False
     show_ads: bool = True
+    subscription_delivery_mode: Literal["standard", "per_tunnel"] = "standard"
 
     @field_validator("sub_subscription_domain", mode="before")
     @classmethod

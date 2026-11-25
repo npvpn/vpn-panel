@@ -23,6 +23,7 @@ export type BotSettings = {
   web_url: string;
   bs_extra_reset_pool_on_prolong: boolean;
   show_ads: boolean;
+  subscription_delivery_mode: "standard" | "per_tunnel";
   updated_at?: string;
   managed?: ManagedState | null;
 };

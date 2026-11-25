@@ -241,6 +241,8 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
     клиентского конфига (app.services.xray_templates, NPVPN-2024) через процессный
     кэш; привязка документа к серверу лежит прямо на хосте (host["client_config_id"]).
     """
+    if ctx.bot_settings.get("subscription_delivery_mode") == "per_tunnel":
+        plan = SubscriptionRenderPlan("v2ray-json", False, False, "application/json")
     monthly_limit = int(ctx.panel_settings.get("bs_monthly_limit") or 0)
     # Загрузчик не создаём без лимита: тогда рендер не пойдёт в таблицы БС-расхода.
     bs_usage_suffix = (lambda: load_bs_usage_suffix(db, ctx.user_id, monthly_limit)) if monthly_limit else None

@@ -2743,24 +2743,15 @@ def get_weight_snapshot(db: Session, epoch_index: int) -> dict[int, float]:
     return {row.node_id: float(row.weight) for row in rows}
 
 
-def get_active_pins(db: Session, user_id: int, now: datetime) -> dict[int, list[int]]:
-    """Активные закрепления нод юзера: host_id -> node_ids (NPVPN-2072).
-
-    Одним запросом на весь рендер подписки (горячий путь), не по хосту.
-    Уникальности (user_id, host_id) на уровне БД нет намеренно — истёкшие пины
-    остаются как история, по одной паре их может накопиться много. Берём только
-    строки с expires_at > now и, если на пару (user_id, host_id) их несколько,
-    самую свежую по created_at.
-    """
-    rows = (
-        db.query(UserNodePin)
-        .filter(UserNodePin.user_id == user_id, UserNodePin.expires_at > now)
-        .order_by(UserNodePin.host_id, UserNodePin.created_at.asc(), UserNodePin.id.asc())
-        .all()
-    )
-    pins: dict[int, list[int]] = {}
-    for row in rows:
-        pins[cast(int, row.host_id)] = list(cast(list[int], row.node_ids))
+def get_active_pins(db: Session, user_id: int, now: datetime, *, tunnel_pins=None) -> dict[int, list[int]]:
+    """Latest active row per location; ordinary pins and source-qualified targets share one query."""
+    pins = {}
+    for row in list_active_pins(db, user_id, now):
+        if row.tunnel_targets:
+            if tunnel_pins is not None:
+                tunnel_pins[row.host_id] = {(t["source_host_id"], t["node_id"]) for t in row.tunnel_targets}
+        else:
+            pins[cast(int, row.host_id)] = list(cast(list[int], row.node_ids))
     return pins
 
 
@@ -2773,6 +2764,7 @@ def create_user_node_pin(
     expires_at: datetime,
     created_by: str,
     note: str | None,
+    tunnel_targets: list[dict[str, int]] | None = None,
 ) -> UserNodePin:
     """Ставит закрепление нод хоста за юзером (NPVPN-2072).
 
@@ -2785,6 +2777,7 @@ def create_user_node_pin(
         user_id=user_id,
         host_id=host_id,
         node_ids=node_ids,
+        tunnel_targets=tunnel_targets,
         expires_at=expires_at,
         created_by=created_by,
         note=note,

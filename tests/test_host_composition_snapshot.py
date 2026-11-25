@@ -191,6 +191,12 @@ def test_write_commits_independently_of_prune_failure(db, monkeypatch):
     def fake_getdb():
         yield db
 
+    from types import SimpleNamespace
+
+    from app import xray
+
+    monkeypatch.setattr(xray, "config", SimpleNamespace(inbounds_by_tag={host.inbound_tag: {}}), raising=False)
+
     def boom(*args, **kwargs):
         raise RuntimeError("подчистка упала до своего commit")
 

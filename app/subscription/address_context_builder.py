@@ -85,13 +85,15 @@ def build_address_context(
     today = day_index(datetime.now(UTC))
     # Один дешёвый индексный запрос на каждый рендер подписки — вне зависимости от
     # настроек хостов, закрепления могут быть выставлены и при выключенной фиче.
-    pins = crud.get_active_pins(db, user_id, datetime.now(UTC))
+    tunnel_pins: dict[int, set[tuple[int, int]]] = {}
+    pins = crud.get_active_pins(db, user_id, datetime.now(UTC), tunnel_pins=tunnel_pins)
     base = AddressContext(
         user_id=user_id,
         day_index=today,
         offset=int(dbuser.address_rotation_offset or 0),
         enabled=True,
         pins=pins,
+        tunnel_pins=tunnel_pins,
     )
     if not rotation_periods:
         return base
@@ -124,4 +126,5 @@ def build_address_context(
         exhausted=get_exhausted_nodes(db),
         enabled=True,
         pins=pins,
+        tunnel_pins=tunnel_pins,
     )
