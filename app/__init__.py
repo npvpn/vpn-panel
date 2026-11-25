@@ -260,7 +260,7 @@ scheduler.add_listener(_scheduler_job_listener, EVENT_JOB_ERROR | EVENT_JOB_MISS
 def on_startup():
     from app.routers.subscription import subscription_path_taken
 
-    if subscription_path_taken(app.routes):
+    if subscription_path_taken(app.routes, XRAY_SUBSCRIPTION_PATH):
         raise ValueError(f"you can't use /{XRAY_SUBSCRIPTION_PATH}/ as subscription path it reserved for {app.title}")
     _setup_file_logging()
     scheduler.start()

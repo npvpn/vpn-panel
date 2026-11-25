@@ -69,12 +69,14 @@ client_config: dict[str, SubscriptionClientConfigEntry] = {
 router = APIRouter(tags=["Subscription"], prefix=f"/{XRAY_SUBSCRIPTION_PATH}")
 
 
-def subscription_path_taken(routes: Iterable[BaseRoute]) -> bool:
+def subscription_path_taken(routes: Iterable[BaseRoute], subscription_path: str | None = None) -> bool:
     """Занят ли путь подписки чужим маршрутом приложения (проверка при старте панели).
 
     Собственные маршруты этого роутера не в счёт: /sub и /sub/ отдают 404 на
     ссылку без токена (NPVPN-2374) и конфликтом не являются.
+    Старт передаёт путь из своего модуля: именно его подменяет проверка lifecycle.
     """
+    path = (XRAY_SUBSCRIPTION_PATH if subscription_path is None else subscription_path).strip("/")
     own_endpoints = {route.endpoint for route in router.routes if isinstance(route, APIRoute)}
     # В FastAPI 0.164 путь подключённого роутера есть у контекста маршрута,
     # а не у _IncludedRouter. Слеш на конце нормализуем: маршрут "/sub/" иначе
@@ -85,7 +87,7 @@ def subscription_path_taken(routes: Iterable[BaseRoute]) -> bool:
         if context.path is not None and context.endpoint not in own_endpoints
     }
     paths.add("/api/")
-    return f"/{XRAY_SUBSCRIPTION_PATH}/" in paths
+    return f"/{path}/" in paths
 
 
 def resolve_subscription_context(token: str, db: Session):
