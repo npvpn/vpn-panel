@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 
 from app.db import Session, get_db
 from app.models.admin import Admin
@@ -6,6 +6,7 @@ from app.models.settings import (
     DEFAULT_CLIENT_APPS,
     DEFAULT_PANEL_SETTINGS,
     ClientAppsPayload,
+    LegacySubscriptionSecretKeyPayload,
     PanelSettingsPayload,
     PanelSettingsResponse,
 )
@@ -60,6 +61,18 @@ def update_panel_settings(
 ):
     del admin
     return panel_settings_service.with_primary_jwt_secret(db, panel_settings_service.save_panel_settings(db, payload))
+
+
+@router.post("/settings/panel/legacy-subscription-key", status_code=status.HTTP_204_NO_CONTENT)
+def add_legacy_subscription_key(
+    payload: LegacySubscriptionSecretKeyPayload,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.check_sudo_admin),
+) -> Response:
+    """Атомарно добавить ключ внешней панели, сохранив остальные настройки."""
+    del admin
+    panel_settings_service.add_legacy_subscription_secret_key(db, payload.secret_key, payload.bot_username)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/settings/panel/defaults", response_model=PanelSettingsPayload)

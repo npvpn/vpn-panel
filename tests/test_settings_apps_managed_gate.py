@@ -37,6 +37,8 @@ import types
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 from app.models.settings import DEFAULT_CLIENT_APPS, ClientAppsPayload
 
@@ -121,3 +123,41 @@ def test_put_allowed_when_not_managed(settings_router, monkeypatch):
     payload = ClientAppsPayload.model_validate(DEFAULT_CLIENT_APPS)
     result = settings_router.update_client_apps(payload=payload, db=MagicMock(), admin=object())
     assert "apps" in result
+
+
+def test_post_legacy_subscription_key_is_sudo_only_and_validates_payload(settings_router, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        settings_router.panel_settings_service,
+        "add_legacy_subscription_secret_key",
+        lambda db, secret_key, bot_username="": calls.append((db, secret_key, bot_username)),
+    )
+    app = FastAPI()
+    app.include_router(settings_router.router)
+    db = MagicMock()
+    app.dependency_overrides[settings_router.get_db] = lambda: db
+    app.dependency_overrides[settings_router.Admin.check_sudo_admin] = lambda: object()
+    with TestClient(app) as client:
+        response = client.post("/api/settings/panel/legacy-subscription-key", json={"secret_key": " external-key "})
+        named = client.post(
+            "/api/settings/panel/legacy-subscription-key",
+            json={"secret_key": "other-key", "bot_username": " @partner "},
+        )
+        invalid = client.post("/api/settings/panel/legacy-subscription-key", json={"secret_key": "  "})
+
+    assert response.status_code == 204
+    assert named.status_code == 204
+    assert invalid.status_code == 422
+    assert calls == [(db, "external-key", ""), (db, "other-key", "partner")]
+
+    denied = FastAPI()
+    denied.include_router(settings_router.router)
+    denied.dependency_overrides[settings_router.get_db] = lambda: db
+
+    def reject_non_sudo():
+        raise HTTPException(status_code=403, detail="You're not allowed")
+
+    denied.dependency_overrides[settings_router.Admin.check_sudo_admin] = reject_non_sudo
+    with TestClient(denied) as client:
+        forbidden = client.post("/api/settings/panel/legacy-subscription-key", json={"secret_key": "external-key"})
+    assert forbidden.status_code == 403

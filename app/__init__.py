@@ -267,9 +267,9 @@ scheduler.add_listener(_scheduler_job_listener, EVENT_JOB_ERROR | EVENT_JOB_MISS
 
 @app.on_event("startup")
 def on_startup():
-    paths = [f"{r.path}/" for r in app.routes]
-    paths.append("/api/")
-    if f"/{XRAY_SUBSCRIPTION_PATH}/" in paths:
+    from app.routers.subscription import subscription_path_taken
+
+    if subscription_path_taken(app.routes):
         raise ValueError(f"you can't use /{XRAY_SUBSCRIPTION_PATH}/ as subscription path it reserved for {app.title}")
     _setup_file_logging()
     scheduler.start()

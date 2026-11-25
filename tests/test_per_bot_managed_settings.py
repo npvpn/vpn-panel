@@ -12,7 +12,7 @@ _share_stub.generate_v2ray_links = lambda *args, **kwargs: []
 sys.modules.setdefault("app.subscription.share", _share_stub)
 
 from app.db.base import Base
-from app.db.models import Bot, BotSettings, ManagedSetting
+from app.db.models import Bot, BotSettings, ManagedSetting, User
 from app.models.bot import apply_bot_settings_fallback
 from app.services import managed_settings as svc
 
@@ -29,7 +29,10 @@ MANAGED_DATA = {
 @pytest.fixture
 def db():
     engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine, tables=[Bot.__table__, BotSettings.__table__, ManagedSetting.__table__])
+    Base.metadata.create_all(
+        engine,
+        tables=[Bot.__table__, BotSettings.__table__, ManagedSetting.__table__, User.__table__],
+    )
     session = sessionmaker(bind=engine)()
     try:
         yield session

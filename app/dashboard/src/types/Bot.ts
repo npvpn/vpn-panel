@@ -15,7 +15,6 @@ export type Bot = {
 };
 
 export type BotSettings = {
-  sub_update_interval: string;
   sub_support_url: string;
   sub_profile_title: string;
   sub_profile_url: string;

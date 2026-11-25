@@ -48,6 +48,7 @@ import { FC, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetch } from "service/http";
 import {
+  LegacySubscriptionSecretKey,
   PanelSettings,
   SubscriptionMessageServerField,
 } from "types/PanelSettings";
@@ -82,6 +83,7 @@ const emptySettings: PanelSettings = {
   sub_unsupported_client_server_text: [],
   sub_bs_limit_server_text: [],
   sub_device_limit_hard_mode: false,
+  sub_update_interval: "",
 };
 
 const SERVER_TEXT_FIELDS: SubscriptionMessageServerField[] = [
@@ -113,17 +115,32 @@ const toListFieldTexts = (settings: PanelSettings): ListFieldTexts => ({
 const copyList = (value: string[] | undefined) =>
   Array.isArray(value) ? [...value] : [];
 
+const toLegacyKey = (item: unknown): LegacySubscriptionSecretKey => {
+  if (typeof item === "string") {
+    return { secret_key: item, bot_username: "" };
+  }
+  if (item && typeof item === "object") {
+    const record = item as Partial<LegacySubscriptionSecretKey>;
+    return {
+      secret_key: String(record.secret_key ?? ""),
+      bot_username: String(record.bot_username ?? ""),
+    };
+  }
+  return { secret_key: "", bot_username: "" };
+};
+
+const toLegacyKeys = (value: unknown): LegacySubscriptionSecretKey[] =>
+  Array.isArray(value) ? value.map(toLegacyKey) : [];
+
 const mergeSettings = (
   data: Partial<PanelSettings>,
   keepPrimary?: string
 ): PanelSettings => ({
   ...emptySettings,
   ...data,
-  subscription_legacy_secret_keys: Array.isArray(
+  subscription_legacy_secret_keys: toLegacyKeys(
     data.subscription_legacy_secret_keys
-  )
-    ? data.subscription_legacy_secret_keys
-    : [],
+  ),
   sub_revoked_server_text: copyList(data.sub_revoked_server_text),
   sub_expired_server_text: copyList(data.sub_expired_server_text),
   sub_device_limit_server_text: copyList(data.sub_device_limit_server_text),
@@ -145,6 +162,7 @@ const SUBSCRIPTION_FIELDS = [
   "sub_custom_headers",
   "bs_monthly_limit",
   "sub_device_limit_hard_mode",
+  "sub_update_interval",
 ] as const;
 
 const MESSAGE_TEXT_FIELDS = [
@@ -159,9 +177,20 @@ const MESSAGE_TEXT_FIELDS = [
 const sameList = (left: string[], right: string[]) =>
   left.length === right.length && left.every((item, i) => item === right[i]);
 
-// Ключи в том виде, в каком их отправит save(): пустые строки не считаются изменением.
-const normalizeKeys = (keys: string[]) =>
-  keys.map((key) => key.trim()).filter(Boolean);
+// Ключи в том виде, в каком их отправит save(): пустой секрет не считается изменением.
+// Повтор того же секрета не перебивает username более ранней строки.
+const normalizeLegacyKeys = (keys: LegacySubscriptionSecretKey[]) => {
+  const seen = new Set<string>();
+  const out: LegacySubscriptionSecretKey[] = [];
+  for (const item of keys) {
+    const secret_key = item.secret_key.trim();
+    const bot_username = item.bot_username.trim().replace(/^@+/, "");
+    if (!secret_key || seen.has(secret_key)) continue;
+    seen.add(secret_key);
+    out.push({ secret_key, bot_username });
+  }
+  return out;
+};
 
 const isSubscriptionDirty = (a: PanelSettings, b: PanelSettings) =>
   SUBSCRIPTION_FIELDS.some((field) => a[field] !== b[field]);
@@ -170,13 +199,9 @@ const isMessagesDirty = (a: PanelSettings, b: PanelSettings) =>
   MESSAGE_TEXT_FIELDS.some((field) => a[field] !== b[field]) ||
   SERVER_TEXT_FIELDS.some((field) => !sameList(a[field], b[field]));
 
-const isJwtDirty = (a: PanelSettings, b: PanelSettings) => {
-  const left = normalizeKeys(a.subscription_legacy_secret_keys);
-  const right = normalizeKeys(b.subscription_legacy_secret_keys);
-  return (
-    left.length !== right.length || left.some((key, i) => key !== right[i])
-  );
-};
+const isJwtDirty = (a: PanelSettings, b: PanelSettings) =>
+  JSON.stringify(normalizeLegacyKeys(a.subscription_legacy_secret_keys)) !==
+  JSON.stringify(normalizeLegacyKeys(b.subscription_legacy_secret_keys));
 
 // Значение ячейки диалога сброса: short — что видно в таблице,
 // full — полный текст для подсказки, если short обрезан.
@@ -211,10 +236,19 @@ const preview = (
     : { short: oneLine };
 };
 
-const previewKeys = (keys: string[], empty: string): ResetDiffValue[] => {
-  const normalized = normalizeKeys(keys);
+const previewKeys = (
+  keys: LegacySubscriptionSecretKey[],
+  empty: string
+): ResetDiffValue[] => {
+  const normalized = normalizeLegacyKeys(keys);
   if (normalized.length === 0) return [{ short: empty }];
-  return normalized.map((key) => preview(key, empty, KEY_PREVIEW_LENGTH));
+  return normalized.map((item) => {
+    const secret = preview(item.secret_key, empty, KEY_PREVIEW_LENGTH);
+    if (!item.bot_username) return secret;
+    const withUsername = `${secret.short} (@${item.bot_username})`;
+    const full = `${item.secret_key} (@${item.bot_username})`;
+    return withUsername === full ? { short: withUsername } : { short: withUsername, full };
+  });
 };
 
 const thinScrollbarSx = {
@@ -263,7 +297,11 @@ export const PanelSettingsDialog: FC = () => {
   const subscriptionDirty = isSubscriptionDirty(settings, initial);
   const messagesDirty = isMessagesDirty(settings, initial);
   const jwtDirty = isJwtDirty(settings, initial);
+  // isDirty — то, что сохраняет общий футер; v2ray-json сохраняется сам и
+  // докладывает о правках отдельно, но закрыть окно молча нельзя ни с теми, ни с другими.
   const isDirty = subscriptionDirty || messagesDirty || jwtDirty;
+  const [v2rayDirty, setV2rayDirty] = useState(false);
+  const hasUnsaved = isDirty || v2rayDirty;
 
   const showValidationErrorToast = (err: any) => {
     const detail = err?.response?._data?.detail;
@@ -316,9 +354,13 @@ export const PanelSettingsDialog: FC = () => {
     setSettings((prev) => ({ ...prev, ...patch }));
   };
 
-  const updateLegacyKey = (index: number, value: string) => {
-    const next = [...settings.subscription_legacy_secret_keys];
-    next[index] = value;
+  const updateLegacyKey = (
+    index: number,
+    patch: Partial<LegacySubscriptionSecretKey>
+  ) => {
+    const next = settings.subscription_legacy_secret_keys.map((item, i) =>
+      i === index ? { ...item, ...patch } : item
+    );
     updateSettings({ subscription_legacy_secret_keys: next });
   };
 
@@ -333,7 +375,7 @@ export const PanelSettingsDialog: FC = () => {
     updateSettings({
       subscription_legacy_secret_keys: [
         ...settings.subscription_legacy_secret_keys,
-        "",
+        { secret_key: "", bot_username: "" },
       ],
     });
   };
@@ -397,7 +439,11 @@ export const PanelSettingsDialog: FC = () => {
     const empty = t("panelSettings.emptyValue");
     const rows: ResetDiffRow[] = [];
     const addText = (
-      field: "sub_routing_happ" | "sub_routing_v2raytun" | "sub_custom_headers",
+      field:
+        | "sub_routing_happ"
+        | "sub_routing_v2raytun"
+        | "sub_custom_headers"
+        | "sub_update_interval",
       labelKey: string
     ) => {
       if (settings[field] === target[field]) return;
@@ -411,6 +457,7 @@ export const PanelSettingsDialog: FC = () => {
     addText("sub_routing_happ", "panelSettings.subRoutingHapp");
     addText("sub_routing_v2raytun", "panelSettings.subRoutingV2raytun");
     addText("sub_custom_headers", "panelSettings.subCustomHeaders");
+    addText("sub_update_interval", "panelSettings.subUpdateInterval");
     const addMessageText = (
       field: (typeof MESSAGE_TEXT_FIELDS)[number],
       labelKey: string
@@ -524,7 +571,7 @@ export const PanelSettingsDialog: FC = () => {
     ));
 
   const requestClose = () => {
-    if (isDirty) {
+    if (hasUnsaved) {
       discardConfirm.onOpen();
       return;
     }
@@ -541,8 +588,14 @@ export const PanelSettingsDialog: FC = () => {
     const { primary_jwt_secret: _primary, ...payload } = settings;
     const body = {
       ...payload,
-      subscription_legacy_secret_keys: normalizeKeys(
+      subscription_legacy_secret_keys: normalizeLegacyKeys(
         settings.subscription_legacy_secret_keys
+      ),
+      // Снимок на момент загрузки: сохранение другого поля не затирает ключ,
+      // который импортировался, пока форма была открыта. Правка самих ключей
+      // считается от этого снимка.
+      subscription_legacy_secret_keys_baseline: normalizeLegacyKeys(
+        initial.subscription_legacy_secret_keys
       ),
       sub_revoked_server_text: toList(listFieldTexts.sub_revoked_server_text),
       sub_expired_server_text: toList(listFieldTexts.sub_expired_server_text),
@@ -643,7 +696,10 @@ export const PanelSettingsDialog: FC = () => {
                   {t("panelSettings.tabMessages")}
                   {messagesDirty && dirtyDot}
                 </Tab>
-                <Tab>{t("panelSettings.tabV2rayJson")}</Tab>
+                <Tab>
+                  {t("panelSettings.tabV2rayJson")}
+                  {v2rayDirty && dirtyDot}
+                </Tab>
                 <Tab>
                   {t("panelSettings.tabJwtKey")}
                   {jwtDirty && dirtyDot}
@@ -689,6 +745,22 @@ export const PanelSettingsDialog: FC = () => {
                       />
                       <FormHelperText>
                         {t("panelSettings.subCustomHeadersHint")}
+                      </FormHelperText>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>
+                        {t("panelSettings.subUpdateInterval")}
+                      </FormLabel>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={settings.sub_update_interval}
+                        onChange={(e) =>
+                          updateSettings({ sub_update_interval: e.target.value })
+                        }
+                      />
+                      <FormHelperText>
+                        {t("panelSettings.subUpdateIntervalHint")}
                       </FormHelperText>
                     </FormControl>
                     <FormControl>
@@ -1043,7 +1115,7 @@ export const PanelSettingsDialog: FC = () => {
                   </Flex>
                 </TabPanel>
                 <TabPanel px={0}>
-                  <XrayTemplatesPanel />
+                  <XrayTemplatesPanel onDirtyChange={setV2rayDirty} />
                 </TabPanel>
                 <TabPanel px={0}>
                   <VStack spacing={4} align="stretch">
@@ -1072,9 +1144,26 @@ export const PanelSettingsDialog: FC = () => {
                             <HStack key={index} align="center">
                               <Input
                                 fontFamily="mono"
-                                value={key}
+                                value={key.secret_key}
                                 onChange={(e) =>
-                                  updateLegacyKey(index, e.target.value)
+                                  updateLegacyKey(index, {
+                                    secret_key: e.target.value,
+                                  })
+                                }
+                              />
+                              <Input
+                                value={key.bot_username}
+                                maxW={{ base: "40%", md: "240px" }}
+                                placeholder={t(
+                                  "panelSettings.legacyJwtBotUsernamePlaceholder"
+                                )}
+                                aria-label={t(
+                                  "panelSettings.legacyJwtBotUsername"
+                                )}
+                                onChange={(e) =>
+                                  updateLegacyKey(index, {
+                                    bot_username: e.target.value,
+                                  })
                                 }
                               />
                               <Tooltip

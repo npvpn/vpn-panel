@@ -17,12 +17,22 @@ class XrayTemplateVersionMeta(BaseModel):
     size: int = 0
 
 
+class XrayTemplateHost(BaseModel):
+    remark: str
+    inbound_tag: str
+
+
 class XrayTemplateDocument(BaseModel):
     id: int
     slug: str
     title: str
     body: str = ""
     deletable: bool = False
+    # Можно ли архивировать. Совпадает с deletable: default архивировать нельзя.
+    archivable: bool = False
+    archived_at: datetime | None = None
+    archived_by: str | None = None
+    hosts: list[XrayTemplateHost] = []
     current: XrayTemplateVersionMeta | None = None
     effective_injection: HostInjection | None = None
     effective_injection_error: bool = False

@@ -202,8 +202,10 @@ export const BotHostsTab: FC<Props> = ({
         .map((field, index) => {
           const host = watchedHosts?.[index];
           const botUsernames: string[] = host?.bot_usernames || [];
-          // NPVPN-2044: доступ даёт только привязка — исключений больше нет.
-          const isAvailable = botUsernames.includes(selectedBot);
+          // При нуле и одном боте хосты выдаются всем автоматически;
+          // привязки начинают ограничивать выдачу только со второго бота.
+          const isAvailable =
+            bots.length < 2 || botUsernames.includes(selectedBot);
           // Аренда — отдельная отметка: в счёт идёт только отмеченный хост,
           // служебную привязку (на время разбирательства) тарифицировать нельзя.
           const isRented = (host?.rented_bot_usernames || []).includes(selectedBot);
@@ -216,7 +218,9 @@ export const BotHostsTab: FC<Props> = ({
             address: host?.address ?? "",
             isHostDisabled: !!host?.is_disabled,
             botsLabel:
-              botUsernames.length === 0
+              bots.length === 0
+                ? t("hostsDialog.availableBots.solo")
+                : botUsernames.length === 0
                 ? t("hostsDialog.availableBots.none")
                 : botUsernames.map((username) => `@${username}`).join(", "),
             botsTooltip: botUsernames
@@ -279,7 +283,7 @@ export const BotHostsTab: FC<Props> = ({
   const canEnableAll = rows.some((row) => !row.isAvailable);
   const canDisableAll = rows.some((row) => row.isAvailable);
 
-  const bindingsLocked = selectedBot === "";
+  const bindingsLocked = selectedBot === "" || bots.length < 2;
 
   const toggleHost = useCallback(
     (index: number, enable: boolean) => {
@@ -359,36 +363,41 @@ export const BotHostsTab: FC<Props> = ({
 
   return (
     <Box display="flex" flexDirection="column" minH={0} h="full">
-      {/* NPVPN-2215: одна строка — бот и поиск слева (бот первым: от него
-          зависит всё ниже), сводка и массовые действия справа. Без фильтра
-          доступности поиск на всю ширину растягивался. Flex с gap, а не
-          HStack: отступы HStack — margin слева, он перебивал ml="auto" и
-          сдвигал первый элемент перенесённой строки. */}
-      <Flex mt={1} gap={2} flexWrap="wrap" flexShrink={0}>
+      {/* Две строки: фильтры (бот первым — от него зависит всё ниже), под ними
+          сводка и массовые действия. В одну строку (NPVPN-2215) перестало
+          помещаться, когда сводка выросла, — резались поиск и «Только активные».
+          Flex с gap, а не HStack: отступы HStack — margin слева, и первый элемент
+          перенесённой строки съезжал. p="2px": кольцо фокуса не обрезается краем. */}
+      <Flex mt={1} p="2px" gap={2} flexWrap="wrap" flexShrink={0}>
         {/* С поиском: ботов бывает много, а в обычном select название не
             начать вводить. */}
-        {/* Ширины подобраны так, чтобы строка помещалась целиком: поиск
-            гибкий и сжимается первым, сводка с кнопками не переносится. */}
         <Box w={{ base: "full", md: "240px" }}>
-          <ReactSelect<BotOption>
-            aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
-            options={botOptions}
-            value={selectedBotOption}
-            onChange={(option: BotOption | null) =>
-              option && setSelectedBot(option.value)
-            }
-            noOptionsMessage={() => t("botSettings.noBotsFound")}
-            isSearchable
-            styles={botSelectStyles}
-            menuPortalTarget={document.body}
-            menuPosition="fixed"
-          />
+          <Tooltip
+            label={t("botSettings.createBotToSelect")}
+            isDisabled={bots.length > 0}
+          >
+            <Box>
+              <ReactSelect<BotOption>
+                aria-label={t("hostsDialog.botTab.selectBot") ?? undefined}
+                options={botOptions}
+                value={selectedBotOption}
+                onChange={(option: BotOption | null) =>
+                  option && setSelectedBot(option.value)
+                }
+                noOptionsMessage={() => t("botSettings.noBotsFound")}
+                isSearchable
+                isDisabled={bots.length === 0}
+                styles={botSelectStyles}
+                menuPortalTarget={document.body}
+                menuPosition="fixed"
+              />
+            </Box>
+          </Tooltip>
         </Box>
 
         <InputGroup
           w={{ base: "full", md: "auto" }}
           flex={{ md: "1 1 200px" }}
-          maxW={{ md: "280px" }}
           size="sm"
         >
           <InputLeftElement pointerEvents="none">
@@ -397,27 +406,31 @@ export const BotHostsTab: FC<Props> = ({
 
           <Input
             placeholder={t("hostsDialog.search") ?? undefined}
+            // Если плейсхолдер всё же обрезан узким окном — полный текст при наведении.
+            title={t("hostsDialog.search") ?? undefined}
             {...filterFieldProps}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </InputGroup>
 
-        <Box w={{ base: "full", md: "160px" }}>
+        <Box w={{ base: "full", md: "180px" }}>
           <ActiveOnlySelect isActive={activeOnly} onChange={setActiveOnly} />
         </Box>
+      </Flex>
 
-        {/* На телефоне — сводка слева, под ней кнопки поровну во всю
-            ширину; на десктопе — всё в ряд у правого края. */}
-        <Flex
-          ml="auto"
-          w={{ base: "full", md: "auto" }}
-          gap={3}
-          rowGap={2}
-          flexWrap="wrap"
-          alignItems="center"
-          justifyContent={{ base: "flex-start", md: "flex-end" }}
-        >
+      {/* На телефоне — сводка, под ней кнопки поровну во всю ширину; на
+          десктопе — сводка слева, кнопки у правого края. */}
+      <Flex
+        mt={2}
+        px="2px"
+        gap={3}
+        rowGap={2}
+        flexWrap="wrap"
+        alignItems="center"
+        justifyContent="space-between"
+        flexShrink={0}
+      >
           <Text fontSize="sm" opacity={0.7} whiteSpace="nowrap">
             {t("hostsDialog.botTab.summary", {
               available: availableCount,
@@ -453,7 +466,6 @@ export const BotHostsTab: FC<Props> = ({
               {t("hostsDialog.botTab.disableAll")}
             </Button>
           </HStack>
-        </Flex>
       </Flex>
 
       <Box

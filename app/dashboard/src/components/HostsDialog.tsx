@@ -143,9 +143,9 @@ export const HostsDialog: FC = () => {
     []
   );
 
-  // С одним ботом вкладка «По ботам» бессмысленна: единственного бота у хоста
-  // не выключить (пустой список = «все боты»), все переключатели заблокированы.
-  const hasBotTab = bots.length >= 2;
+  // Фильтр «По ботам» всегда доступен: при нуле ботов селектор заблокирован,
+  // при одном — единственный бот выбран автоматически.
+  const hasBotTab = true;
 
   const inboundMap = useMemo(() => {
     const map = new Map();
@@ -608,8 +608,9 @@ export const HostsDialog: FC = () => {
                         <Box flexShrink={0}>
                           {/* SEARCH + FILTERS. Flex с gap, а не HStack:
                               отступы HStack — margin слева, и при переносе
-                              строки первый элемент новой строки съезжал. */}
-                          <Flex mt={1} gap={2} flexWrap="wrap">
+                              строки первый элемент новой строки съезжал.
+                              p="2px": кольцо фокуса поиска не обрезается краем. */}
+                          <Flex mt={1} p="2px" gap={2} flexWrap="wrap">
                             <InputGroup flex="2" minW="180px" size="sm">
                               <InputLeftElement pointerEvents="none">
                                 <MagnifyingGlassIcon
@@ -623,6 +624,8 @@ export const HostsDialog: FC = () => {
                                   t("hostsDialog.search") ??
                                   "Search by remark or address..."
                                 }
+                                // Плейсхолдер обрезается в узком окне — полный текст при наведении.
+                                title={t("hostsDialog.search") ?? undefined}
                                 {...filterFieldProps}
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}

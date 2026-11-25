@@ -45,6 +45,7 @@ import ReactApexChart from "react-apexcharts";
 import ReactDatePicker from "react-datepicker";
 import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { datePickerLocale } from "locales/i18n";
 import {
   ProxyKeys,
   ProxyType,
@@ -280,6 +281,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
   const [devicesError, setDevicesError] = useState<string | null>(null);
   const [devices, setDevices] = useState<UserDevice[]>([]);
   const [bots, setBots] = useState<Bot[]>([]);
+  const [botsLoaded, setBotsLoaded] = useState(false);
   const botOptions = useMemo<BotOption[]>(
     () =>
       bots.map((bot) => ({
@@ -290,7 +292,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
   );
 
   const toast = useToast();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
 
   const { colorMode } = useColorMode();
 
@@ -301,7 +303,10 @@ export const UserDialog: FC<UserDialogProps> = () => {
 
   useEffect(() => {
     fetch<Bot[]>("/bots")
-      .then(setBots)
+      .then((items) => {
+        setBots(items);
+        setBotsLoaded(true);
+      })
       .catch(() => setBots([]));
   }, []);
 
@@ -309,6 +314,12 @@ export const UserDialog: FC<UserDialogProps> = () => {
     defaultValues: getDefaultValues(),
     resolver: zodResolver(schema),
   });
+
+  useEffect(() => {
+    if (isCreatingNewUser && botsLoaded && bots.length === 1 && !form.getValues("bot_username")) {
+      form.setValue("bot_username", bots[0].username);
+    }
+  }, [bots, botsLoaded, form, isCreatingNewUser]);
 
   useEffect(
     () =>
@@ -517,7 +528,17 @@ export const UserDialog: FC<UserDialogProps> = () => {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} size="2xl">
+      {/* Устройства открываются второй модалкой поверх этой, а Chakra включает
+          RemoveScroll только первой — её лок гасил колесо мыши над списком
+          устройств (прокрутка шла только полосой). Пока открыты устройства, лок
+          этой модалки снимаем; закрывать её, как для закреплений (NPVPN-2072),
+          нельзя — потеряются несохранённые правки пользователя. */}
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        size="2xl"
+        blockScrollOnMount={!devicesOpen}
+      >
         <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
         <FormProvider {...form}>
           <ModalContent mx="3">
@@ -844,7 +865,7 @@ export const UserDialog: FC<UserDialogProps> = () => {
                                 return (
                                   <>
                                     <ReactDatePicker
-                                      locale={i18n.language.toLocaleLowerCase()}
+                                      locale={datePickerLocale()}
                                       dateFormat={t("dateFormat")}
                                       minDate={new Date()}
                                       selected={
@@ -931,26 +952,34 @@ export const UserDialog: FC<UserDialogProps> = () => {
                               control={form.control}
                               name="bot_username"
                               render={({ field }) => (
-                                <ReactSelect<BotOption>
-                                  options={botOptions}
-                                  value={
-                                    botOptions.find(
-                                      (o) => o.value === field.value
-                                    ) ?? null
-                                  }
-                                  onChange={(option: BotOption | null) =>
-                                    field.onChange(option?.value ?? "")
-                                  }
-                                  placeholder={t("botSettings.selectBot")}
-                                  noOptionsMessage={() =>
-                                    t("botSettings.noBotsFound")
-                                  }
-                                  isSearchable
-                                  isClearable
-                                  styles={botSelectStyles}
-                                  menuPortalTarget={document.body}
-                                  menuPosition="fixed"
-                                />
+                                <Tooltip
+                                  label={t("botSettings.createBotToSelect")}
+                                  isDisabled={!botsLoaded || bots.length > 0}
+                                >
+                                  <Box>
+                                    <ReactSelect<BotOption>
+                                      options={botOptions}
+                                      value={
+                                        botOptions.find(
+                                          (o) => o.value === field.value
+                                        ) ?? null
+                                      }
+                                      onChange={(option: BotOption | null) =>
+                                        field.onChange(option?.value ?? "")
+                                      }
+                                      placeholder={t("botSettings.selectBot")}
+                                      noOptionsMessage={() =>
+                                        t("botSettings.noBotsFound")
+                                      }
+                                      isSearchable
+                                      isClearable
+                                      isDisabled={botsLoaded && bots.length === 0}
+                                      styles={botSelectStyles}
+                                      menuPortalTarget={document.body}
+                                      menuPosition="fixed"
+                                    />
+                                  </Box>
+                                </Tooltip>
                               )}
                             />
                             {/* <FormHelperText>
@@ -1139,10 +1168,13 @@ export const UserDialog: FC<UserDialogProps> = () => {
         </FormProvider>
       </Modal>
 
+      {/* inside: прокручивается список устройств, а шапка и кнопки остаются на
+          месте; с outside прокручивался внешний контейнер окна. */}
       <Modal
         isOpen={devicesOpen}
         onClose={() => setDevicesOpen(false)}
         size="6xl"
+        scrollBehavior="inside"
       >
         <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
         {/* по ширине содержимого, но не уже 448px: без устройств окно схлопывалось в узкую колонку */}

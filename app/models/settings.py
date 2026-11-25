@@ -19,6 +19,7 @@ from config import (
     SUB_ROUTING_V2RAYTUN,
     SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
     SUB_UNSUPPORTED_CLIENT_SERVER_TEXT,
+    SUB_UPDATE_INTERVAL,
     SUBSCRIPTION_LEGACY_SECRET_KEYS,
 )
 
@@ -54,6 +55,7 @@ PANEL_SETTING_KEYS: tuple[str, ...] = (
     "sub_routing_v2raytun",
     "subscription_legacy_secret_keys",
     "sub_device_limit_hard_mode",
+    "sub_update_interval",
     *SUBSCRIPTION_MESSAGE_KEYS,
 )
 
@@ -88,6 +90,7 @@ DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "sub_unsupported_client_server_text": normalize_server_text(SUB_UNSUPPORTED_CLIENT_SERVER_TEXT),
     "sub_bs_limit_server_text": [],
     "sub_device_limit_hard_mode": False,
+    "sub_update_interval": str(SUB_UPDATE_INTERVAL),
 }
 
 PLATFORMS: tuple[str, ...] = ("ios", "macos", "android", "androidtv", "windows", "linux")
@@ -223,8 +226,20 @@ class ClientAppsPayload(BaseModel):
         return self
 
 
-def normalize_legacy_secret_keys(value: Any) -> list[str]:
-    """Trim, drop empties, dedupe; accept list or comma-separated string."""
+def _legacy_secret_record(item: Any) -> dict[str, str] | None:
+    if isinstance(item, dict):
+        secret = str(item.get("secret_key") or "").strip()
+        username = str(item.get("bot_username") or "").strip().lstrip("@")[:64]
+    else:
+        secret = str(item or "").strip()
+        username = ""
+    if not secret:
+        return None
+    return {"secret_key": secret, "bot_username": username}
+
+
+def normalize_legacy_secret_key_records(value: Any) -> list[dict[str, str]]:
+    """Trim, drop empties, dedupe by secret. The first record wins, including an empty username."""
     if value is None:
         return []
     if isinstance(value, str):
@@ -234,14 +249,62 @@ def normalize_legacy_secret_keys(value: Any) -> list[str]:
     else:
         return []
     seen: set[str] = set()
-    out: list[str] = []
+    out: list[dict[str, str]] = []
     for item in source:
-        key = str(item or "").strip()
-        if not key or key in seen:
+        record = _legacy_secret_record(item)
+        if record is None or record["secret_key"] in seen:
             continue
-        seen.add(key)
-        out.append(key)
+        seen.add(record["secret_key"])
+        out.append(record)
     return out
+
+
+def normalize_legacy_secret_keys(value: Any) -> list[str]:
+    """Секреты без username: проверка /sub/ и старые строковые значения."""
+    return [record["secret_key"] for record in normalize_legacy_secret_key_records(value)]
+
+
+def merge_legacy_secret_keys_since_load(baseline: Any, edited: Any, current: Any) -> list[dict[str, str]]:
+    """Список формы плюс ключи, которых не было в снимке на момент её загрузки.
+
+    Удаление и правка username относятся к ключам, которые форма уже видела.
+    Ключ, добавленный другой сессией после загрузки, в снимке отсутствует и остаётся.
+    """
+    known = {record["secret_key"] for record in normalize_legacy_secret_key_records(baseline)}
+    merged = normalize_legacy_secret_key_records(edited)
+    seen = {record["secret_key"] for record in merged}
+    for record in normalize_legacy_secret_key_records(current):
+        secret = record["secret_key"]
+        if secret in known or secret in seen:
+            continue
+        merged.append(record)
+        seen.add(secret)
+    return merged
+
+
+DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_key_records(
+    DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING]
+)
+
+
+class LegacySubscriptionSecretKeyPayload(BaseModel):
+    """Один ключ старой внешней панели для проверки её выданных ссылок."""
+
+    secret_key: str = Field(min_length=1, max_length=64)
+    bot_username: str = ""
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, value: str) -> str:
+        key = value.strip()
+        if not key:
+            raise ValueError("secret_key must not be empty")
+        return key
+
+    @field_validator("bot_username", mode="before")
+    @classmethod
+    def validate_bot_username(cls, value: Any) -> str:
+        return str(value or "").strip().lstrip("@")[:64]
 
 
 class PanelSettingsPayload(BaseModel):
@@ -249,7 +312,10 @@ class PanelSettingsPayload(BaseModel):
     bs_monthly_limit: int = 0
     sub_routing_happ: str = ""
     sub_routing_v2raytun: str = ""
-    subscription_legacy_secret_keys: list[str] = Field(default_factory=list)
+    subscription_legacy_secret_keys: list[dict[str, str]] = Field(default_factory=list)
+    # Снимок списка на момент загрузки формы. В настройки не пишется: по нему
+    # сохранение отличает правку ключей от списка, устаревшего из-за импорта.
+    subscription_legacy_secret_keys_baseline: list[dict[str, str]] | None = Field(default=None, exclude=True)
     sub_client_note: str = ""
     sub_revoked_announce_text: str = ""
     sub_expired_announce_text: str = ""
@@ -262,11 +328,19 @@ class PanelSettingsPayload(BaseModel):
     sub_unsupported_client_server_text: list[str] = Field(default_factory=list)
     sub_bs_limit_server_text: list[str] = Field(default_factory=list)
     sub_device_limit_hard_mode: bool = False
+    sub_update_interval: str = ""
 
     @field_validator("subscription_legacy_secret_keys", mode="before")
     @classmethod
-    def validate_legacy_secret_keys(cls, value: Any) -> list[str]:
-        return normalize_legacy_secret_keys(value)
+    def validate_legacy_secret_keys(cls, value: Any) -> list[dict[str, str]]:
+        return normalize_legacy_secret_key_records(value)
+
+    @field_validator("subscription_legacy_secret_keys_baseline", mode="before")
+    @classmethod
+    def validate_legacy_secret_keys_baseline(cls, value: Any) -> list[dict[str, str]] | None:
+        if value is None:
+            return None
+        return normalize_legacy_secret_key_records(value)
 
     @field_validator(
         "sub_revoked_server_text",
@@ -293,7 +367,9 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
     `subscription_legacy_secret_keys`: ключа нет в JSON — env; ключ есть (в т.ч. []) — БД.
     """
     base = dict(DEFAULT_PANEL_SETTINGS)
-    base[LEGACY_SECRET_KEYS_SETTING] = list(DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING])
+    base[LEGACY_SECRET_KEYS_SETTING] = normalize_legacy_secret_key_records(
+        DEFAULT_PANEL_SETTINGS[LEGACY_SECRET_KEYS_SETTING]
+    )
     if not raw:
         return base
     for key in PANEL_SETTING_KEYS:
@@ -306,7 +382,12 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
                 continue
             continue
         if key == LEGACY_SECRET_KEYS_SETTING:
-            base[key] = normalize_legacy_secret_keys(raw[key])
+            base[key] = normalize_legacy_secret_key_records(raw[key])
+            continue
+        if key == "sub_update_interval":
+            value = str(raw[key] or "").strip()
+            if value:
+                base[key] = value
             continue
         if key in SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS:
             text = str(raw[key] or "")

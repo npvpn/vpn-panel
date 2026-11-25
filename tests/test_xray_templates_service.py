@@ -255,32 +255,150 @@ def test_configs_map_skips_blank_bodies(db):
     assert _template_id(db, DEFAULT_CONFIG_SLUG) not in bodies["configs"]
 
 
-def test_deleting_config_resets_bound_hosts(db):
-    """NPVPN-2024: привязка живёт на ProxyHost, а не на Node — delete_config обязан
-    сбрасывать client_config_id у хостов, а не у нод (в БД это делает ON DELETE
-    SET NULL у хостового FK, здесь проверяем то же самое в ORM-сессии)."""
-    bs_id = _template_id(db, BS_CONFIG_SLUG)
+def _bind_host(db, template_id: int) -> ProxyHost:
     db.add(ProxyInbound(tag="VLESS_TCP_REALITY"))
     db.commit()
-    db.add(
-        ProxyHost(
-            remark="host-1",
-            address="1.2.3.4",
-            inbound_tag="VLESS_TCP_REALITY",
-            client_config_id=bs_id,
-        )
+    host = ProxyHost(
+        remark="host-1",
+        address="1.2.3.4",
+        inbound_tag="VLESS_TCP_REALITY",
+        client_config_id=template_id,
     )
+    db.add(host)
     db.commit()
-    svc.delete_config(db, bs_id)
-    assert db.query(ProxyHost).one().client_config_id is None
+    db.refresh(host)
+    return host
 
 
-def test_default_config_cannot_be_deleted(db):
-    """Единственный неудаляемый документ — `default`: он последняя ступень фолбэка для
-    хостов без привязки. Любой другой документ (включая `bs`) удаляется свободно."""
+def test_archive_keeps_host_binding_versions_and_lists_hosts(db):
+    """Архив не обнуляет client_config_id и не трогает ленту версий. Список видит хосты."""
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    svc.save_version(db, bs_id, '{"rules": ["bs"]}', None, _Admin())
+    _bind_host(db, bs_id)
+    before = [row["version"] for row in svc.list_versions(db, bs_id, limit=10, offset=0)]
+
+    svc.archive_config(db, bs_id, _Admin())
+
+    assert db.query(ProxyHost).one().client_config_id == bs_id
+    template = db.query(XrayTemplate).filter(XrayTemplate.id == bs_id).one()
+    assert template.archived_at is not None
+    assert template.archived_by == "sudo"
+    assert [row["version"] for row in svc.list_versions(db, bs_id, limit=10, offset=0)] == before
+    listed = {doc["id"]: doc for doc in svc.list_documents(db)}
+    assert listed[bs_id]["hosts"] == [{"remark": "host-1", "inbound_tag": "VLESS_TCP_REALITY"}]
+    assert listed[bs_id]["archived_by"] == "sudo"
+    assert bs_id not in svc.get_active_bodies(db)["configs"]
+
+
+def test_default_cannot_be_archived_and_repeat_or_missing_is_rejected(db):
     with pytest.raises(svc.XrayTemplateError):
-        svc.delete_config(db, _template_id(db, DEFAULT_CONFIG_SLUG))
-    svc.delete_config(db, _template_id(db, BS_CONFIG_SLUG))
+        svc.archive_config(db, _template_id(db, DEFAULT_CONFIG_SLUG), _Admin())
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    svc.archive_config(db, bs_id, _Admin())
+    with pytest.raises(svc.XrayTemplateError):
+        svc.archive_config(db, bs_id, _Admin())
+    with pytest.raises(LookupError):
+        svc.archive_config(db, 99999, _Admin())
+
+
+def test_restore_returns_body_and_keeps_host_binding(db):
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    svc.save_version(db, bs_id, '{"who": "bs"}', None, _Admin())
+    host = _bind_host(db, bs_id)
+    with pytest.raises(svc.XrayTemplateError):
+        svc.restore_config(db, bs_id)
+    svc.archive_config(db, bs_id, _Admin())
+
+    svc.restore_config(db, bs_id)
+
+    template = db.query(XrayTemplate).filter(XrayTemplate.id == bs_id).one()
+    assert template.archived_at is None
+    assert template.archived_by is None
+    assert db.query(ProxyHost).one().client_config_id == bs_id
+    lookup = svc.build_template_lookup(svc.get_active_bodies(db))
+    assert lookup(host.client_config_id) == {"who": "bs"}
+
+
+def test_archived_config_cannot_be_edited_or_reverted(db):
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    svc.save_version(db, bs_id, '{"a": 1}', None, _Admin())
+    svc.archive_config(db, bs_id, _Admin())
+    with pytest.raises(svc.XrayTemplateError):
+        svc.save_version(db, bs_id, '{"a": 2}', None, _Admin())
+    with pytest.raises(svc.XrayTemplateError):
+        svc.revert(db, bs_id, 1, _Admin())
+    assert [row["version"] for row in svc.list_versions(db, bs_id, limit=10, offset=0)] == [2, 1]
+
+
+def test_delete_config_does_not_remove_the_document_or_its_binding(db):
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    _bind_host(db, bs_id)
+    with pytest.raises(svc.XrayTemplateError):
+        svc.delete_config(db, bs_id)
+    assert db.query(XrayTemplate).filter(XrayTemplate.id == bs_id).one() is not None
+    assert db.query(ProxyHost).one().client_config_id == bs_id
+
+
+def test_archived_slug_stays_taken(db):
+    created = svc.create_config(db, "eu", "Европа", _Admin())
+    svc.archive_config(db, created["id"], _Admin())
+    with pytest.raises(svc.XrayTemplateError):
+        svc.create_config(db, "eu", "Снова", _Admin())
+
+
+def test_archived_document_reports_its_own_injection(db):
+    default_id = _template_id(db, DEFAULT_CONFIG_SLUG)
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    svc.save_version(db, default_id, '{"npvpn": {"addVirtualHostAsOutbound": true}}', None, _Admin())
+    svc.save_version(
+        db,
+        bs_id,
+        '{"npvpn": {"injectHosts": [{"selector": {"type": "ids", "values": [1]}, "tagPrefix": "arc"}]}}',
+        None,
+        _Admin(),
+    )
+    svc.archive_config(db, bs_id, _Admin())
+
+    docs = {doc["id"]: doc for doc in svc.list_documents(db)}
+    assert docs[default_id]["effective_injection"]["addVirtualHostAsOutbound"] is True
+    assert docs[bs_id]["effective_injection"]["injectHosts"][0]["tagPrefix"] == "arc"
+    assert docs[bs_id]["effective_injection_error"] is False
+
+    _version(db, bs_id, 99, '{"npvpn": {"injectHosts": "invalid"}}')
+    db.commit()
+    svc.invalidate(db)
+    docs = {doc["id"]: doc for doc in svc.list_documents(db)}
+    assert docs[bs_id]["effective_injection_error"] is True
+
+
+def test_subscription_lookup_uses_default_for_archived_binding(db):
+    default_id = _template_id(db, DEFAULT_CONFIG_SLUG)
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    svc.save_version(db, default_id, '{"who": "default"}', None, _Admin())
+    svc.save_version(db, bs_id, '{"who": "archived"}', None, _Admin())
+    svc.archive_config(db, bs_id, _Admin())
+    lookup = svc.build_template_lookup(svc.get_active_bodies(db))
+    assert lookup(bs_id) == {"who": "default"}
+
+
+def test_archived_assignment_keeps_existing_binding_only(db):
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    svc.assert_host_config_assignment(db, None, bs_id)
+    host = _bind_host(db, bs_id)
+    svc.archive_config(db, bs_id, _Admin())
+
+    svc.assert_host_config_assignment(db, host.id, bs_id)
+    svc.assert_host_config_assignment(db, host.id, None)
+    svc.assert_host_config_assignment(db, host.id, _template_id(db, DEFAULT_CONFIG_SLUG))
+    with pytest.raises(svc.XrayTemplateError):
+        svc.assert_host_config_assignment(db, None, bs_id)
+    other = svc.create_config(db, "eu", "Европа", _Admin())
+    svc.archive_config(db, other["id"], _Admin())
+    with pytest.raises(svc.XrayTemplateError):
+        svc.assert_host_config_assignment(db, host.id, other["id"])
+    with pytest.raises(svc.XrayTemplateError):
+        svc.assert_host_config_assignment(db, host.id, 99999)
+    assert db.query(ProxyHost).one().client_config_id == bs_id
 
 
 def test_created_config_copies_default_body(db):
@@ -331,11 +449,9 @@ def test_invalidate_called_on_save_refreshes_process_cache(db, monkeypatch):
     assert svc.get_cached_active_bodies()["configs"][tid] == '{"a": "after"}'
 
 
-def test_delete_config_invalidates_process_cache(db, monkeypatch):
-    """Тот же инвариант, что выше, но для пути удаления документа (Task 3 доказывала его
-    только для записи версии через _append_version). delete_config тоже обязан звать
-    invalidate(), иначе /sub/ продолжит отдавать тело уже удалённого документа из
-    процессного кэша до перезапуска.
+def test_archive_invalidates_process_cache(db, monkeypatch):
+    """Архивация обязана сбрасывать get_cached_active_bodies, иначе /sub/ продолжит
+    отдавать тело архивного документа до перезапуска процесса.
     """
     import contextlib
 
@@ -343,13 +459,26 @@ def test_delete_config_invalidates_process_cache(db, monkeypatch):
     bs_id = _template_id(db, BS_CONFIG_SLUG)
     svc.save_version(db, bs_id, '{"rules": ["bs"]}', None, _Admin())
     svc.get_cached_active_bodies.cache_clear()
-    # Прогреваем процессный кэш непустым телом удаляемого документа.
     assert svc.get_cached_active_bodies()["configs"][bs_id] == '{"rules": ["bs"]}'
 
-    svc.delete_config(db, bs_id)
+    svc.archive_config(db, bs_id, _Admin())
 
-    # Именно процессный кэш — не get_active_bodies(db) — должен перестать отдавать тело.
     assert bs_id not in svc.get_cached_active_bodies()["configs"]
+
+
+def test_restore_invalidates_process_cache(db, monkeypatch):
+    import contextlib
+
+    monkeypatch.setattr(svc, "GetDB", lambda: contextlib.nullcontext(db))
+    bs_id = _template_id(db, BS_CONFIG_SLUG)
+    svc.save_version(db, bs_id, '{"rules": ["bs"]}', None, _Admin())
+    svc.archive_config(db, bs_id, _Admin())
+    svc.get_cached_active_bodies.cache_clear()
+    assert bs_id not in svc.get_cached_active_bodies()["configs"]
+
+    svc.restore_config(db, bs_id)
+
+    assert svc.get_cached_active_bodies()["configs"][bs_id] == '{"rules": ["bs"]}'
 
 
 def test_assert_config_exists_rejects_unknown(db):
@@ -372,7 +501,12 @@ def test_list_documents_reports_default_as_not_deletable(db):
     by_slug = {doc["slug"]: doc for doc in docs}
     assert set(by_slug) == {DEFAULT_CONFIG_SLUG, BS_CONFIG_SLUG}
     assert by_slug[DEFAULT_CONFIG_SLUG]["deletable"] is False
+    assert by_slug[DEFAULT_CONFIG_SLUG]["archivable"] is False
     assert by_slug[BS_CONFIG_SLUG]["deletable"] is True
+    assert by_slug[BS_CONFIG_SLUG]["archivable"] is True
+    assert by_slug[BS_CONFIG_SLUG]["archived_at"] is None
+    assert by_slug[BS_CONFIG_SLUG]["archived_by"] is None
+    assert by_slug[BS_CONFIG_SLUG]["hosts"] == []
     assert all("kind" not in doc for doc in docs)
 
 

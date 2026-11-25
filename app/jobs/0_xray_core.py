@@ -31,6 +31,16 @@ def _should_force_reconnect(node_id: int, status: NodeStatus, now: float) -> boo
     return False
 
 
+def _recover_pending_nodes(node_ids):
+    for node_id in node_ids:
+        try:
+            xray.operations.apply_node(node_id, recover=True)
+        except Exception:
+            # Durable pending remains available for the next tick. One failed
+            # admission must not abort other nodes or startup job registration.
+            logger.exception("Failed to recover pending node settings: node_id=%s", node_id)
+
+
 def core_health_check():
     config = None
     now = time.time()
@@ -51,13 +61,16 @@ def core_health_check():
         xray.core.restart(wave_config())
 
     with GetDB() as db:
-        dbnodes = crud.get_nodes(db=db, enabled=True)
+        dbnodes = crud.get_nodes(db=db, enabled=True, include_pending=True)
 
+    _recover_pending_nodes(node.id for node in dbnodes if node.config_apply_pending is True)
     reconnects_scheduled = 0
     max_reconnects = max(1, XRAY_NODE_MAX_CONCURRENT_CONNECTS)
 
     for dbnode in dbnodes:
         node_id = dbnode.id
+        if dbnode.config_apply_pending is True:
+            continue
 
         node = xray.nodes.get(node_id)
         if node is None:
@@ -137,11 +150,17 @@ def start_core():
     # nodes' core
     logger.info("Starting nodes Xray core")
     with GetDB() as db:
-        dbnodes = crud.get_nodes(db=db, enabled=True)
-        node_ids = [dbnode.id for dbnode in dbnodes]
+        dbnodes = crud.get_nodes(db=db, enabled=True, include_pending=True)
+        node_ids = []
+        pending_ids = []
         for dbnode in dbnodes:
-            crud.update_node_status(db, dbnode, NodeStatus.connecting)
+            if dbnode.config_apply_pending is True:
+                pending_ids.append(dbnode.id)
+            else:
+                node_ids.append(dbnode.id)
+                crud.update_node_status(db, dbnode, NodeStatus.connecting)
 
+    _recover_pending_nodes(pending_ids)
     xray.operations.connect_nodes(node_ids)
 
     scheduler.add_job(

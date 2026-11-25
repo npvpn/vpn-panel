@@ -56,6 +56,7 @@ def create_bot(
     del admin
     try:
         bot = crud.create_bot(db, payload.username, payload.title, payload.web_url)
+        xray.hosts.update()
         return _bot_response(db, bot)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))

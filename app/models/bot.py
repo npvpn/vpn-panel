@@ -9,11 +9,9 @@ from config import (
     SUB_PROFILE_TITLE,
     SUB_PROFILE_URL,
     SUB_SUPPORT_URL,
-    SUB_UPDATE_INTERVAL,
 )
 
 DEFAULT_BOT_SETTINGS: dict[str, Any] = {
-    "sub_update_interval": str(SUB_UPDATE_INTERVAL),
     "sub_support_url": SUB_SUPPORT_URL,
     "sub_profile_title": SUB_PROFILE_TITLE,
     "sub_profile_url": SUB_PROFILE_URL,
@@ -65,7 +63,6 @@ class BotResponse(BotBase):
 
 
 class BotSettingsPayload(BaseModel):
-    sub_update_interval: str = ""
     sub_support_url: str = ""
     sub_profile_title: str = ""
     sub_profile_url: str = ""

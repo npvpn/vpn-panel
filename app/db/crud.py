@@ -2,14 +2,17 @@
 Functions for managing proxy hosts, users, user templates, nodes, and administrative tasks.
 """
 
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from threading import Lock
 from typing import Any, Literal, cast
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session, joinedload, selectinload
 from sqlalchemy.sql.functions import coalesce
@@ -76,8 +79,36 @@ from config import (
     USERS_AUTODELETE_DAYS,
 )
 
+_BOT_CREATION_LOCK = Lock()
 
-def add_default_host(db: Session, inbound: ProxyInbound):
+
+@contextmanager
+def _lock_bot_creation(db: Session):
+    """Serialize the 0→1→2 transition that materializes host bindings."""
+    if db.bind is not None and db.bind.dialect.name == "mysql":
+        # Advisory locks live on a MySQL connection, while Session.commit() may
+        # return the session connection to the pool. Keep a dedicated connection
+        # open so RELEASE_LOCK always addresses the one that acquired the lock.
+        bind = db.get_bind()
+        engine = bind if isinstance(bind, Engine) else bind.engine
+        connection = engine.connect()
+        try:
+            acquired = connection.execute(text("SELECT GET_LOCK('npvpn_bot_creation', 10)")).scalar()
+            if acquired != 1:
+                raise ValueError("Could not acquire bot creation lock")
+            try:
+                yield
+            finally:
+                connection.execute(text("SELECT RELEASE_LOCK('npvpn_bot_creation')"))
+        finally:
+            connection.close()
+        return
+
+    with _BOT_CREATION_LOCK:
+        yield
+
+
+def add_default_host(db: Session, inbound: ProxyInbound, *, commit: bool = True):
     """
     Adds a default host to a proxy inbound.
 
@@ -87,10 +118,13 @@ def add_default_host(db: Session, inbound: ProxyInbound):
     """
     host = ProxyHost(remark="🚀 Marz ({USERNAME}) [{PROTOCOL} - {TRANSPORT}]", address="{SERVER_IP}", inbound=inbound)
     db.add(host)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
 
-def get_or_create_inbound(db: Session, inbound_tag: str) -> ProxyInbound:
+def get_or_create_inbound(db: Session, inbound_tag: str, *, commit: bool = True) -> ProxyInbound:
     """
     Retrieves or creates a proxy inbound based on the given tag.
 
@@ -105,8 +139,11 @@ def get_or_create_inbound(db: Session, inbound_tag: str) -> ProxyInbound:
     if not inbound:
         inbound = ProxyInbound(tag=inbound_tag)
         db.add(inbound)
-        db.commit()
-        add_default_host(db, inbound)
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+        add_default_host(db, inbound, commit=commit)
         db.refresh(inbound)
     return inbound
 
@@ -581,6 +618,33 @@ def get_bots(db: Session) -> list[Bot]:
     return db.query(Bot).order_by(Bot.username.asc()).all()
 
 
+def count_bots(db: Session) -> int:
+    return int(db.query(func.count(Bot.id)).scalar() or 0)
+
+
+def bind_all_hosts_to_only_bot(db: Session) -> None:
+    """Записать неявный доступ единственного бота, прежде чем появится второй.
+
+    Пока бот один, предикат и так отдаёт ему все хосты. Без этих строк
+    пустая привязка после появления второго бота станет «никому».
+    rented_at не заполняется и уже стоящие отметки не сдвигаются.
+    """
+    if count_bots(db) != 1:
+        return
+    only = db.query(Bot).one()
+    linked = {
+        host_id
+        for (host_id,) in db.query(host_bot_association.c.host_id).filter(host_bot_association.c.bot_id == only.id)
+    }
+    missing = [host_id for (host_id,) in db.query(ProxyHost.id).all() if host_id not in linked]
+    if not missing:
+        return
+    db.execute(
+        host_bot_association.insert(),
+        [{"host_id": host_id, "bot_id": only.id, "rented_at": None} for host_id in missing],
+    )
+
+
 def _normalize_web_url(value: str | None) -> str:
     domain = str(value or "").strip().replace("https://", "").replace("http://", "").strip("/")
     if not domain:
@@ -611,18 +675,28 @@ def create_bot(
     normalized = _normalize_bot_username(username)
     if not normalized:
         raise ValueError("Bot username is required")
-    if get_bot(db, normalized):
-        raise ValueError(f'Bot "{normalized}" already exists')
+    with _lock_bot_creation(db):
+        if get_bot(db, normalized):
+            raise ValueError(f'Bot "{normalized}" already exists')
 
-    bot = Bot(
-        username=normalized,
-        title=title or None,
-        source_bot_id=source_bot_id,
-        admin_sync_enabled=admin_sync_enabled,
-    )
-    db.add(bot)
-    db.commit()
-    db.refresh(bot)
+        is_first_bot = count_bots(db) == 0
+        bind_all_hosts_to_only_bot(db)
+        bot = Bot(
+            username=normalized,
+            title=title or None,
+            source_bot_id=source_bot_id,
+            admin_sync_enabled=admin_sync_enabled,
+        )
+        db.add(bot)
+        db.flush()
+        if is_first_bot:
+            # До первого сервиса пользователи не имеют привязки. Назначаем их
+            # одновременно с его созданием, чтобы подписки продолжили получать
+            # те же хосты после перехода панели из solo-режима.
+            db.query(User).update({User.bot_id: bot.id}, synchronize_session=False)
+        db.commit()
+        db.refresh(bot)
+
     _set_bot_web_url(db, bot, web_url)
     db.refresh(bot)
     return bot
@@ -2041,7 +2115,9 @@ def get_node_by_id(db: Session, node_id: int) -> Node | None:
     return db.query(Node).filter(Node.id == node_id).first()
 
 
-def get_nodes(db: Session, status: NodeStatus | list | None = None, enabled: bool = None) -> list[Node]:
+def get_nodes(
+    db: Session, status: NodeStatus | list | None = None, enabled: bool = None, *, include_pending: bool = False
+) -> list[Node]:
     """
     Retrieves nodes based on optional status and enabled filters.
 
@@ -2062,7 +2138,10 @@ def get_nodes(db: Session, status: NodeStatus | list | None = None, enabled: boo
             query = query.filter(Node.status == status)
 
     if enabled:
-        query = query.filter(Node.status != NodeStatus.disabled)
+        criterion = Node.status != NodeStatus.disabled
+        if include_pending:
+            criterion = or_(criterion, Node.config_apply_pending.is_(True))
+        query = query.filter(criterion)
 
     return query.all()
 
@@ -2126,13 +2205,13 @@ def get_nodes_usage(
     return list(usages.values()), traffic_source
 
 
-def _sync_cascade_routes(db: Session, dbnode: Node, routes) -> None:
+def _sync_cascade_routes(db: Session, dbnode: Node, routes, *, commit_inbounds: bool = True) -> None:
     """Переписать cascade_routes входной ноды из API-моделей CascadeRouteModel."""
     dbnode.cascade_routes = [
         CascadeRoute(
             exit_node_id=r.exit_node_id,
-            entry_inbound_tag=get_or_create_inbound(db, r.entry_inbound_tag).tag,
-            cascade_inbound_tag=get_or_create_inbound(db, r.cascade_inbound_tag).tag,
+            entry_inbound_tag=get_or_create_inbound(db, r.entry_inbound_tag, commit=commit_inbounds).tag,
+            cascade_inbound_tag=get_or_create_inbound(db, r.cascade_inbound_tag, commit=commit_inbounds).tag,
         )
         for r in routes
     ]
@@ -2191,7 +2270,7 @@ def remove_node(db: Session, dbnode: Node) -> Node:
     return dbnode
 
 
-def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
+def update_node(db: Session, dbnode: Node, modify: NodeModify, *, commit: bool = True) -> Node:
     """
     Updates an existing node with new information.
 
@@ -2203,6 +2282,31 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
     Returns:
         Node: The updated Node object.
     """
+    # Dependency resolution may have loaded this instance before the previous
+    # APPLY acknowledged it. FOR UPDATE is a current read on MySQL as well.
+    db.refresh(dbnode, with_for_update=True)
+    was_stopped = dbnode.status == NodeStatus.disabled and not dbnode.config_apply_pending
+    dbnode.config_apply_pending = True
+    if dbnode.config_apply_endpoint is None:
+        dbnode.config_apply_endpoint = {
+            "address": dbnode.address,
+            "port": dbnode.port,
+            "api_port": dbnode.api_port,
+            "protocol": dbnode.protocol.value,
+            "control_session_id": dbnode.control_session_id,
+            "stopped": was_stopped,
+        }
+    if any(
+        getattr(modify, key) is not None and getattr(modify, key) != getattr(dbnode, key)
+        for key in ("address", "port", "api_port", "protocol")
+    ):
+        dbnode.control_session_id = None
+    # All new tag locks are acquired in the same order, including cascade tags.
+    tags = set(modify.inbounds or [])
+    for route in modify.cascade_routes or []:
+        tags.update((route.entry_inbound_tag, route.cascade_inbound_tag))
+    for tag in sorted(tags):
+        get_or_create_inbound(db, tag, commit=False)
     if modify.name is not None:
         dbnode.name = modify.name
 
@@ -2218,8 +2322,8 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
     if modify.protocol is not None:
         dbnode.protocol = modify.protocol
 
-    if modify.status is NodeStatus.disabled:
-        dbnode.status = modify.status
+    if modify.status is NodeStatus.disabled or (modify.status is None and dbnode.status == NodeStatus.disabled):
+        dbnode.status = NodeStatus.disabled
         dbnode.xray_version = None
         dbnode.message = None
     else:
@@ -2229,7 +2333,7 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
         dbnode.usage_coefficient = modify.usage_coefficient
 
     if modify.inbounds is not None:
-        dbnode.inbounds = [get_or_create_inbound(db, tag) for tag in modify.inbounds]
+        dbnode.inbounds = [get_or_create_inbound(db, tag, commit=False) for tag in modify.inbounds]
 
     if modify.role is not None:
         _apply_node_role(dbnode, modify.role)
@@ -2241,7 +2345,7 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
         dbnode.cascade_balancer_strategy = modify.cascade_balancer_strategy
 
     if modify.cascade_routes is not None:
-        _sync_cascade_routes(db, dbnode, modify.cascade_routes)
+        _sync_cascade_routes(db, dbnode, modify.cascade_routes, commit_inbounds=False)
 
     if "hosting_traffic_limit_bytes" in modify.model_fields_set:
         cast(Any, dbnode).hosting_traffic_limit_bytes = modify.hosting_traffic_limit_bytes
@@ -2249,8 +2353,11 @@ def update_node(db: Session, dbnode: Node, modify: NodeModify) -> Node:
     if "owner_bot_id" in modify.model_fields_set:
         cast(Any, dbnode).owner_bot_id = modify.owner_bot_id
 
-    db.commit()
-    db.refresh(dbnode)
+    if commit:
+        db.commit()
+        db.refresh(dbnode)
+    else:
+        db.flush()
     return dbnode
 
 
@@ -2405,12 +2512,10 @@ def get_user_bs_traffic(db: Session, dbuser: User) -> dict[str, int]:
 
 
 def _bot_settings_for_user(db: Session, dbuser: User) -> dict[str, Any]:
-    from app.db.models import BotSettings
+    del db
+    from app.subscription.bot_settings import resolve_bot_settings
 
-    if not dbuser.bot_id:
-        return apply_bot_settings_fallback(None)
-    data = db.query(BotSettings.data).filter(BotSettings.bot_id == dbuser.bot_id).scalar()
-    return apply_bot_settings_fallback(data)
+    return resolve_bot_settings(dbuser)
 
 
 def set_user_bs_extra_amount(db: Session, dbuser: User, extra_bytes: int) -> None:

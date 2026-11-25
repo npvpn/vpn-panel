@@ -50,6 +50,12 @@ class SANIgnoringAdaptor(HTTPAdapter):
         self.poolmanager = PoolManager(num_pools=connections, maxsize=maxsize, block=block, assert_hostname=False)
 
 
+def _check_operation(node) -> None:
+    check = vars(node).get("_operation_check")
+    if check is not None:
+        check()
+
+
 class NodeAPIError(Exception):
     def __init__(self, status_code, detail):
         self.status_code = status_code
@@ -70,6 +76,9 @@ def wait_for_grpc_ready(
     port: int,
     ssl_cert: bytes,
     ssl_target_name: str = "Gozargah",
+    *,
+    check_current: Callable[[], None] | None = None,
+    retry_wait: Callable[[float], None] | None = None,
 ) -> XRayAPI:
     retries = max(1, XRAY_NODE_GRPC_READY_RETRIES)
     timeout = max(1, XRAY_NODE_GRPC_READY_TIMEOUT)
@@ -77,6 +86,8 @@ def wait_for_grpc_ready(
     last_exc = None
 
     for attempt in range(1, retries + 1):
+        if check_current is not None:
+            check_current()
         api = XRayAPI(
             address=address,
             port=port,
@@ -85,13 +96,22 @@ def wait_for_grpc_ready(
         )
         try:
             grpc.channel_ready_future(api._channel).result(timeout=timeout)
-            return api
         except (grpc.FutureTimeoutError, grpc.FutureCancelledError, ValueError) as exc:
             last_exc = exc
             # Stop orphaned connectivity polling threads before the next attempt.
             _safe_close_grpc_channel(api._channel)
+            if check_current is not None:
+                check_current()
             if attempt < retries and retry_delay:
-                time.sleep(retry_delay)
+                (retry_wait or time.sleep)(retry_delay)
+        else:
+            try:
+                if check_current is not None:
+                    check_current()
+            except BaseException:
+                _safe_close_grpc_channel(api._channel)
+                raise
+            return api
 
     raise ConnectionError(
         f"Failed to connect to node's API after {retries} attempts "
@@ -303,6 +323,7 @@ class ReSTXRayNode:
         return inline_local_certificates(config)
 
     def make_request(self, path: str, timeout: int, **params):
+        _check_operation(self)
         try:
             # urllib3 1.x applies the *connect* half of timeout=(connect, read) to the
             # socket while *writing* the request body, and switches to read only after
@@ -388,6 +409,8 @@ class ReSTXRayNode:
             self.address,
             self.api_port,
             self._node_cert.encode(),
+            check_current=vars(self).get("_operation_check"),
+            retry_wait=vars(self).get("_operation_wait"),
         )
         with self._grpc_lock:
             self._discard_grpc_api_unlocked()
@@ -396,6 +419,8 @@ class ReSTXRayNode:
     def _ensure_control_session(self):
         """Ensure REST session for control commands without /connect on transient errors."""
         if self._session_id:
+            _check_operation(self)
+            self._ensure_peer_cert()
             try:
                 self.make_request("/ping", timeout=XRAY_NODE_REST_PING_TIMEOUT)
                 logger.debug(
@@ -420,6 +445,7 @@ class ReSTXRayNode:
         self.connect()
 
     def connect(self):
+        _check_operation(self)
         old = self._session_tag()
         if self._session_id:
             try:
@@ -462,6 +488,7 @@ class ReSTXRayNode:
         return res.get("core_version")
 
     def _ensure_peer_cert(self) -> None:
+        _check_operation(self)
         if getattr(self, "_node_cert", None):
             return
         cert = fetch_server_certificate(self.address, self.port, XRAY_NODE_CERT_FETCH_TIMEOUT)
@@ -680,7 +707,7 @@ class RPyCXRayNode:
         self._certfile = string_to_temp_file(ssl_cert)
 
         self._service = Service()
-        self._api = None
+        self._api: XRayAPI | None = None
 
         # Реальный набор тегов инбаундов ноды; заполняется после успешного
         # start/restart (NPVPN-1779), None до первого коннекта.
@@ -698,9 +725,11 @@ class RPyCXRayNode:
 
         tries = 0
         while True:
+            _check_operation(self)
             tries += 1
             self._node_cert = fetch_server_certificate(self.address, self.port, XRAY_NODE_CERT_FETCH_TIMEOUT)
             self._node_certfile = string_to_temp_file(self._node_cert)
+            _check_operation(self)
             conn = rpyc.ssl_connect(
                 self.address,
                 self.port,
@@ -711,16 +740,24 @@ class RPyCXRayNode:
                 keepalive=True,
             )
             try:
+                _check_operation(self)
                 conn.ping()
+                _check_operation(self)
                 self.connection = conn
                 break
             except EOFError as exc:
+                conn.close()
+                _check_operation(self)
                 if tries <= 3:
                     continue
                 raise exc
+            except BaseException:
+                conn.close()
+                raise
 
     @property
     def connected(self):
+        _check_operation(self)
         try:
             self.connection.ping()
             return not self.connection.closed
@@ -730,6 +767,7 @@ class RPyCXRayNode:
 
     @property
     def remote(self):
+        _check_operation(self)
         if not self.connected:
             self.connect()
         return self.connection.root
@@ -755,7 +793,9 @@ class RPyCXRayNode:
             assert config is not None, "start() requires either config or config_json"
             config = self._prepare_config(config)
             config_json = config.to_json()
-        self.remote.start(config_json)
+        remote = self.remote
+        _check_operation(self)
+        remote.start(config_json)
         self.started = True
 
         # connect to API
@@ -764,6 +804,8 @@ class RPyCXRayNode:
                 self.address,
                 self.api_port,
                 self._node_cert.encode(),
+                check_current=vars(self).get("_operation_check"),
+                retry_wait=vars(self).get("_operation_wait"),
             )
         except ConnectionError:
             start_time = time.time()
@@ -783,7 +825,9 @@ class RPyCXRayNode:
             raise ConnectionError("Failed to connect to node's API")
 
     def stop(self):
-        self.remote.stop()
+        remote = self.remote
+        _check_operation(self)
+        remote.stop()
         self.started = False
         self._api = None
 
@@ -793,7 +837,16 @@ class RPyCXRayNode:
             assert config is not None, "restart() requires either config or config_json"
             config = self._prepare_config(config)
             config_json = config.to_json()
-        self.remote.restart(config_json)
+        remote = self.remote
+        _check_operation(self)
+        remote.restart(config_json)
+        self._api = wait_for_grpc_ready(
+            self.address,
+            self.api_port,
+            self._node_cert.encode(),
+            check_current=vars(self).get("_operation_check"),
+            retry_wait=vars(self).get("_operation_wait"),
+        )
         self.started = True
 
     @contextmanager
@@ -878,6 +931,9 @@ class XRayNode:
         raise NotImplementedError
 
     def start(self, config: XRayConfig = None, *, config_json: str | None = None):
+        raise NotImplementedError
+
+    def stop(self) -> None:
         raise NotImplementedError
 
     def restart(self, config: XRayConfig = None, *, config_json: str | None = None):

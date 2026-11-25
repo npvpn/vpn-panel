@@ -260,6 +260,16 @@ def test_template_hides_button_without_home_url():
     assert "dark-btn" not in html
     assert "<button" not in html
     assert "Обновите" not in html
+    # вместо тупика — куда обратиться (NPVPN-2374)
+    assert "Что-то пошло не так" in html
+    assert "обратитесь в сервис, где оформили подписку" in html
+
+
+def test_template_with_home_url_has_no_service_hint():
+    html = _render_real_template({"home_url": "https://cab.example", "show_ads": True})
+
+    assert "Что-то пошло не так" in html
+    assert "обратитесь в сервис" not in html
 
 
 def test_template_footer_respects_show_ads():
