@@ -46,8 +46,10 @@ from app.services.address_history import (
     PinnableHost,
     PinResponse,
     TunnelTarget,
+    UnavailablePinTargets,
     list_pinnable_hosts,
     reconstruct_range,
+    validate_pin_targets,
 )
 from app.subscription.address_context_builder import _EPOCH_ORIGIN, day_index
 from app.subscription.bot_settings import resolve_bot_settings
@@ -507,17 +509,10 @@ def create_user_pin_endpoint(
     if host is None:
         raise HTTPException(status_code=404, detail="Host not found")
     db_user = cast(DBUser, dbuser)
-    location = next((h for h in list_pinnable_hosts(db, db_user) if h.host_id == payload.host_id), None)
-    if location is None:
-        raise HTTPException(status_code=400, detail="Location has no pinnable entries for this user")
-    allowed = {(entry.source_host_id, entry.node_id) for entry in location.nodes}
-    requested = (
-        {(t.source_host_id, t.node_id) for t in payload.tunnel_targets}
-        if payload.tunnel_targets
-        else {(None, n) for n in payload.node_ids}
-    )
-    if not requested <= allowed or {n for _, n in requested} != set(payload.node_ids):
-        raise HTTPException(status_code=400, detail="Selected tunnels are unavailable for this user")
+    try:
+        validate_pin_targets(db, db_user, payload)
+    except UnavailablePinTargets as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     now = datetime.now(UTC)
     pin = crud.create_user_node_pin(
         db,

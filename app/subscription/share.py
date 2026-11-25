@@ -518,7 +518,7 @@ def process_inbounds_and_tags(
         if item["host"].get("is_hidden"):
             continue
         if per_tunnel and isinstance(conf, V2rayJsonConfig):
-            if item.get("is_placeholder") or item["blocked"]:
+            if item.get("is_placeholder") or (item["injection"] is None and item["blocked"]):
                 continue
             try:
                 if item["injection"] is None:

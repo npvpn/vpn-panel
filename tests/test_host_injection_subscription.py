@@ -415,3 +415,16 @@ def test_probe_transport_stays_stable_across_reads(monkeypatch):
     proxy = first.config[1]["outbounds"][0]
     assert proxy["streamSettings"]["realitySettings"]["shortId"] == "aa"
     assert proxy["settings"]["vnext"][0]["address"].endswith(".proxy.example")
+
+
+def test_probe_keeps_reachable_source_when_recipient_is_blocked(monkeypatch):
+    conf, _ = scenario(
+        monkeypatch,
+        per_tunnel=True,
+        bs=BsContext(frozenset({1}), "BS limit"),
+        recipient_changes={"node_ids": [1]},
+        source_changes={2: {"node_ids": [2]}},
+        directive=injection(addVirtualHostAsOutbound=True),
+    )
+    assert len(conf.config) == 1
+    assert conf.config[0]["outbounds"][0]["streamSettings"]["realitySettings"]["serverName"] == "au2.example"

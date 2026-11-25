@@ -182,6 +182,24 @@ def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
     return result
 
 
+class UnavailablePinTargets(ValueError):
+    """The selected tunnel or node is outside this user's location pool."""
+
+
+def validate_pin_targets(db: Session, dbuser: User, payload: PinCreate) -> None:
+    location = next((h for h in list_pinnable_hosts(db, dbuser) if h.host_id == payload.host_id), None)
+    if location is None:
+        raise UnavailablePinTargets("Location has no pinnable entries for this user")
+    allowed = {(entry.source_host_id, entry.node_id) for entry in location.nodes}
+    requested = (
+        {(t.source_host_id, t.node_id) for t in payload.tunnel_targets}
+        if payload.tunnel_targets
+        else {(None, n) for n in payload.node_ids}
+    )
+    if not requested <= allowed or {n for _, n in requested} != set(payload.node_ids):
+        raise UnavailablePinTargets("Selected tunnels are unavailable for this user")
+
+
 def location_members(
     db: Session, bot_username: str | None, tags: set[str], blocked: set[int], *, inspect_host_id: int | None = None
 ) -> list[LocationComposition]:
@@ -264,7 +282,7 @@ def _audience_locations(catalog, bot_username, blocked, bot_count, inspect_host_
         meta = item["host"]
         if inspect_host_id is not None and meta["id"] != inspect_host_id:
             continue
-        if item["blocked"] or (
+        if (not item["injection"] and item["blocked"]) or (
             inspect_host_id is None and (not item["allowed"] or (meta["is_hidden"] and item["injection"]))
         ):
             continue
