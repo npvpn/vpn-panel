@@ -405,6 +405,8 @@ class V2rayShareLink(str):
 
 
 class V2rayJsonConfig(str):
+    _choose = staticmethod(choice)
+
     def __new__(cls, configs=None, default_id=None):
         # str subclass: __new__ must absorb the kwargs, or str.__new__ would reject them with TypeError
         return super().__new__(cls)
@@ -478,7 +480,10 @@ class V2rayJsonConfig(str):
         return [outbound, dialer] if dialer else [outbound]
 
     def add_probe_endpoint(self, remark, endpoint):
-        outbounds = self.build_endpoint_outbounds(endpoint, "proxy", helper_tag="dialer")
+        # Keep optional transport fields stable across successive probe subscriptions.
+        builder = copy.copy(self)
+        builder._choose = min
+        outbounds = builder.build_endpoint_outbounds(endpoint, "proxy", helper_tag="dialer")
         self.config.append({"remarks": remark, "outbounds": outbounds})
 
     def add_composed(self, remark, endpoints, client_config_id=None, balancing=None):
@@ -580,7 +585,7 @@ class V2rayJsonConfig(str):
         if host:
             wsSettings["host"] = host
         if random_user_agent:
-            wsSettings["headers"]["User-Agent"] = choice(self.user_agent_list)
+            wsSettings["headers"]["User-Agent"] = self._choose(self.user_agent_list)
         if heartbeatPeriod:
             wsSettings["heartbeatPeriod"] = heartbeatPeriod
 
@@ -596,7 +601,7 @@ class V2rayJsonConfig(str):
         if host:
             httpupgradeSettings["host"] = host
         if random_user_agent:
-            httpupgradeSettings["headers"]["User-Agent"] = choice(self.user_agent_list)
+            httpupgradeSettings["headers"]["User-Agent"] = self._choose(self.user_agent_list)
 
         return httpupgradeSettings
 
@@ -616,7 +621,7 @@ class V2rayJsonConfig(str):
         if host:
             config["host"] = host
         if random_user_agent:
-            config["headers"]["User-Agent"] = choice(self.user_agent_list)
+            config["headers"]["User-Agent"] = self._choose(self.user_agent_list)
 
         # extra хоста/инбаунда заменяет extra шаблона целиком; своих значений
         # панель не добавляет — незаданное клиент берёт из дефолтов ядра.
@@ -648,7 +653,7 @@ class V2rayJsonConfig(str):
             config["authority"] = host
 
         if random_user_agent:
-            config["user_agent"] = choice(self.grpc_user_agent_data)
+            config["user_agent"] = self._choose(self.grpc_user_agent_data)
 
         return config
 
@@ -697,7 +702,7 @@ class V2rayJsonConfig(str):
             config["header"]["request"]["headers"]["Host"] = [host]
 
         if random_user_agent:
-            config["header"]["request"]["headers"]["User-Agent"] = [choice(self.user_agent_list)]
+            config["header"]["request"]["headers"]["User-Agent"] = [self._choose(self.user_agent_list)]
 
         return config
 
@@ -717,7 +722,7 @@ class V2rayJsonConfig(str):
         else:
             config["host"] = []
         if random_user_agent:
-            config["headers"]["User-Agent"] = [choice(self.user_agent_list)]
+            config["headers"]["User-Agent"] = [self._choose(self.user_agent_list)]
 
         return config
 
@@ -960,7 +965,7 @@ class V2rayJsonConfig(str):
         port = inbound["port"]
         if isinstance(port, str):
             ports = port.split(",")
-            port = int(choice(ports))
+            port = int(self._choose(ports))
 
         tls = inbound["tls"]
         headers = inbound["header_type"]

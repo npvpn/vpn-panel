@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import random
 import secrets
@@ -36,8 +37,17 @@ def prepare_candidates(
     bs=None,
     stub=None,
     subset=None,
+    per_tunnel: bool = False,
     panel_bot_count: int | None = None,
 ) -> list[dict]:
+    choose = min if per_tunnel else random.choice
+
+    def expand_wildcard(value: str) -> str:
+        if "*" not in value:
+            return value
+        salt = hashlib.sha256(value.encode()).hexdigest()[:16] if per_tunnel else secrets.token_hex(8)
+        return value.replace("*", salt)
+
     bs = bs or BsContext.empty()
     stub = stub or ZERO_STUB
     subset = subset or AddressContext.disabled()
@@ -94,17 +104,15 @@ def prepare_candidates(
                 sni = ""
                 sni_list = host["sni"] or inbound["sni"]
                 if sni_list:
-                    salt = secrets.token_hex(8)
-                    sni = random.choice(sni_list).replace("*", salt)
+                    sni = expand_wildcard(choose(sni_list))
 
                 if sids := inbound.get("sids"):
-                    host_inbound["sid"] = random.choice(sids)
+                    host_inbound["sid"] = choose(sids)
 
                 req_host = ""
                 req_host_list = host["host"] or inbound["host"]
                 if req_host_list:
-                    salt = secrets.token_hex(8)
-                    req_host = random.choice(req_host_list).replace("*", salt)
+                    req_host = expand_wildcard(choose(req_host_list))
 
                 address = ""
                 address_list = host["address"]
@@ -130,8 +138,7 @@ def prepare_candidates(
                     )
                 balanced = is_json and address_list and (len(address_list) > 1 or host.get("balancing") is not None)
                 if address_list and not balanced:
-                    salt = secrets.token_hex(8)
-                    address = random.choice(address_list).replace("*", salt)
+                    address = expand_wildcard(choose(address_list))
 
                 if host["path"] is not None:
                     path = host["path"].format_map(format_variables)
@@ -182,15 +189,13 @@ def prepare_candidates(
                 }
                 if candidate["balanced"]:
                     candidate["addresses"] = [
-                        addr.replace("*", secrets.token_hex(8)).format_map(format_variables) for addr in address_list
+                        expand_wildcard(addr).format_map(format_variables) for addr in address_list
                     ]
                 else:
                     candidate["address"] = address.format_map(format_variables)
                 resolved = candidate.get("addresses", [candidate.get("address", "")])
                 if injection:
-                    resolved = [
-                        addr.replace("*", secrets.token_hex(8)).format_map(format_variables) for addr in address_list
-                    ]
+                    resolved = [expand_wildcard(addr).format_map(format_variables) for addr in address_list]
                 entry_ids = host.get("entry_node_ids", {})
                 candidate["endpoints"] = [
                     Endpoint(host.get("id"), addr, host_inbound, candidate["settings"], entry_ids.get(addr))

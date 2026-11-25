@@ -393,3 +393,25 @@ def test_tunnel_pin_preserves_manual_routing_tags(monkeypatch):
     assert len(conf.config) == 1
     assert {o["tag"] for o in endpoints(conf)} == {"proxy", "backup"}
     assert {o["streamSettings"]["realitySettings"]["serverName"] for o in endpoints(conf)} == {"au2.example"}
+
+
+def test_probe_transport_stays_stable_across_reads(monkeypatch):
+    import tests.test_host_injection_subscription as module
+
+    inbound = {**_inbound(), "sids": ["ff", "aa"]}
+    monkeypatch.setattr(module, "_inbound", lambda: inbound)
+    changes = {
+        2: {
+            "address": ["*.proxy.example"],
+            "sni": ["*.edge.example", "z.example"],
+            "host": ["z.example", "a.example"],
+            "port": "8443,443",
+            "random_user_agent": True,
+        }
+    }
+    first, _ = scenario(monkeypatch, per_tunnel=True, source_changes=changes)
+    second, _ = scenario(monkeypatch, per_tunnel=True, source_changes=changes)
+    assert first.config == second.config
+    proxy = first.config[1]["outbounds"][0]
+    assert proxy["streamSettings"]["realitySettings"]["shortId"] == "aa"
+    assert proxy["settings"]["vnext"][0]["address"].endswith(".proxy.example")

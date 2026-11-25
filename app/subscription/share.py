@@ -494,6 +494,7 @@ def process_inbounds_and_tags(
         template_for=template_for,
         bs=bs,
         stub=stub,
+        per_tunnel=per_tunnel,
         subset=None if per_tunnel else subset,
         panel_bot_count=getattr(xray, "panel_bot_count", None),
     )
