@@ -61,6 +61,7 @@ const emptySettings: BotSettings = {
   web_url: "",
   bs_extra_reset_pool_on_prolong: false,
   show_ads: true,
+  subscription_delivery_mode: "standard",
 };
 
 export const BotSettingsDialog: FC = () => {
@@ -361,6 +362,7 @@ export const BotSettingsDialog: FC = () => {
       web_url: current.web_url.trim() || defaultSettings.web_url,
       bs_extra_reset_pool_on_prolong: current.bs_extra_reset_pool_on_prolong,
       show_ads: current.show_ads,
+      subscription_delivery_mode: current.subscription_delivery_mode,
     };
   };
 
@@ -847,6 +849,16 @@ export const BotSettingsDialog: FC = () => {
                       </FormControl>
                     </SimpleGrid>
 
+                    <FormControl>
+                      <FormLabel>{t("botSettings.perTunnel")}</FormLabel>
+                      <Switch
+                        colorScheme="primary"
+                        isChecked={settings.subscription_delivery_mode === "per_tunnel"}
+                        onChange={(e) =>
+                          updateSettings({ subscription_delivery_mode: e.target.checked ? "per_tunnel" : "standard" })
+                        }
+                      />
+                    </FormControl>
                     <FormControl isDisabled={isManaged}>
                       <FormLabel>{t("botSettings.showAds")}</FormLabel>
                       <Switch

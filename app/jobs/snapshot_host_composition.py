@@ -62,10 +62,13 @@ def _host_payload(host: ProxyHost) -> list[dict]:
 
 
 def snapshot_host_composition() -> None:
+    from app.services.location_history import refresh_membership
+
     t0 = time.monotonic()
     epoch = day_index(datetime.now(UTC))
 
     with GetDB() as db:
+        refresh_membership(db)
         # selectinload: host.nodes — коллекция без eager-загрузки по умолчанию,
         # без неё _host_payload бьёт по БД за нодами отдельным SELECT на каждый
         # хост (N+1) в джобе, которая крутится каждый час (NPVPN-2072).
@@ -103,6 +106,8 @@ scheduler.add_job(
     snapshot_host_composition,
     "interval",
     seconds=JOB_SNAPSHOT_HOST_COMPOSITION_INTERVAL,
+    next_run_time=datetime.now(UTC),
+    misfire_grace_time=None,
     coalesce=True,
     max_instances=1,
 )

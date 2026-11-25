@@ -477,6 +477,10 @@ class V2rayJsonConfig(str):
         )
         return [outbound, dialer] if dialer else [outbound]
 
+    def add_probe_endpoint(self, remark, endpoint):
+        outbounds = self.build_endpoint_outbounds(endpoint, "proxy", helper_tag="dialer")
+        self.config.append({"remarks": remark, "outbounds": outbounds})
+
     def add_composed(self, remark, endpoints, client_config_id=None, balancing=None):
         outbounds = []
         participants = [tag for tag, _ in endpoints]

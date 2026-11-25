@@ -21,14 +21,14 @@ auto-часть истории за периоды до смены может б
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import crud
-from app.db.models import ProxyHost, User, UserNodePin
+from app.db.models import LocationMembership, ProxyHost, User, UserNodePin
 from app.services.xray_templates import composition_classifier
 from app.subscription.address_context import (
     choose_nodes,
@@ -46,7 +46,7 @@ from app.xray.address_policy import (
 from app.xray.host_addresses import addresses_from_nodes, host_allowed_for_bot, visible_nodes
 from config import HOSTING_USAGE_CUTOFF_PERCENT
 
-AssignmentSource = Literal["pin", "auto", "unknown"]
+AssignmentSource = Literal["pin", "auto", "pool", "unknown"]
 
 
 class HostAssignment(BaseModel):
@@ -63,6 +63,7 @@ class HostAssignment(BaseModel):
     restorable: bool
     node_ids: list[int] = Field(default_factory=list)
     addresses: list[str] = Field(default_factory=list)
+    source_host_ids: list[int] = Field(default_factory=list)
 
 
 class DayAssignments(BaseModel):
@@ -81,6 +82,11 @@ class DayAssignments(BaseModel):
 MAX_PIN_TTL_DAYS = ARCHIVE_RETENTION_DAYS
 
 
+class TunnelTarget(BaseModel):
+    source_host_id: int
+    node_id: int
+
+
 class PinCreate(BaseModel):
     """Тело POST /user/{username}/pins. `created_by` намеренно не поле тела —
     берётся из аутентифицированного админа на стороне роутера, иначе автора
@@ -88,11 +94,13 @@ class PinCreate(BaseModel):
 
     host_id: int
     node_ids: list[int] = Field(min_length=1)
+    tunnel_targets: list[TunnelTarget] | None = Field(default=None, min_length=1)
     ttl_days: int = Field(gt=0, le=MAX_PIN_TTL_DAYS)
     note: str | None = Field(default=None, max_length=500)
 
 
 class PinResponse(BaseModel):
+    tunnel_targets: list[TunnelTarget] | None = None
     host_id: int
     node_ids: list[int]
     created_at: datetime
@@ -102,6 +110,8 @@ class PinResponse(BaseModel):
 
 
 class PinnableNode(BaseModel):
+    source_host_id: int | None = None
+    source_name: str | None = None
     node_id: int
     name: str
 
@@ -133,61 +143,154 @@ def _visible_inbound_tags(dbuser: User) -> set[str]:
     return tags
 
 
+class LocationEntry(BaseModel):
+    source_host_id: int
+    source_name: str
+    address: str
+    node_id: int | None
+    node_name: str | None
+
+
+class LocationComposition(BaseModel):
+    host_id: int
+    remark: str
+    composite: bool
+    node_based: bool
+    entries: list[LocationEntry]
+    excluded_by_bot: list[LocationEntry] = Field(default_factory=list)
+
+
 def list_pinnable_hosts(db: Session, dbuser: User) -> list[PinnableHost]:
-    """Локации, которые реально мог получить этот юзер, с полным составом нод —
-    источник данных для формы создания закрепления (`POST /user/{username}/pins`).
+    blocked = crud.get_blocked_bs_node_ids(db, cast(int, dbuser.id))
+    locations = location_members(db, dbuser.bot_username, _visible_inbound_tags(dbuser), blocked)
+    result = []
+    for location in locations:
+        if not location.node_based and not location.composite:
+            continue
+        nodes = [
+            PinnableNode(
+                node_id=e.node_id,
+                name=e.node_name or e.address,
+                source_host_id=e.source_host_id if location.composite else None,
+                source_name=e.source_name if location.composite else None,
+            )
+            for e in location.entries
+            if e.node_id is not None
+        ]
+        if nodes:
+            result.append(PinnableHost(host_id=location.host_id, remark=location.remark, nodes=nodes))
+    return result
 
-    ТРИ фильтра, все обязательны — те же условия «доступна ли эта локация
-    этому юзеру», что в `reconstruct` (см. его докстринг) и в рендере
-    подписки, а не переизобретённая здесь копия (I4-урок фичи, финальное
-    ревью):
-    1. Хост привязан к боту юзера (или ни к какому конкретному боту,
-       `host_allowed_for_bot`) — иначе саппорт увидел бы и мог бы закрепить
-       локацию ЧУЖОГО бота, которая этому юзеру никогда не достанется.
-    2. Тег инбаунда хоста входит в эффективные инбаунды юзера
-       (`_visible_inbound_tags`, тот же источник, что и в `reconstruct`) —
-       без него форма предложила бы локацию, которой у юзера нет ни в проксях
-       нужного протокола, ни за вычетом `excluded_inbounds`. Саппорт создал бы
-       пин, получил 200, увидел его во вкладке «Закрепления» как действующий
-       — а в подписке этой локации нет вовсе, пин не применится никогда. Тот
-       же по сути дефект, что чинили по I2 для disabled-нод, только уровнем
-       выше: там отсекалась одна нода, здесь — целая локация.
-    3. Адреса заданы нодами: отдельным входным пулом либо пустым `address` (пустая строка
-       у "адресного" хоста означает "адреса берутся из нод", см.
-       `app/xray/__init__.py: addresses_from_nodes`). У легаси-хостов со
-       статическим адресом соответствия "адрес ↔ нода" нет по построению —
-       `POST /pins` и так отклонит такой host_id 400-й, показывать его в
-       форме, которая заведомо будет отклонена, незачем.
 
-    Список нод локации — `visible_nodes(host)` (app/xray/host_addresses.py), а
-    не `host.nodes` целиком: disabled-нода не участвует в живой выдаче (см.
-    I2), предлагать её в форме закрепления означало бы дать саппорту создать
-    пин, который тут же молча не сработает.
+def location_members(
+    db: Session, bot_username: str | None, tags: set[str], blocked: set[int], *, inspect_host_id: int | None = None
+) -> list[LocationComposition]:
+    """Resolve current permissions before selectors, as in subscription rendering.
+    The sudo host inspector also compares the saved configuration before bot restrictions.
     """
-    user_bot_username = dbuser.bot_username
-    panel_bot_count = crud.count_bots(db)
-    visible_tags = _visible_inbound_tags(dbuser)
+    catalog = _location_catalog(db, tags)
+    return _audience_locations(catalog, bot_username, blocked, crud.count_bots(db), inspect_host_id)
+
+
+def _location_catalog(db, tags):
+    from app.services.xray_templates import build_template_lookup, get_active_bodies
+    from app.xray.host_addresses import entry_nodes_by_address, resolve_host_addresses
+    from app.xray.host_injection import resolve_host_injection
+
+    lookup = build_template_lookup(get_active_bodies(db))
     hosts = (
         db.query(ProxyHost)
         .options(selectinload(ProxyHost.nodes), selectinload(ProxyHost.balancer_nodes), selectinload(ProxyHost.bots))
-        .filter(ProxyHost.is_disabled.isnot(True))
+        .filter(ProxyHost.is_disabled.isnot(True), ProxyHost.inbound_tag.in_(tags))
         .order_by(ProxyHost.id)
         .all()
     )
-    classify = composition_classifier(db)
-    return [
-        PinnableHost(
-            host_id=cast(int, host.id),
-            remark=cast(str, host.remark),
-            nodes=[PinnableNode(node_id=cast(int, node.id), name=cast(str, node.name)) for node in visible_nodes(host)],
+    candidates = []
+    for host in hosts:
+        if host.is_placeholder:
+            continue
+        try:
+            injection = resolve_host_injection(host.host_injection, lookup(host.client_config_id))
+        except ValueError:
+            continue
+        entries = entry_nodes_by_address(host)
+
+        members = [
+            LocationEntry(
+                source_host_id=host.id,
+                source_name=host.remark,
+                address=addr,
+                node_id=entries[addr].id if addr in entries else None,
+                node_name=entries[addr].name if addr in entries else None,
+            )
+            for addr in resolve_host_addresses(host)
+        ]
+        candidates.append(
+            {
+                "host": {k: getattr(host, k) for k in ("id", "remark", "is_hidden", "group_tag", "order")},
+                "injection": injection,
+                "endpoints": members,
+                "bots": host.bot_usernames,
+                "inbound": host.inbound_tag,
+                "node_based": addresses_from_nodes(host),
+                "nodes": {n.id for n in visible_nodes(host)},
+            }
         )
-        for host in hosts
-        if not classify(host)
-        and addresses_from_nodes(host)
-        and visible_nodes(host)
-        and host_allowed_for_bot(host.bot_usernames, user_bot_username, panel_bot_count=panel_bot_count)
-        and host.inbound_tag in visible_tags
+    return candidates
+
+
+def _audience_locations(catalog, bot_username, blocked, bot_count, inspect_host_id=None):
+    from app.subscription.host_candidates import compose_endpoints
+    from app.xray.host_injection import InjectionError
+
+    candidates = [
+        dict(
+            item,
+            allowed=host_allowed_for_bot(item["bots"], bot_username, panel_bot_count=bot_count),
+            blocked=bool(blocked & item["nodes"]),
+        )
+        for item in catalog
     ]
+    allowed = [item for item in candidates if item["allowed"]]
+
+    def resolve(item, catalog):
+        if not item["injection"]:
+            return item["endpoints"]
+        selected, _, _ = compose_endpoints(item, catalog)
+        return [entry for _, entry in selected]
+
+    result = []
+    for item in candidates:
+        meta = item["host"]
+        if inspect_host_id is not None and meta["id"] != inspect_host_id:
+            continue
+        if item["blocked"] or (
+            inspect_host_id is None and (not item["allowed"] or (meta["is_hidden"] and item["injection"]))
+        ):
+            continue
+        try:
+            members = resolve(item, allowed) if item["allowed"] else []
+            unique = {(e.source_host_id, e.address): e for e in members}
+            excluded = {}
+            if inspect_host_id is not None:
+                excluded = {
+                    (e.source_host_id, e.address): e
+                    for e in resolve(item, candidates)
+                    if (e.source_host_id, e.address) not in unique
+                }
+        except InjectionError:
+            continue
+        result.append(
+            LocationComposition(
+                host_id=meta["id"],
+                remark=meta["remark"],
+                composite=bool(item["injection"]),
+                node_based=item["node_based"],
+                entries=list(unique.values()),
+                excluded_by_bot=list(excluded.values()),
+            )
+        )
+    return result
 
 
 @dataclass
@@ -207,6 +310,7 @@ class _HistoryScope:
     composition: dict[int, dict[int, list[dict]]]
     pins: list[UserNodePin]
     snapshots: dict[int, dict[int, float]]
+    versions: list[LocationMembership]
     node_limits: dict[int, int]
 
     def pins_on_day(self, day_start: datetime, day_end: datetime) -> dict[int, list[int]]:
@@ -272,6 +376,20 @@ def _build_scope(db: Session, user_id: int, first_day: int, last_day: int) -> _H
         rotation_at=getattr(dbuser, "address_rotation_offset_at", None) if dbuser else None,
         hosts=hosts,
         composition=composition,
+        versions=db.query(LocationMembership)
+        .filter(
+            LocationMembership.bot_id == (dbuser.bot_id or 0 if dbuser else -1),
+            LocationMembership.composite.is_(True),
+            LocationMembership.inbound.in_(visible_tags),
+            LocationMembership.source_inbound.in_(visible_tags),
+            LocationMembership.valid_from < day_start_at(last_day + 1).replace(tzinfo=None),
+            (
+                LocationMembership.valid_until.is_(None)
+                | (LocationMembership.valid_until > day_start_at(first_day).replace(tzinfo=None))
+            ),
+        )
+        .order_by(LocationMembership.id)
+        .all(),
         pins=crud.get_pins_covering_range(db, user_id, day_start_at(first_day), day_start_at(last_day + 1)),
         # Снимки эпох могут начинаться раньше запрошенного диапазона: период ротации
         # хоста бывает длиннее суток, и эпоха первого дня стартовала до него.
@@ -530,7 +648,37 @@ def _reconstruct_day(scope: _HistoryScope, day_index: int) -> list[HostAssignmen
             )
         )
 
-    return results
+    return _with_composite_history(results, scope, day_end)
+
+
+def _with_composite_history(results, scope: _HistoryScope, day_end: datetime) -> list[HostAssignment]:
+    """Show the recorded bot pool or matching explicit tunnel pin at the daily cutoff."""
+    cutoff = min(day_end.replace(tzinfo=None) - timedelta(microseconds=1), datetime.now(UTC).replace(tzinfo=None))
+    pools: dict[int, list[LocationMembership]] = {}
+    for row in scope.versions:
+        if row.valid_from <= cutoff and (row.valid_until is None or row.valid_until > cutoff):
+            pools.setdefault(row.host_id, []).append(row)
+    by_host: dict[int, HostAssignment] = {item.host_id: item for item in results}
+    active_pins = {cast(int, pin.host_id): pin for pin in scope.pins if pin.created_at <= cutoff < pin.expires_at}
+    for host_id, rows in pools.items():
+        source: AssignmentSource = "pool"
+        pin = active_pins.get(host_id)
+        if pin is not None and pin.tunnel_targets:
+            targets = {(t["source_host_id"], t["node_id"]) for t in pin.tunnel_targets}
+            matched = [row for row in rows if (row.source_host_id, row.node_id) in targets]
+            if matched:
+                rows = matched
+                source = "pin"
+        by_host[host_id] = HostAssignment(
+            host_id=host_id,
+            remark=rows[0].remark,
+            source=source,
+            restorable=True,
+            node_ids=[r.node_id for r in rows if r.node_id is not None],
+            addresses=[r.address for r in rows],
+            source_host_ids=[r.source_host_id for r in rows],
+        )
+    return list(by_host.values())
 
 
 def day_start_at(day_index: int):

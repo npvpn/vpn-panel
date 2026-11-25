@@ -21,6 +21,7 @@ class Endpoint:
     address: str
     inbound: dict
     settings: dict
+    node_id: int | None = None
 
 
 def prepare_candidates(
@@ -190,15 +191,23 @@ def prepare_candidates(
                     resolved = [
                         addr.replace("*", secrets.token_hex(8)).format_map(format_variables) for addr in address_list
                     ]
+                entry_ids = host.get("entry_node_ids", {})
                 candidate["endpoints"] = [
-                    Endpoint(host.get("id"), addr, host_inbound, settings.model_dump()) for addr in resolved if addr
+                    Endpoint(host.get("id"), addr, host_inbound, candidate["settings"], entry_ids.get(addr))
+                    for addr in resolved
+                    if addr
                 ]
+                if getattr(subset, "tunnel_pins", None):
+                    candidate["full_endpoints"] = [
+                        Endpoint(host.get("id"), addr, host_inbound, candidate["settings"], node_id)
+                        for addr, node_id in entry_ids.items()
+                    ]
                 candidates.append(candidate)
 
     return candidates
 
 
-def compose_endpoints(recipient, candidates):
+def compose_endpoints(recipient, candidates, *, targets=None):
     """Не рекурсивный инжект: только разрешённые endpoints, без чужих шаблонов."""
     from time import monotonic
 
@@ -221,11 +230,14 @@ def compose_endpoints(recipient, candidates):
         if item["blocked"]:
             blocked = True
             return
-        if not item["endpoints"]:
+        endpoints = item["endpoints"]
+        if targets:
+            endpoints = [e for e in item.get("full_endpoints", endpoints) if (e.host_id, e.node_id) in targets]
+        if not endpoints:
             unavailable = True
             return
         has_bs = has_bs or item["host"].get("is_bs", False)
-        for index, endpoint in enumerate(item["endpoints"]):
+        for index, endpoint in enumerate(endpoints):
             if prefix is not None:
                 count = counts.get(prefix, 0) + 1
                 counts[prefix] = count

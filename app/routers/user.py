@@ -45,6 +45,7 @@ from app.services.address_history import (
     PinCreate,
     PinnableHost,
     PinResponse,
+    TunnelTarget,
     list_pinnable_hosts,
     reconstruct_range,
 )
@@ -52,7 +53,6 @@ from app.subscription.address_context_builder import _EPOCH_ORIGIN, day_index
 from app.subscription.bot_settings import resolve_bot_settings
 from app.utils import report, responses
 from app.utils.request_context import request_id_var
-from app.xray.host_addresses import addresses_from_nodes, resolve_host_node_ids
 from config import SYNC_INBOUNDS_DB_CHUNK_SIZE, SYNC_INBOUNDS_MAX_CONCURRENCY
 
 router = APIRouter(tags=["User"], prefix="/api", responses={401: responses._401})
@@ -506,34 +506,25 @@ def create_user_pin_endpoint(
     host = db.query(DBProxyHost).filter(DBProxyHost.id == payload.host_id).first()
     if host is None:
         raise HTTPException(status_code=404, detail="Host not found")
-    from app.services.xray_templates import composition_classifier
-
-    if composition_classifier(db)(host):
-        raise HTTPException(status_code=400, detail="Composite host: pin source hosts instead")
-    if not addresses_from_nodes(host):
-        # Легаси-хост со статическим адресом: соответствия "адрес <-> нода" нет
-        # по построению (см. AddressContext.pick), закреплять там нечего.
-        raise HTTPException(status_code=400, detail="Host has a static address, nothing to pin by node")
-
-    # resolve_host_node_ids, не host.nodes целиком (I2, NPVPN-2072): в выдачу
-    # идут только _visible_nodes хоста (app/xray/host_addresses.py) — disabled
-    # ноды туда не попадают. Пин на disabled-ноду раньше проходил валидацию,
-    # отдавал 200 и молча не работал (AddressContext.pick пересекает пин с
-    # ФАКТИЧЕСКИМ составом, где disabled-ноды тоже нет — пересечение пустое,
-    # тихий откат к автовыбору). Теперь disabled-нода просто попадает в
-    # unknown_nodes и получает внятный 400 вместо тихого no-op.
-    host_node_ids = set(resolve_host_node_ids(host))
-    unknown_nodes = [node_id for node_id in payload.node_ids if node_id not in host_node_ids]
-    if unknown_nodes:
-        raise HTTPException(status_code=400, detail=f"Nodes not attached to this host: {unknown_nodes}")
-
     db_user = cast(DBUser, dbuser)
+    location = next((h for h in list_pinnable_hosts(db, db_user) if h.host_id == payload.host_id), None)
+    if location is None:
+        raise HTTPException(status_code=400, detail="Location has no pinnable entries for this user")
+    allowed = {(entry.source_host_id, entry.node_id) for entry in location.nodes}
+    requested = (
+        {(t.source_host_id, t.node_id) for t in payload.tunnel_targets}
+        if payload.tunnel_targets
+        else {(None, n) for n in payload.node_ids}
+    )
+    if not requested <= allowed or {n for _, n in requested} != set(payload.node_ids):
+        raise HTTPException(status_code=400, detail="Selected tunnels are unavailable for this user")
     now = datetime.now(UTC)
     pin = crud.create_user_node_pin(
         db,
         user_id=cast(int, db_user.id),
         host_id=payload.host_id,
         node_ids=payload.node_ids,
+        tunnel_targets=[t.model_dump() for t in payload.tunnel_targets] if payload.tunnel_targets else None,
         expires_at=now + timedelta(days=payload.ttl_days),
         created_by=admin.username,
         note=payload.note,
@@ -545,6 +536,7 @@ def create_user_pin_endpoint(
     return PinResponse(
         host_id=cast(int, pin.host_id),
         node_ids=cast("list[int]", pin.node_ids),
+        tunnel_targets=payload.tunnel_targets,
         created_at=cast(datetime, pin.created_at),
         expires_at=cast(datetime, pin.expires_at),
         created_by=cast(str, pin.created_by),
@@ -586,6 +578,7 @@ def list_user_pins_endpoint(
         PinResponse(
             host_id=cast(int, row.host_id),
             node_ids=cast("list[int]", row.node_ids),
+            tunnel_targets=[TunnelTarget.model_validate(t) for t in row.tunnel_targets] if row.tunnel_targets else None,
             created_at=cast(datetime, row.created_at),
             expires_at=cast(datetime, row.expires_at),
             created_by=cast(str, row.created_by),

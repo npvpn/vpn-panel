@@ -166,6 +166,7 @@ class AddressContext:
     weights_by_day: Mapping[int, Mapping[int, float]] = field(default_factory=dict)
     exhausted: frozenset[int] = frozenset()
     enabled: bool = False
+    tunnel_pins: Mapping[int, set[tuple[int, int]]] = field(default_factory=dict)
     pins: Mapping[int, Sequence[int]] = field(default_factory=dict)
 
     @classmethod

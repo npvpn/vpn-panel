@@ -8,6 +8,7 @@ from app.models.proxy import ProxyHost, ProxyInbound, ProxyTypes
 from app.models.system import SystemStats
 from app.models.user import UserStatus
 from app.services import xray_templates as xray_templates_service
+from app.services.address_history import LocationComposition, location_members
 from app.utils import responses
 from app.utils.system import cpu_usage, memory_usage, realtime_bandwidth
 
@@ -22,6 +23,21 @@ def preview_host_injection(
 ):
     del admin
     return xray_templates_service.preview_injection(db, payload, set(xray.config.inbounds_by_tag))
+
+
+@router.get("/hosts/{host_id}/composition", response_model=LocationComposition)
+def inspect_host_composition(
+    host_id: int,
+    bot_username: str | None = None,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(Admin.check_sudo_admin),
+):
+    if bot_username is not None and crud.get_bot(db, bot_username) is None:
+        raise HTTPException(status_code=404, detail="Unknown bot")
+    locations = location_members(db, bot_username, set(xray.config.inbounds_by_tag), set(), inspect_host_id=host_id)
+    if not locations:
+        raise HTTPException(status_code=404, detail="Location unavailable")
+    return locations[0]
 
 
 @router.get("/system", response_model=SystemStats)

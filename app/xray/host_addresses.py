@@ -1,4 +1,9 @@
+from typing import TYPE_CHECKING
+
 from app.models.node import NodeStatus
+
+if TYPE_CHECKING:
+    from app.db.models import Node
 
 
 def addresses_from_nodes(host) -> bool:
@@ -35,6 +40,21 @@ def visible_nodes(host) -> list:
     if host.address:
         return list(host.nodes)
     return [node for node in host.nodes if node.status != NodeStatus.disabled]
+
+
+def entry_nodes_by_address(host) -> dict:
+    """Identify independently addressable entry nodes; shared addresses are ambiguous."""
+    nodes = visible_nodes(host)
+    addresses = set(resolve_host_addresses(host))
+    matches: dict[str, list[Node]] = {}
+    for node in nodes:
+        if node.address in addresses:
+            matches.setdefault(node.address, []).append(node)
+    return {
+        addr: group[0]
+        for addr, group in matches.items()
+        if len(group) == 1 and group[0].status != NodeStatus.disabled and "*" not in addr
+    }
 
 
 def resolve_host_addresses(host) -> list[str]:
