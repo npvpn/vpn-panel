@@ -13,6 +13,7 @@ import {
   FormControl,
   FormHelperText,
   FormLabel,
+  IconButton,
   Input,
   Text,
   Modal,
@@ -27,6 +28,7 @@ import {
   TabList,
   TabPanel,
   TabPanels,
+  Tooltip,
   Tabs,
   useToast,
   VStack,
@@ -49,8 +51,132 @@ import { fetch } from "service/http";
 import { Bot, BotSettings } from "types/Bot";
 import {
   ChevronDownIcon,
+  InformationCircleIcon,
   MagnifyingGlassIcon,
 } from "@heroicons/react/24/outline";
+
+type BotLifecycle = {
+  is_active: boolean;
+  active_subscriptions: number;
+};
+
+const BotLifecycleButton: FC<{ username: string }> = ({ username }) => {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [state, setState] = useState<BotLifecycle | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const endpoint = `/bots/${encodeURIComponent(username)}/lifecycle`;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch<BotLifecycle>(endpoint, { signal: controller.signal, retry: 0 })
+      .then((result) => {
+        if (!controller.signal.aborted) setState(result);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        if (error?.data?.detail === "bot_lifecycle_unavailable") {
+          setUnavailable(true);
+        } else {
+          toast({ title: t("botSettings.lifecycleError"), status: "error" });
+        }
+      });
+    return () => controller.abort();
+  }, [endpoint, t, toast]);
+
+  if (!state) {
+    return unavailable ? (
+      <HStack flex={1} spacing={1}>
+        <Button flex={1} variant="outline" isDisabled>
+          {t("botSettings.disableBot")}
+        </Button>
+        <Tooltip label={t("botSettings.lifecycleUnavailable")} hasArrow placement="top">
+          <IconButton
+            aria-label={t("botSettings.lifecycleUnavailable")}
+            icon={<InformationCircleIcon width={18} height={18} />}
+            variant="ghost"
+            size="sm"
+            flexShrink={0}
+          />
+        </Tooltip>
+      </HStack>
+    ) : null;
+  }
+
+  const action = t(state.is_active ? "botSettings.disableBot" : "botSettings.enableBot");
+  const openConfirmation = async () => {
+    setSaving(true);
+    try {
+      setState(await fetch<BotLifecycle>(endpoint, { retry: 0 }));
+      setConfirmOpen(true);
+    } catch {
+      toast({ title: t("botSettings.lifecycleError"), status: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const update = async () => {
+    setSaving(true);
+    try {
+      const updated = await fetch<Pick<BotLifecycle, "is_active">>(endpoint, {
+        method: "PATCH",
+        body: { is_active: !state.is_active },
+      });
+      setState({ ...state, ...updated });
+      setConfirmOpen(false);
+    } catch {
+      toast({ title: t("botSettings.lifecycleError"), status: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <Button flex={1} variant="outline" onClick={openConfirmation} isLoading={saving && !confirmOpen}>
+        {action}
+      </Button>
+      <AlertDialog
+        isOpen={confirmOpen}
+        leastDestructiveRef={cancelRef}
+        onClose={() => setConfirmOpen(false)}
+        closeOnEsc={!saving}
+        closeOnOverlayClick={!saving}
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader>{action} @{username}?</AlertDialogHeader>
+            <AlertDialogBody>
+              {state.is_active && (
+                <Text fontWeight="semibold" mb={3}>
+                  {t("botSettings.activeSubscriptions", { count: state.active_subscriptions })}
+                </Text>
+              )}
+              <Text>{t(state.is_active ? "botSettings.disableImpact" : "botSettings.enableImpact")}</Text>
+            </AlertDialogBody>
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={() => setConfirmOpen(false)} isDisabled={saving}>
+                {t("cancel")}
+              </Button>
+              <Button
+                ml={3}
+                colorScheme={state.is_active ? "red" : "green"}
+                onClick={update}
+                isLoading={saving}
+              >
+                {action}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+    </>
+  );
+};
 
 const emptySettings: BotSettings = {
   sub_support_url: "",
@@ -74,7 +200,6 @@ export const BotSettingsDialog: FC = () => {
   const [botSettingsLoaded, setBotSettingsLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [syncingAdmin, setSyncingAdmin] = useState(false);
   const [defaultSettings, setDefaultSettings] =
     useState<BotSettings>(emptySettings);
@@ -485,52 +610,6 @@ export const BotSettingsDialog: FC = () => {
       return;
     }
     createBot();
-  };
-
-  const deleteBot = () => {
-    if (!selectedBot) return;
-    if (
-      !window.confirm(
-        t("botSettings.deleteConfirm", { username: `@${selectedBot}` })
-      )
-    ) {
-      return;
-    }
-
-    setDeleting(true);
-    const deletedKey = getDraftKey(selectedBot);
-    fetch(`/bots/${selectedBot}`, { method: "DELETE" })
-      .then(() => {
-        localStorage.removeItem(deletedKey);
-        setHasDraft(false);
-        return fetchBots();
-      })
-      .then((loadedBots) => {
-        if (!loadedBots) {
-          setSelectedBot("");
-          setBotUsername("");
-          setBotTitle("");
-          setBotSearch("");
-          return;
-        }
-        if (loadedBots.length === 1) {
-          setSelectedBot(loadedBots[0].username);
-        } else {
-          setSelectedBot("");
-          setBotUsername("");
-          setBotTitle("");
-          setBotSearch("");
-        }
-
-        toast({
-          title: t("botSettings.deleted"),
-          status: "success",
-          duration: 2500,
-          isClosable: true,
-          position: "top",
-        });
-      })
-      .finally(() => setDeleting(false));
   };
 
   return (
@@ -989,17 +1068,9 @@ export const BotSettingsDialog: FC = () => {
                 >
                   {t("botSettings.createBot")}
                 </Button>
-
-                <Button
-                  flex={1}
-                  variant="outline"
-                  colorScheme="red"
-                  onClick={deleteBot}
-                  isLoading={deleting}
-                  isDisabled={!selectedBot}
-                >
-                  {t("botSettings.deleteBot")}
-                </Button>
+                {isEditingBotSettings && selectedBot && (
+                  <BotLifecycleButton key={selectedBot} username={selectedBot} />
+                )}
               </HStack>
 
               <HStack spacing={2} w={{ base: "full", md: "auto" }}>
