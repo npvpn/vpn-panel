@@ -44,6 +44,26 @@ class NodeRole(str, Enum):
     direct = "direct"
 
 
+NodeHostRole = Literal["direct", "entry", "exit", "linked"]
+
+
+class NodeHostSource(BaseModel):
+    host_id: int
+    remark: str
+    roles: list[NodeHostRole]
+
+
+class NodeHostMembership(NodeHostSource):
+    inbound_tag: str
+    is_disabled: bool
+    sources: list[NodeHostSource]
+
+
+class NodeHostInventory(BaseModel):
+    hosts: list[NodeHostMembership]
+    incomplete_host_ids: list[int]
+
+
 class NodeBalancerStrategy(str, Enum):
     random = "random"
     round_robin = "roundRobin"

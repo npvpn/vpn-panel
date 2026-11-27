@@ -22,6 +22,7 @@ import { useLoaderData } from "react-router-dom";
 import { ReloadIcon } from "./Filters";
 import { NodeModalStatusBadge } from "./NodeModalStatusBadge";
 import { HaproxyPilotRoute } from "./HaproxyPilotRoute";
+import { NodeHosts } from "./NodeHosts";
 import { NodeAccordionForm } from "./NodeAccordionForm";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 
@@ -73,6 +74,7 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
       >
         <Button
           variant="ghost"
+          aria-expanded={isOpen}
           w="full"
           justifyContent="space-between"
           onClick={() => onToggle(node.id!)}
@@ -162,7 +164,10 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
               )}
             </VStack>
             {isOpen && admin.is_sudo && node.id != null && (
-              <HaproxyPilotRoute nodeId={node.id} operator={admin.username} />
+              <>
+                <NodeHosts nodeId={node.id} operator={admin.username} />
+                <HaproxyPilotRoute nodeId={node.id} operator={admin.username} />
+              </>
             )}
             {isOpen && (
               <NodeAccordionForm
