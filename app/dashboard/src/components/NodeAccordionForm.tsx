@@ -16,6 +16,7 @@ import {
   generateSuccessMessage,
 } from "utils/toastHandler";
 import { DeleteIcon } from "./DeleteUserModal";
+import { nodeHostsQueryKey } from "service/nodeHosts";
 import { NodeForm } from "./NodeForm";
 
 type Props = {
@@ -46,6 +47,7 @@ export const NodeAccordionForm: FC<Props> = ({
     onSuccess: () => {
       generateSuccessMessage("Node updated successfully", toast);
       queryClient.invalidateQueries(FetchNodesQueryKey);
+      queryClient.resetQueries(nodeHostsQueryKey);
     },
     onError: (e) => {
       generateErrorMessage(e, toast, form);

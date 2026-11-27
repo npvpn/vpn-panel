@@ -487,6 +487,25 @@ class ReSTXRayNode:
         res = self.make_request("/", timeout=XRAY_NODE_REST_INFO_TIMEOUT)
         return res.get("core_version")
 
+    def pilot_request(self, session_id: str, path: str, **params):
+        """Use the existing peer certificate and session without modifying Xray ownership."""
+        certfile = getattr(self, "_node_certfile", None)
+        if not session_id or self._session_id != session_id or not certfile or getattr(self, "_superseded", False):
+            raise NodeAPIError(0, "REST session unavailable")
+        try:
+            res = self.session.post(
+                self._rest_api_url + path,
+                json={"session_id": session_id, **params},
+                verify=certfile.name,
+                allow_redirects=False,
+                timeout=XRAY_NODE_REST_INFO_TIMEOUT,
+            )
+            if res.status_code != 200:
+                raise NodeAPIError(res.status_code, res.json().get("detail", "Node rejected request"))
+            return res.json()
+        except (OSError, ValueError, requests.RequestException, AttributeError) as exc:
+            raise NodeAPIError(0, "Unable to read node response") from exc
+
     def _ensure_peer_cert(self) -> None:
         _check_operation(self)
         if getattr(self, "_node_cert", None):

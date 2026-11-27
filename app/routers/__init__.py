@@ -7,6 +7,7 @@ from . import (
     billing,
     bot,
     core,
+    haproxy_pilot,
     home,
     managed,
     memory,
@@ -35,6 +36,7 @@ routers: list[APIRouter] = [
     user_template.router,
     user.router,
     user_activity.router,
+    haproxy_pilot.router,
     home.router,
     xray_templates.router,  # type: ignore[has-type]
 ]

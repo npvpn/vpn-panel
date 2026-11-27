@@ -17,9 +17,12 @@ import { useMutation, useQueryClient } from "react-query";
 import "slick-carousel/slick/slick-theme.css";
 import "slick-carousel/slick/slick.css";
 import { generateErrorMessage } from "utils/toastHandler";
-import { Status } from "types/User";
+import { Status, UserApi } from "types/User";
+import { useLoaderData } from "react-router-dom";
 import { ReloadIcon } from "./Filters";
 import { NodeModalStatusBadge } from "./NodeModalStatusBadge";
+import { HaproxyPilotRoute } from "./HaproxyPilotRoute";
+import { NodeHosts } from "./NodeHosts";
 import { NodeAccordionForm } from "./NodeAccordionForm";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 
@@ -37,6 +40,7 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
   ({ onToggle, node, isOpen, nodeSettings }) => {
     const { reconnectNode, setDeletingNode } = useNodes();
     const { t } = useTranslation();
+    const admin = useLoaderData() as UserApi;
     const queryClient = useQueryClient();
     const toast = useToast();
     const handleDeleteNode = () => setDeletingNode(node);
@@ -70,6 +74,7 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
       >
         <Button
           variant="ghost"
+          aria-expanded={isOpen}
           w="full"
           justifyContent="space-between"
           onClick={() => onToggle(node.id!)}
@@ -158,6 +163,12 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
                 </Alert>
               )}
             </VStack>
+            {isOpen && admin.is_sudo && node.id != null && (
+              <>
+                <NodeHosts nodeId={node.id} operator={admin.username} />
+                <HaproxyPilotRoute nodeId={node.id} operator={admin.username} />
+              </>
+            )}
             {isOpen && (
               <NodeAccordionForm
                 node={node}

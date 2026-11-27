@@ -35,7 +35,9 @@ import {
   useForm,
 } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "react-query";
 import { fetch } from "service/http";
+import { nodeHostsQueryKey } from "service/nodeHosts";
 import { Bot } from "types/Bot";
 import { z } from "zod";
 import { clearHashParam, readHashParams } from "utils/hashParams";
@@ -95,6 +97,7 @@ export const HostsDialog: FC = () => {
   const { isLoading, hosts, fetchHosts, isPostLoading, setHosts } = useHosts();
 
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { t } = useTranslation();
 
   const [bots, setBots] = useState<Bot[]>([]);
@@ -297,6 +300,7 @@ export const HostsDialog: FC = () => {
 
       return setHosts(payload)
         .then(() => {
+          queryClient.resetQueries(nodeHostsQueryKey);
           toast({
             title: t("hostsDialog.savedSuccess"),
             status: "success",
@@ -341,7 +345,7 @@ export const HostsDialog: FC = () => {
           return false;
         });
     },
-    [setHosts, toast, t, refetchUsers, onClose, inboundTags, form]
+    [setHosts, toast, t, refetchUsers, onClose, inboundTags, form, queryClient]
   );
 
   const handleFormSubmit = useCallback(

@@ -14,6 +14,7 @@ from app.dependencies import get_dbnode, validate_dates
 from app.models.admin import Admin
 from app.models.node import (
     NodeCreate,
+    NodeHostInventory,
     NodeModify,
     NodeResponse,
     NodeSettings,
@@ -21,6 +22,7 @@ from app.models.node import (
 )
 from app.models.proxy import ProxyHost
 from app.services import node_lifecycle
+from app.services.node_host_memberships import get_node_host_memberships
 from app.utils import responses
 from app.xray.node_operations import NodeBusyError
 
@@ -82,6 +84,16 @@ def get_node(
 ):
     """Retrieve details of a specific node by its ID."""
     return dbnode
+
+
+@router.get("/node/{node_id}/hosts", response_model=NodeHostInventory)
+def get_node_hosts(
+    _: Admin = Depends(Admin.check_sudo_admin),
+    dbnode: DBNode = Depends(get_dbnode),
+    db: Session = Depends(get_db),
+):
+    """List the node's saved host roles and contributing composite sources."""
+    return get_node_host_memberships(db, int(dbnode.id), set(xray.config.inbounds_by_tag))
 
 
 @router.websocket("/node/{node_id}/logs")
