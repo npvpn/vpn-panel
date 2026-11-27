@@ -47,6 +47,7 @@ type DashboardStateType = {
   isEditingHosts: boolean;
   isEditingNodes: boolean;
   isEditingBotSettings: boolean;
+  botSettingsUsername: string | null;
   isEditingAppSettings: boolean;
   isEditingPanelSettings: boolean;
   isShowingNodesUsage: boolean;
@@ -82,7 +83,10 @@ type DashboardStateType = {
   setSubLink: (subscribeURL: string | null) => void;
   onEditingHosts: (isEditingHosts: boolean) => void;
   onEditingNodes: (isEditingHosts: boolean) => void;
-  onEditingBotSettings: (isEditingBotSettings: boolean) => void;
+  onEditingBotSettings: (
+    isEditingBotSettings: boolean,
+    username?: string
+  ) => void;
   onEditingAppSettings: (isEditingAppSettings: boolean) => void;
   onEditingPanelSettings: (isEditingPanelSettings: boolean) => void;
   onShowingNodesUsage: (isShowingNodesUsage: boolean) => void;
@@ -138,6 +142,7 @@ export const useDashboard = create(
     isEditingHosts: false,
     isEditingNodes: false,
     isEditingBotSettings: false,
+    botSettingsUsername: null,
     isEditingAppSettings: false,
     isEditingPanelSettings: false,
     isShowingNodesUsage: false,
@@ -274,8 +279,11 @@ export const useDashboard = create(
     onEditingNodes: (isEditingNodes: boolean) => {
       set({ isEditingNodes });
     },
-    onEditingBotSettings: (isEditingBotSettings: boolean) => {
-      set({ isEditingBotSettings });
+    onEditingBotSettings: (isEditingBotSettings, username) => {
+      set({
+        isEditingBotSettings,
+        botSettingsUsername: isEditingBotSettings ? username || null : null,
+      });
     },
     onEditingAppSettings: (isEditingAppSettings: boolean) => {
       set({ isEditingAppSettings });
