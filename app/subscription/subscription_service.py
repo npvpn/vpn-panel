@@ -11,6 +11,7 @@ from app.subscription.address_context import AddressContext
 from app.subscription.bs_context import BsContext
 from app.subscription.custom_headers import parse_custom_headers
 from app.subscription.support import resolve_support_url_header
+from app.subscription.torrent_context import TorrentContext
 
 # Не тянем тяжелые импорты моделей в runtime (упрощает unit-тесты сервиса).
 if TYPE_CHECKING:
@@ -54,6 +55,7 @@ class SubscriptionRenderContext:
     bot_settings: dict
     panel_settings: dict
     bs: BsContext
+    torrent: TorrentContext
     subset: AddressContext
     response_headers: dict[str, str]
     user_id: int
@@ -83,8 +85,10 @@ def resolve_announce_text(
     bs: BsContext,
     bot_settings: dict,
     get_user_note: Callable[[UserResponse, str], str],
+    torrent: TorrentContext | None = None,
 ) -> str:
     # Приоритет announce совпадает с историческим поведением роутера.
+    torrent = torrent or TorrentContext.empty()
     announce_text = get_user_note(user, str(bot_settings["sub_client_note"])) or ""
     if is_revoked and str(bot_settings["sub_revoked_announce_text"]).strip():
         return get_user_note(user, bot_settings["sub_revoked_announce_text"])
@@ -94,6 +98,8 @@ def resolve_announce_text(
         return get_user_note(user, bot_settings["sub_device_limit_announce_text"])
     if unsupported_blocks and str(bot_settings["sub_unsupported_client_announce_text"]).strip():
         return get_user_note(user, bot_settings["sub_unsupported_client_announce_text"])
+    if torrent.has_blocks and str(bot_settings.get("sub_torrent_block_announce_text") or "").strip():
+        return get_user_note(user, bot_settings["sub_torrent_block_announce_text"])
     if bs.has_blocks and str(bot_settings["sub_bs_limit_announce_text"]).strip():
         return get_user_note(user, bot_settings["sub_bs_limit_announce_text"])
     return announce_text

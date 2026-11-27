@@ -390,9 +390,16 @@ def test_panel_payload_includes_subscription_message_keys():
 
 
 def test_panel_fallback_empty_announce_uses_factory_default():
-    resolved = apply_panel_settings_fallback({"sub_client_note": "  ", "sub_bs_limit_server_text": []})
+    resolved = apply_panel_settings_fallback(
+        {
+            "sub_client_note": "  ",
+            "sub_bs_limit_server_text": [],
+            "sub_torrent_block_server_text": [],
+        }
+    )
     assert resolved["sub_client_note"] == DEFAULT_PANEL_SETTINGS["sub_client_note"]
     assert resolved["sub_bs_limit_server_text"] == []
+    assert resolved["sub_torrent_block_server_text"] == []
 
 
 def test_overlay_subscription_messages_prefers_panel_texts():
@@ -401,6 +408,7 @@ def test_overlay_subscription_messages_prefers_panel_texts():
         "sub_client_note": "from-panel",
         "sub_revoked_server_text": ["one", " two "],
         "sub_bs_limit_server_text": [],
+        "sub_torrent_block_server_text": [],
     }
     merged = overlay_subscription_messages(bot, panel)
     assert merged["sub_profile_title"] == "Keep me"
@@ -408,6 +416,7 @@ def test_overlay_subscription_messages_prefers_panel_texts():
     assert merged["sub_client_note"] == "from-panel"
     assert merged["sub_revoked_server_text"] == ["one", "two"]
     assert merged["sub_bs_limit_server_text"] == []
+    assert merged["sub_torrent_block_server_text"] == []
     assert merged["sub_expired_announce_text"] == DEFAULT_PANEL_SETTINGS["sub_expired_announce_text"]
 
 

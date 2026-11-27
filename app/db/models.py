@@ -833,6 +833,23 @@ class NodeUserBlock(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class TorrentUserBlock(Base):
+    """Временная блокировка пользователя на ноде из вебхука tblocker.
+
+    Единственный writer — POST /api/torrent-block. Подписка читает строки,
+    у которых blocked_until ещё в будущем, и подменяет заглушкой всю локацию,
+    где эта нода используется.
+    """
+
+    __tablename__ = "torrent_user_blocks"
+    __table_args__ = (UniqueConstraint("node_id", "user_id", name="uq_torrent_user_blocks"),)
+
+    id = Column(Integer, primary_key=True)
+    node_id = Column(Integer, ForeignKey("nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    blocked_until = Column(DateTime, nullable=False)
+
+
 class NodeWeightSnapshot(Base):
     """Суточный снимок веса ноды = остаток лимита хостера (NPVPN-2072).
 

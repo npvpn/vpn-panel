@@ -17,6 +17,8 @@ from config import (
     SUB_REVOKED_SERVER_TEXT,
     SUB_ROUTING_HAPP,
     SUB_ROUTING_V2RAYTUN,
+    SUB_TORRENT_BLOCK_ANNOUNCE_TEXT,
+    SUB_TORRENT_BLOCK_SERVER_TEXT,
     SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
     SUB_UNSUPPORTED_CLIENT_SERVER_TEXT,
     SUB_UPDATE_INTERVAL,
@@ -35,6 +37,7 @@ SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS: tuple[str, ...] = (
     "sub_device_limit_announce_text",
     "sub_unsupported_client_announce_text",
     "sub_bs_limit_announce_text",
+    "sub_torrent_block_announce_text",
 )
 SUBSCRIPTION_MESSAGE_SERVER_KEYS: tuple[str, ...] = (
     "sub_revoked_server_text",
@@ -42,7 +45,10 @@ SUBSCRIPTION_MESSAGE_SERVER_KEYS: tuple[str, ...] = (
     "sub_device_limit_server_text",
     "sub_unsupported_client_server_text",
     "sub_bs_limit_server_text",
+    "sub_torrent_block_server_text",
 )
+# Пустой список у этих заглушек — сохранённое «без текста», а не «вернуть заводское».
+SERVER_TEXT_KEEP_EMPTY: frozenset[str] = frozenset({"sub_bs_limit_server_text", "sub_torrent_block_server_text"})
 SUBSCRIPTION_MESSAGE_KEYS: tuple[str, ...] = (
     *SUBSCRIPTION_MESSAGE_ANNOUNCE_KEYS,
     *SUBSCRIPTION_MESSAGE_SERVER_KEYS,
@@ -84,11 +90,13 @@ DEFAULT_PANEL_SETTINGS: dict[str, Any] = {
     "sub_device_limit_announce_text": SUB_DEVICE_LIMIT_ANNOUNCE_TEXT,
     "sub_unsupported_client_announce_text": SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT,
     "sub_bs_limit_announce_text": SUB_BS_LIMIT_ANNOUNCE_TEXT,
+    "sub_torrent_block_announce_text": SUB_TORRENT_BLOCK_ANNOUNCE_TEXT,
     "sub_revoked_server_text": normalize_server_text(SUB_REVOKED_SERVER_TEXT),
     "sub_expired_server_text": normalize_server_text(SUB_EXPIRED_SERVER_TEXT),
     "sub_device_limit_server_text": normalize_server_text(SUB_DEVICE_LIMIT_SERVER_TEXT),
     "sub_unsupported_client_server_text": normalize_server_text(SUB_UNSUPPORTED_CLIENT_SERVER_TEXT),
     "sub_bs_limit_server_text": [],
+    "sub_torrent_block_server_text": normalize_server_text(SUB_TORRENT_BLOCK_SERVER_TEXT),
     "sub_device_limit_hard_mode": False,
     "sub_update_interval": str(SUB_UPDATE_INTERVAL),
 }
@@ -322,11 +330,13 @@ class PanelSettingsPayload(BaseModel):
     sub_device_limit_announce_text: str = ""
     sub_unsupported_client_announce_text: str = ""
     sub_bs_limit_announce_text: str = ""
+    sub_torrent_block_announce_text: str = ""
     sub_revoked_server_text: list[str] = Field(default_factory=list)
     sub_expired_server_text: list[str] = Field(default_factory=list)
     sub_device_limit_server_text: list[str] = Field(default_factory=list)
     sub_unsupported_client_server_text: list[str] = Field(default_factory=list)
     sub_bs_limit_server_text: list[str] = Field(default_factory=list)
+    sub_torrent_block_server_text: list[str] = Field(default_factory=list)
     sub_device_limit_hard_mode: bool = False
     sub_update_interval: str = ""
 
@@ -348,6 +358,7 @@ class PanelSettingsPayload(BaseModel):
         "sub_device_limit_server_text",
         "sub_unsupported_client_server_text",
         "sub_bs_limit_server_text",
+        "sub_torrent_block_server_text",
         mode="before",
     )
     @classmethod
@@ -398,7 +409,7 @@ def apply_panel_settings_fallback(raw: dict[str, Any] | None) -> dict[str, Any]:
             lines = normalize_server_text(raw[key])
             # Пустой список у БС-заглушки — валидное сохранённое значение.
             # Для остальных server-text пустое значит «взять заводское».
-            if lines or key == "sub_bs_limit_server_text":
+            if lines or key in SERVER_TEXT_KEEP_EMPTY:
                 base[key] = lines
             continue
         base[key] = raw[key]
@@ -422,7 +433,7 @@ def overlay_subscription_messages(
     for key in SUBSCRIPTION_MESSAGE_SERVER_KEYS:
         raw = source[key] if key in source else merged.get(key, DEFAULT_PANEL_SETTINGS[key])
         lines = normalize_server_text(raw)
-        if lines or (key == "sub_bs_limit_server_text" and key in source):
+        if lines or (key in SERVER_TEXT_KEEP_EMPTY and key in source):
             merged[key] = lines
         else:
             merged[key] = list(DEFAULT_PANEL_SETTINGS[key])

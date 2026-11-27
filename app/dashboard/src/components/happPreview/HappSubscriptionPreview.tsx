@@ -63,6 +63,9 @@ export const HappScenarioSelect: FC<ScenarioSelectProps> = ({
           {t("panelSettings.previewScenarioDevice")}
         </option>
         <option value="bs">{t("panelSettings.previewScenarioBs")}</option>
+        <option value="torrent">
+          {t("panelSettings.previewScenarioTorrent")}
+        </option>
       </Select>
     </FormControl>
   );
@@ -280,7 +283,11 @@ export const HappSubscriptionPreview: FC<Props> = ({
       </div>
       {/* оговорка под телефоном: не отодвигает превью вниз */}
       <Text fontSize="xs" color="gray.500">
-        {t("panelSettings.previewHint")}
+        {t(
+          scenario === "torrent"
+            ? "panelSettings.previewTorrentHint"
+            : "panelSettings.previewHint"
+        )}
       </Text>
     </VStack>
   );

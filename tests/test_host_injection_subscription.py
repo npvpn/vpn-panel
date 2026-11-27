@@ -38,6 +38,7 @@ def scenario(
     bs=None,
     subset=None,
     tags=None,
+    torrent=None,
 ):
     a = {
         **_host("same.example", node_ids=[1], remark="AU-1"),
@@ -81,6 +82,7 @@ def scenario(
         conf,
         bs=bs,
         subset=subset,
+        torrent=torrent,
     )
     return conf, output
 
@@ -113,6 +115,60 @@ def test_information_placeholder_is_not_an_injection_source(monkeypatch):
     assert len(endpoints(conf)) == 1
     assert endpoints(conf)[0]["settings"]["vnext"][0]["port"] == 9443
     assert conf.config[0]["outbounds"][0]["settings"]["vnext"][0]["address"] == "198.18.0.1"
+
+
+def test_torrent_on_one_source_stubs_whole_location(monkeypatch):
+    from app.subscription.torrent_context import TorrentContext
+
+    torrent = TorrentContext(frozenset({9}), "Торрент")
+    conf, _ = scenario(
+        monkeypatch,
+        torrent=torrent,
+        source_changes={1: {"node_ids": [9]}, 2: {"node_ids": [2]}},
+    )
+    assert conf.config[0]["remarks"] == "Торрент"
+    assert conf.config[0]["outbounds"] == [{"tag": "proxy", "protocol": "blackhole"}]
+
+
+def test_torrent_on_the_recipient_node_stubs_whole_location(monkeypatch):
+    """Нода получателя сборного профиля закрывает локацию до сборки источников."""
+    from app.subscription.torrent_context import TorrentContext
+
+    torrent = TorrentContext(frozenset({9}), "Торрент")
+    conf, _ = scenario(
+        monkeypatch,
+        torrent=torrent,
+        recipient_changes={"node_ids": [9]},
+        source_changes={1: {"node_ids": [1]}, 2: {"node_ids": [2]}},
+    )
+    dumped = json.dumps(conf.config)
+    assert conf.config[0]["remarks"] == "Торрент"
+    assert conf.config[0]["outbounds"] == [{"tag": "proxy", "protocol": "blackhole"}]
+    assert "same.example" not in dumped
+    assert "au1.example" not in dumped
+    assert "au2.example" not in dumped
+
+
+def test_torrent_blocks_only_the_location_that_uses_the_node(monkeypatch):
+    from app.subscription.torrent_context import TorrentContext
+
+    blocked = _host("a.example", "b.example", node_ids=[1, 2], remark="Germany")
+    other = _host("c.example", node_ids=[3], remark="Finland")
+    inbound = _inbound()
+    monkeypatch.setattr(share.xray, "config", SimpleNamespace(inbounds_by_tag={"tcp": inbound}), raising=False)
+    monkeypatch.setattr(share.xray, "hosts", {"tcp": [blocked, other]}, raising=False)
+    conf = V2rayJsonConfig(configs={1: deepcopy(FILE_TEMPLATE)}, default_id=1)
+    protocol = _Protocol()
+    share.process_inbounds_and_tags(
+        {protocol: ["tcp"]},
+        {protocol: _ProxySettings()},
+        defaultdict(lambda: "<missing>", BOT_USERNAME="probe-bot"),
+        conf,
+        torrent=TorrentContext(frozenset({1}), "Торрент"),
+    )
+    assert [item["remarks"] for item in conf.config] == ["Торрент", "Finland"]
+    assert "a.example" not in json.dumps(conf.config)
+    assert "b.example" not in json.dumps(conf.config)
 
 
 def test_bs_source_excluded_and_all_blocked_stub(monkeypatch):
@@ -279,7 +335,7 @@ def test_distinct_protocols_use_current_user_credentials(monkeypatch, allow_troj
             is_json=True,
             template_for=lambda h: FILE_TEMPLATE,
         )
-        selected, _, _ = compose_endpoints(next(c for c in candidates if c["host"]["id"] == 3), candidates)
+        selected, _, _, _ = compose_endpoints(next(c for c in candidates if c["host"]["id"] == 3), candidates)
         conf = V2rayJsonConfig(configs={1: deepcopy(FILE_TEMPLATE)}, default_id=1)
         conf.add_composed("mixed", selected)
         out = conf.config[0]["outbounds"]

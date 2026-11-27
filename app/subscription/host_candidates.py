@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from app.subscription.address_context import AddressContext, settings_from_host
 from app.subscription.bs_context import ZERO_STUB, BsContext
+from app.subscription.torrent_context import TorrentContext
 from app.xray.host_addresses import host_allowed_for_bot
 from app.xray.host_injection import resolve_host_injection
 
@@ -36,8 +37,10 @@ def prepare_candidates(
     stub=None,
     subset=None,
     panel_bot_count: int | None = None,
+    torrent=None,
 ) -> list[dict]:
     bs = bs or BsContext.empty()
+    torrent = torrent or TorrentContext.empty()
     stub = stub or ZERO_STUB
     subset = subset or AddressContext.disabled()
     _inbounds = []
@@ -170,6 +173,7 @@ def prepare_candidates(
                 candidate = {
                     "order": host.get("order", 0),
                     "blocked": bs.is_blocked(host),
+                    "torrent_blocked": torrent.affects(host),
                     "host": host,
                     "injection": injection,
                     "host_inbound": host_inbound,
@@ -215,9 +219,13 @@ def compose_endpoints(recipient, candidates):
     has_bs = False
     blocked = False
     unavailable = False
+    torrent_blocked = False
 
     def add_source(item, prefix=None, name=None):
-        nonlocal blocked, has_bs, unavailable
+        nonlocal blocked, has_bs, unavailable, torrent_blocked
+        if item.get("torrent_blocked"):
+            torrent_blocked = True
+            return
         if item["blocked"]:
             blocked = True
             return
@@ -257,4 +265,6 @@ def compose_endpoints(recipient, candidates):
                 continue
             name = host.get("group_tag") if group.useHostTagAsTag else None
             add_source(item, prefix=group.tagPrefix, name=name or host.get("remark"))
-    return selected, has_bs, blocked and not unavailable
+    if torrent_blocked:
+        return [], False, False, True
+    return selected, has_bs, blocked and not unavailable, False

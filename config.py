@@ -253,6 +253,12 @@ SUB_EXPIRED_ANNOUNCE_TEXT = config("SUB_EXPIRED_ANNOUNCE_TEXT", default=_DEFAULT
 SUB_DEVICE_LIMIT_ANNOUNCE_TEXT = config("SUB_DEVICE_LIMIT_ANNOUNCE_TEXT", default=_DEFAULT_SUB_CLIENT_NOTE)
 SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT = config("SUB_UNSUPPORTED_CLIENT_ANNOUNCE_TEXT", default=_DEFAULT_SUB_CLIENT_NOTE)
 SUB_BS_LIMIT_ANNOUNCE_TEXT = config("SUB_BS_LIMIT_ANNOUNCE_TEXT", default=_DEFAULT_SUB_CLIENT_NOTE)
+SUB_TORRENT_BLOCK_ANNOUNCE_TEXT = config(
+    "SUB_TORRENT_BLOCK_ANNOUNCE_TEXT",
+    default=("Некоторые локации временно закрыты из-за торрента. Остальные локации работают."),
+)
+# Общий секрет вебхука tblocker. Пустое значение закрывает POST /api/torrent-block.
+TORRENT_WEBHOOK_TOKEN = config("TORRENT_WEBHOOK_TOKEN", default="")
 
 
 def _parse_server_text_list(v):
@@ -279,6 +285,11 @@ SUB_DEVICE_LIMIT_SERVER_TEXT = config(
 SUB_UNSUPPORTED_CLIENT_SERVER_TEXT = config(
     "SUB_UNSUPPORTED_CLIENT_SERVER_TEXT",
     default="Это приложение не поддерживается, Установите другое",
+    cast=lambda v: _parse_server_text_list(v),
+)
+SUB_TORRENT_BLOCK_SERVER_TEXT = config(
+    "SUB_TORRENT_BLOCK_SERVER_TEXT",
+    default="Заблокировано из-за торрента. Подождите окончания блокировки",
     cast=lambda v: _parse_server_text_list(v),
 )
 
