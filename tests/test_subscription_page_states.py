@@ -7,8 +7,11 @@ expired / limited / revoked.html — обёртки: задают page_state и 
 
 from __future__ import annotations
 
+import json
 import pathlib
 import re
+import shutil
+import subprocess
 
 import jinja2
 import pytest
@@ -16,16 +19,17 @@ import pytest
 _ROOT = pathlib.Path(__file__).parent.parent
 _DIR = _ROOT / "app" / "templates" / "subscription"
 _CABINET = "https://cab.example.com"
+_NODE = shutil.which("node")
 
 
-def _render(template: str, *, web_url: str = _CABINET, pay_url: str = "") -> str:
+def _render(template: str, *, web_url: str = _CABINET, pay_url: str = "", subscription_url: str = "") -> str:
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(_DIR)), undefined=jinja2.ChainableUndefined)
     ctx = {
         "pay_url": pay_url,
         "token": "TOKEN",
         "devices_json": "[]",
         "client_apps": {},
-        "user": {},
+        "user": {"subscription_url": subscription_url},
         "devices": [],
         "sub_path": "sub",
         "web_url": web_url,
@@ -113,6 +117,68 @@ def test_qr_block_has_logo_src_and_no_overlay_logo():
     html = _render("index.html")
     assert 'id="qrcode-main" data-logo-src="/statics/subscription/assets/qr-logo.png?v=' in html
     assert "qr-code__logo" not in html
+
+
+def _copy_button(html: str, section_class: str, end: str) -> re.Match[str]:
+    section = html.split(f'class="{section_class}"', 1)[1].split(end, 1)[0]
+    button = re.search(
+        r'<button[^>]*class="text-btn copy-key-btn"[^>]*@click="([^"]+)"[^>]*>(.*?)</button>', section, re.S
+    )
+    assert button, f"нет кнопки копирования в {section_class}"
+    return button
+
+
+def test_subscription_copy_and_toast_controls_render():
+    html = _render("index.html")
+    assert "<span>Скопировать ключ</span>" in _copy_button(html, "qr-wrapper", 'class="setup-steps"').group(2)
+    assert "<span>Копировать ключ</span>" in _copy_button(html, "setup-card__actions", "</section>").group(2)
+    toast = re.search(r'<div class="toast"[^>]*>', html)
+    assert toast
+    assert 'role="status"' in toast[0]
+    assert ":inert=" in toast[0]
+    assert ":aria-hidden=" not in toast[0]
+    close = re.search(r'<button[^>]*class="toast__close"[^>]*>', html)
+    assert close
+    assert 'type="button"' in close[0]
+    assert 'aria-label="Закрыть"' in close[0]
+
+
+@pytest.mark.skipif(_NODE is None, reason="нужен Node.js для исполнения скрипта страницы подписки")
+@pytest.mark.parametrize(
+    ("subscription_url", "expected_url"),
+    [
+        ("https://sub.example.test/sub/TOKEN", "https://sub.example.test/sub/TOKEN"),
+        ("/sub/TOKEN", "https://panel.example.test/sub/TOKEN"),
+    ],
+)
+def test_subscription_copy_and_toast_behavior(subscription_url, expected_url):
+    html = _render("index.html", subscription_url=subscription_url)
+    controller = next(
+        script for script in re.findall(r"<script>(.*?)</script>", html, re.S) if "Alpine.data(" in script
+    )
+    close = re.search(r'<button[^>]*class="toast__close"[^>]*\bx-ref="([^"]+)"[^>]*@click="([^"]+)"', html)
+    inert = re.search(r'<div class="toast"[^>]*:inert="([^"]+)"', html)
+    assert close and inert
+    scenario = {
+        "controller": controller,
+        "copyHandlers": [
+            _copy_button(html, "qr-wrapper", 'class="setup-steps"').group(1),
+            _copy_button(html, "setup-card__actions", "</section>").group(1),
+        ],
+        "closeRef": close[1],
+        "closeHandler": close[2],
+        "inertBinding": inert[1],
+        "expectedUrl": expected_url,
+    }
+    result = subprocess.run(
+        [_NODE, str(pathlib.Path(__file__).with_name("js") / "subscription_copy_harness.js")],
+        input=json.dumps(scenario),
+        capture_output=True,
+        encoding="utf-8",
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_apple_region_notice_only_on_apple_tabs():

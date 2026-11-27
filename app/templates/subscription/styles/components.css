@@ -733,6 +733,29 @@
     gap: 8px;
 }
 
+.qr-wrapper .copy-key-btn.text-btn {
+    height: auto;
+    min-height: 44px;
+    margin-top: -8px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 150%;
+    letter-spacing: -0.04em;
+}
+
+.qr-wrapper .copy-key-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+@media (max-width: 1023px) and (max-height: 640px) {
+    .qr-wrapper {
+        gap: 12px;
+        transform: none;
+    }
+}
+
 @media (min-width: 1024px) {
     .app-chips {
         gap: 8px;
