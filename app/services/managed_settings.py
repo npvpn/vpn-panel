@@ -86,6 +86,17 @@ def bot_managed_state_key(source_bot_id: int) -> str:
     return f"{BOT_SETTINGS_KEY}:{source_bot_id}"
 
 
+def _forget_managed_bot_state(db: Session, source_bot_id: int | None) -> None:
+    """Убрать пометку старого source_bot_id, когда строка панели перепривязывается."""
+    if source_bot_id is None:
+        return
+    from app.db.models import ManagedSetting
+
+    db.query(ManagedSetting).filter(ManagedSetting.key == bot_managed_state_key(int(source_bot_id))).delete(
+        synchronize_session=False
+    )
+
+
 def validate_managed_payload(key: str, data: dict[str, Any]) -> dict[str, Any]:
     section = MANAGED_SECTIONS[key]  # KeyError для неизвестного ключа
     return section.validate(data)
@@ -162,36 +173,59 @@ def _apply_locked_managed_bot_push(
     from app.db import crud
     from app.db.models import Bot, BotSettings, ManagedSetting, User
 
-    bot = db.query(Bot).filter(Bot.source_bot_id == source_bot_id).first()
+    bound = db.query(Bot).filter(Bot.source_bot_id == source_bot_id).first()
     username_match = db.query(Bot).filter(Bot.username == normalized["username"]).first()
-    if bot is None:
-        bot = username_match
-        if bot is not None:
-            logger.info(
-                "managed bot push: bound existing bot by username=%s panel_bot_id=%s "
-                "current_source_bot_id=%s admin_sync_enabled=%s",
-                bot.username,
-                bot.id,
-                bot.source_bot_id,
-                bot.admin_sync_enabled,
-            )
-        if bot is not None and bot.source_bot_id not in (None, source_bot_id):
+    # Username в панели — тот бот, чьи настройки надо обновить. Старый source_bot_id
+    # на той же строке остаётся после пересоздания бота в админке и не должен ронять очередь.
+    # Чужую строку с пользователями или выключенным синком не отвязываем.
+    if username_match is not None and not username_match.admin_sync_enabled:
+        logger.warning(
+            "managed bot push rejected: admin_sync_disabled panel_bot_id=%s username=%s source_bot_id=%s",
+            username_match.id,
+            username_match.username,
+            source_bot_id,
+        )
+        raise AdminSyncDisabledError
+    if username_match is not None and bound is not None and username_match.id != bound.id:
+        bound_has_users = db.query(User.id).filter(User.bot_id == bound.id).first() is not None
+        if bound_has_users or not bound.admin_sync_enabled:
             logger.warning(
-                "managed bot push conflict: username=%s already bound to source_bot_id=%s",
-                bot.username,
-                bot.source_bot_id,
+                "managed bot push conflict: source_bot_id=%s stays on panel_bot_id=%s; username=%s is panel_bot_id=%s",
+                source_bot_id,
+                bound.id,
+                normalized["username"],
+                username_match.id,
             )
             raise ManagedBotConflictError("source_bot_id_conflict")
-    elif username_match is not None and username_match.id != bot.id:
-        logger.warning(
-            "managed bot push conflict: source_bot_id=%s maps to panel_bot_id=%s "
-            "but username=%s belongs to panel_bot_id=%s",
-            source_bot_id,
-            bot.id,
+        previous_source_id = cast(int | None, bound.source_bot_id)
+        cast(Any, bound).source_bot_id = None
+        db.flush()
+        _forget_managed_bot_state(db, previous_source_id)
+        logger.info(
+            "managed bot push: detached empty source_bot_id=%s from panel_bot_id=%s; username=%s stays on panel_bot_id=%s",
+            previous_source_id,
+            bound.id,
             normalized["username"],
             username_match.id,
         )
-        raise ManagedBotConflictError("bot_username_conflict")
+    bot: Any = username_match or bound
+    if bot is not None and username_match is None and not bot.admin_sync_enabled:
+        logger.warning(
+            "managed bot push rejected: admin_sync_disabled panel_bot_id=%s username=%s source_bot_id=%s",
+            bot.id,
+            bot.username,
+            source_bot_id,
+        )
+        raise AdminSyncDisabledError
+    if bot is not None and bot.source_bot_id not in (None, source_bot_id):
+        logger.info(
+            "managed bot push: rebind username=%s panel_bot_id=%s source_bot_id %s -> %s",
+            bot.username,
+            bot.id,
+            bot.source_bot_id,
+            source_bot_id,
+        )
+        _forget_managed_bot_state(db, cast(int | None, bot.source_bot_id))
 
     if bot is None:
         is_first_bot = crud.count_bots(db) == 0
@@ -212,14 +246,6 @@ def _apply_locked_managed_bot_push(
             bot.username,
             source_bot_id,
         )
-    elif not bot.admin_sync_enabled:
-        logger.warning(
-            "managed bot push rejected: admin_sync_disabled panel_bot_id=%s username=%s source_bot_id=%s",
-            bot.id,
-            bot.username,
-            source_bot_id,
-        )
-        raise AdminSyncDisabledError
 
     bot_row = cast(Any, bot)
     bot_row.source_bot_id = source_bot_id

@@ -175,6 +175,105 @@ def test_disabled_existing_bot_rejects_push(db):
         )
 
 
+def test_existing_username_with_other_source_id_is_updated(db):
+    bot = Bot(username="synced_bot", source_bot_id=5, title="Old", admin_sync_enabled=True)
+    db.add(bot)
+    db.commit()
+    db.add(ManagedSetting(key="bot_settings:5", scope="bot", source="telegram", version="old"))
+    db.commit()
+
+    svc.apply_managed_bot_push(
+        db,
+        svc.BOT_SETTINGS_KEY,
+        7,
+        data=MANAGED_DATA,
+        version="v2",
+        source="telegram",
+    )
+
+    db.refresh(bot)
+    assert bot.source_bot_id == 7
+    assert bot.title == "Synced bot"
+    settings = db.query(BotSettings).filter(BotSettings.bot_id == bot.id).one().data
+    assert settings["bot_url"] == "https://t.me/synced_bot"
+    assert db.query(ManagedSetting).filter(ManagedSetting.key == "bot_settings:5").one_or_none() is None
+    assert db.query(ManagedSetting).filter(ManagedSetting.key == "bot_settings:7").one().version == "v2"
+
+
+def test_username_row_wins_when_source_id_points_elsewhere(db):
+    current = Bot(username="synced_bot", source_bot_id=5, admin_sync_enabled=True)
+    db.add(current)
+    db.commit()
+    stale = Bot(username="other_bot", source_bot_id=7, admin_sync_enabled=True)
+    db.add(stale)
+    db.commit()
+
+    svc.apply_managed_bot_push(
+        db,
+        svc.BOT_SETTINGS_KEY,
+        7,
+        data=MANAGED_DATA,
+        version="v1",
+        source="telegram",
+    )
+
+    db.refresh(stale)
+    db.refresh(current)
+    assert stale.source_bot_id is None
+    assert current.source_bot_id == 7
+    assert current.title == "Synced bot"
+
+
+def test_occupied_source_row_is_not_detached(db):
+    current = Bot(username="synced_bot", source_bot_id=5, title="Old", admin_sync_enabled=True)
+    occupied = Bot(username="other_bot", source_bot_id=7, admin_sync_enabled=True)
+    db.add_all([current, occupied])
+    db.commit()
+    db.add(User(username="member", bot_id=occupied.id))
+    db.commit()
+
+    with pytest.raises(svc.ManagedBotConflictError):
+        svc.apply_managed_bot_push(
+            db,
+            svc.BOT_SETTINGS_KEY,
+            7,
+            data=MANAGED_DATA,
+            version="v1",
+            source="telegram",
+        )
+
+    db.refresh(current)
+    db.refresh(occupied)
+    assert current.source_bot_id == 5
+    assert current.title == "Old"
+    assert occupied.source_bot_id == 7
+    assert db.query(User).filter(User.bot_id == occupied.id).count() == 1
+
+
+def test_disabled_username_row_is_not_rebound_from_another_source(db):
+    current = Bot(username="synced_bot", source_bot_id=5, title="Old", admin_sync_enabled=False)
+    other = Bot(username="other_bot", source_bot_id=7, admin_sync_enabled=True)
+    db.add_all([current, other])
+    db.commit()
+
+    with pytest.raises(svc.AdminSyncDisabledError):
+        svc.apply_managed_bot_push(
+            db,
+            svc.BOT_SETTINGS_KEY,
+            7,
+            data=MANAGED_DATA,
+            version="v1",
+            source="telegram",
+        )
+
+    db.refresh(current)
+    db.refresh(other)
+    assert current.source_bot_id == 5
+    assert current.title == "Old"
+    assert other.source_bot_id == 7
+    assert db.query(ManagedSetting).filter(ManagedSetting.key == "bot_settings:7").one_or_none() is None
+
+
 def test_disabling_unlinks_state_without_changing_values(db):
     svc.apply_managed_bot_push(
         db,
