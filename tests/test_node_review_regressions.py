@@ -325,6 +325,31 @@ def test_superseded_stop_does_not_connect_to_new_address(monkeypatch, node_datab
         assert row.config_apply_endpoint["address"] == "192.0.2.1"
 
 
+def test_local_oserror_on_old_endpoint_stays_pending(monkeypatch, node_database):
+    lifecycle, ops, state, executor, scheduler = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    _save_address_change(engine, Session, Node, NodeModify, real_crud)
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+
+    def add(row):
+        raise OSError("certificate file")
+
+    monkeypatch.setattr(ops, "add_node", add)
+    connect = Mock(return_value=True)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+    scheduler.execute = ops._execute_node_operation
+    future = ops.apply_node(7, recover=True)
+    executor.run()
+    with pytest.raises(OSError, match="certificate file"):
+        future.result()
+    connect.assert_not_called()
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.config_apply_pending is True
+        assert row.config_apply_endpoint["address"] == "192.0.2.1"
+
+
 def test_disabled_same_endpoint_stays_pending_when_unreachable(monkeypatch, node_database):
     from app.xray.node import NodeAPIError
 

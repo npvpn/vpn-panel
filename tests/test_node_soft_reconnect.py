@@ -215,6 +215,21 @@ def test_make_request_uses_full_timeout_for_body_upload():
     assert kwargs["timeout"] == 90
 
 
+def test_make_request_keeps_status_when_body_is_not_json():
+    node = _make_node()
+    node._rest_api_url = "https://10.0.0.1:62050"
+    node._session_id = "sess"
+    mock_res = MagicMock()
+    mock_res.status_code = 502
+    mock_res.json.side_effect = ValueError("Expecting value")
+    node.session = MagicMock()
+    node.session.post.return_value = mock_res
+
+    with pytest.raises(NodeAPIError) as error:
+        node.make_request("/stop", timeout=10)
+    assert error.value.status_code == 502
+
+
 def test_failed_session_publication_retries_after_successful_ping():
     node = _make_node()
     stored = {"session_id": "old-session"}

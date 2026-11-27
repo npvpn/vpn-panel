@@ -336,7 +336,6 @@ class ReSTXRayNode:
                 timeout=req_timeout,
                 json={"session_id": self._session_id, **params},
             )
-            data = res.json()
         except Exception as e:
             if self._is_transport_error(e):
                 # Keep session_id — transient network blips must not force /connect.
@@ -346,6 +345,12 @@ class ReSTXRayNode:
                 )
                 self._refresh_http_transport()
             raise NodeAPIError(0, str(e))
+
+        try:
+            data = res.json()
+        except Exception as e:
+            # The server answered. Status 0 is reserved for a missing HTTP response.
+            raise NodeAPIError(res.status_code, str(e)) from e
 
         if res.status_code == 200:
             self._retry_pending_control_session()

@@ -579,7 +579,7 @@ def _old_endpoint_unreachable(exc: BaseException) -> bool:
         return False
     if isinstance(exc, NodeAPIError):
         return exc.status_code == 0
-    return isinstance(exc, (ConnectionError, TimeoutError, OSError))
+    return isinstance(exc, (ConnectionError, TimeoutError))
 
 
 def _stop_apply_endpoint(node_id, dbnode, old_endpoint):
