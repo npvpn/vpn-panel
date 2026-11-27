@@ -14,7 +14,7 @@ from app.models.node import NodeProtocol, NodeStatus
 from app.models.user import UserResponse
 from app.utils.concurrency import get_node_executor, threaded_function
 from app.utils.usage_runtime import usage_state
-from app.xray.node import XRayNode
+from app.xray.node import NodeAPIError, XRayNode
 from app.xray.node_config import node_config_json, node_has_inbound
 from app.xray.node_operations import NodeOperationScheduler, NodeOperationSuperseded, OperationKind
 from config import (
@@ -574,6 +574,14 @@ def apply_node(node_id: int, *, accounting=None, recover: bool = False):
     return future
 
 
+def _old_endpoint_unreachable(exc: BaseException) -> bool:
+    if isinstance(exc, NodeOperationSuperseded):
+        return False
+    if isinstance(exc, NodeAPIError):
+        return exc.status_code == 0
+    return isinstance(exc, (ConnectionError, TimeoutError, OSError))
+
+
 def _stop_apply_endpoint(node_id, dbnode, old_endpoint):
     scheduler = get_node_scheduler()
     saved_session = old_endpoint.get("control_session_id") if old_endpoint else dbnode.control_session_id
@@ -653,7 +661,20 @@ def _apply_node_impl(node_id, config_factory):
         changed_endpoint = old_endpoint is not None and any(old_endpoint[key] != target[key] for key in target)
         was_stopped = old_endpoint is not None and old_endpoint.get("stopped", False)
         if (disabled or changed_endpoint) and not was_stopped:
-            _stop_apply_endpoint(node_id, dbnode, old_endpoint)
+            try:
+                _stop_apply_endpoint(node_id, dbnode, old_endpoint)
+            except NodeOperationSuperseded:
+                raise
+            except Exception as exc:
+                if not changed_endpoint or not _old_endpoint_unreachable(exc):
+                    raise
+                logger.warning(
+                    "Old node endpoint is unreachable, continuing apply on the saved target: "
+                    "node_id=%s address=%s error=%s",
+                    node_id,
+                    None if old_endpoint is None else old_endpoint.get("address"),
+                    exc,
+                )
         remove_node(node_id, invalidate_slot=False)
         scheduler.check_current(node_id)
         if not disabled:

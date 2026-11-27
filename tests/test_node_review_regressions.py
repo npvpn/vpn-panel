@@ -7,7 +7,7 @@ import pytest
 
 from app.models.node import NodeStatus
 from app.utils.usage_runtime import UsageState, ready_apis
-from app.xray.node_operations import NodeOperationScheduler, OperationKind
+from app.xray.node_operations import NodeOperationScheduler, NodeOperationSuperseded, OperationKind
 from tests.test_node_operation_routes import load_route
 from tests.test_node_operations import Executor
 
@@ -186,6 +186,212 @@ def test_previous_endpoint_survives_repeated_save_and_process_restart(monkeypatc
     with Session(engine) as db:
         row = db.get(Node, 7)
         assert row.address == "192.0.2.3"
+        assert row.config_apply_pending is False
+        assert row.config_apply_endpoint is None
+
+
+def _save_address_change(engine, Session, Node, NodeModify, real_crud, *, status=None):
+    with Session(engine) as db:
+        row = Node(
+            id=7,
+            name="node",
+            address="192.0.2.1",
+            port=62050,
+            api_port=62051,
+            status=NodeStatus.connected,
+            control_session_id="old-session",
+        )
+        db.add(row)
+        db.commit()
+        fields = {"address": "192.0.2.2"}
+        if status is not None:
+            fields["status"] = status
+        real_crud.update_node(db, row, NodeModify(**fields))
+
+
+def test_unreachable_old_endpoint_connects_to_new_address(monkeypatch, node_database):
+    from app.xray.node import NodeAPIError
+
+    lifecycle, ops, state, executor, scheduler = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    _save_address_change(engine, Session, Node, NodeModify, real_crud)
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+    seen = []
+
+    def add(row):
+        seen.append(row.address)
+        node = Mock()
+        node.stop.side_effect = NodeAPIError(0, "timed out")
+        ops.xray.nodes[7] = node
+        return node
+
+    monkeypatch.setattr(ops, "add_node", add)
+    connect = Mock(return_value=True)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+    scheduler.execute = ops._execute_node_operation
+    future = ops.apply_node(7, recover=True)
+    executor.run()
+
+    assert future.result() is True
+    assert seen == ["192.0.2.1"]
+    connect.assert_called_once()
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.address == "192.0.2.2"
+        assert row.config_apply_pending is False
+        assert row.config_apply_endpoint is None
+
+
+def test_connection_error_on_old_endpoint_connects_to_new_address(monkeypatch, node_database):
+    lifecycle, ops, state, executor, scheduler = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    _save_address_change(engine, Session, Node, NodeModify, real_crud)
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+
+    def add(row):
+        node = Mock()
+        node.stop.side_effect = ConnectionError("timed out while fetching node certificate")
+        ops.xray.nodes[7] = node
+        return node
+
+    monkeypatch.setattr(ops, "add_node", add)
+    connect = Mock(return_value=True)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+    scheduler.execute = ops._execute_node_operation
+    future = ops.apply_node(7, recover=True)
+    executor.run()
+    assert future.result() is True
+    connect.assert_called_once()
+
+
+def test_http_error_from_old_endpoint_stays_pending(monkeypatch, node_database):
+    from app.xray.node import NodeAPIError
+
+    lifecycle, ops, state, executor, scheduler = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    _save_address_change(engine, Session, Node, NodeModify, real_crud)
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+
+    def add(row):
+        node = Mock()
+        node.stop.side_effect = NodeAPIError(500, "stop failed")
+        ops.xray.nodes[7] = node
+        return node
+
+    monkeypatch.setattr(ops, "add_node", add)
+    connect = Mock(return_value=True)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+    scheduler.execute = ops._execute_node_operation
+    future = ops.apply_node(7, recover=True)
+    executor.run()
+    with pytest.raises(NodeAPIError):
+        future.result()
+    connect.assert_not_called()
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.config_apply_pending is True
+        assert row.config_apply_endpoint["address"] == "192.0.2.1"
+        assert row.status == NodeStatus.error
+
+
+def test_superseded_stop_does_not_connect_to_new_address(monkeypatch, node_database):
+    lifecycle, ops, state, executor, scheduler = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    _save_address_change(engine, Session, Node, NodeModify, real_crud)
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+
+    def add(row):
+        node = Mock()
+        node.stop.side_effect = NodeOperationSuperseded()
+        ops.xray.nodes[7] = node
+        return node
+
+    monkeypatch.setattr(ops, "add_node", add)
+    connect = Mock(return_value=True)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+    scheduler.execute = ops._execute_node_operation
+    future = ops.apply_node(7, recover=True)
+    executor.run()
+    # Планировщик гасит NodeOperationSuperseded и завершает команду как False.
+    assert future.result() is False
+    connect.assert_not_called()
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.config_apply_pending is True
+        assert row.config_apply_endpoint["address"] == "192.0.2.1"
+
+
+def test_disabled_same_endpoint_stays_pending_when_unreachable(monkeypatch, node_database):
+    from app.xray.node import NodeAPIError
+
+    lifecycle, ops, state, executor, scheduler = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    with Session(engine) as db:
+        row = Node(
+            id=7,
+            name="node",
+            address="192.0.2.1",
+            port=62050,
+            api_port=62051,
+            status=NodeStatus.connected,
+        )
+        db.add(row)
+        db.commit()
+        real_crud.update_node(db, row, NodeModify(status=NodeStatus.disabled))
+
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+
+    def add(row):
+        node = Mock()
+        node.stop.side_effect = NodeAPIError(0, "timed out")
+        ops.xray.nodes[7] = node
+        return node
+
+    monkeypatch.setattr(ops, "add_node", add)
+    connect = Mock(return_value=True)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+    scheduler.execute = ops._execute_node_operation
+    future = ops.apply_node(7, recover=True)
+    executor.run()
+    with pytest.raises(NodeAPIError):
+        future.result()
+    connect.assert_not_called()
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.config_apply_pending is True
+        assert row.status == NodeStatus.disabled
+
+
+def test_disabled_new_address_finishes_when_old_endpoint_unreachable(monkeypatch, node_database):
+    lifecycle, ops, state, executor, scheduler = arrange(monkeypatch)
+    engine, Session, Node, NodeModify, real_crud = node_database
+    _save_address_change(engine, Session, Node, NodeModify, real_crud, status=NodeStatus.disabled)
+    monkeypatch.setattr(ops, "GetDB", lambda: Session(engine))
+    monkeypatch.setattr(ops, "crud", real_crud)
+
+    def add(row):
+        node = Mock()
+        node.stop.side_effect = ConnectionError("no route to host")
+        ops.xray.nodes[7] = node
+        return node
+
+    monkeypatch.setattr(ops, "add_node", add)
+    connect = Mock(return_value=True)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+    scheduler.execute = ops._execute_node_operation
+    future = ops.apply_node(7, recover=True)
+    executor.run()
+    assert future.result() is True
+    connect.assert_not_called()
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.address == "192.0.2.2"
+        assert row.status == NodeStatus.disabled
         assert row.config_apply_pending is False
         assert row.config_apply_endpoint is None
 
