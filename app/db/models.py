@@ -1002,3 +1002,31 @@ class LocationMembership(Base):
     composite: Mapped[bool]
     valid_from: Mapped[datetime] = mapped_column(DateTime().with_variant(DATETIME(fsp=6), "mysql"))
     valid_until: Mapped[datetime | None] = mapped_column(DateTime().with_variant(DATETIME(fsp=6), "mysql"))
+
+
+class PilotOperation(Base):
+    """Исторические снимки идентификаторов сохраняются после удаления нод."""
+
+    __tablename__ = "haproxy_pilot_operations"
+    __table_args__ = (Index("ix_pilot_node_time", "node_id", "created_at", "operation_id"),)
+
+    operation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    node_id: Mapped[int] = mapped_column(Integer)
+    # NULL завершённых строк совместим с уникальным индексом в MySQL и SQLite.
+    pending_node_id: Mapped[int | None] = mapped_column(Integer, unique=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime)
+    endpoint: Mapped[dict] = mapped_column(JSON)
+    operator: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime().with_variant(DATETIME(fsp=6), "mysql"), default=datetime.utcnow
+    )
+    expected_revision: Mapped[int] = mapped_column(Integer)
+    target: Mapped[str] = mapped_column(String(256))
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    target_address: Mapped[str] = mapped_column(String(256))
+    target_port: Mapped[int] = mapped_column(Integer)
+    exit_node_id: Mapped[int] = mapped_column(Integer)
+    inbound_tag: Mapped[str] = mapped_column(String(256))
+    outcome: Mapped[str] = mapped_column(String(24))
+    revision: Mapped[int | None] = mapped_column(Integer)
+    detail: Mapped[str] = mapped_column(Text)

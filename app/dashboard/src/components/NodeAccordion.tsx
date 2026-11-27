@@ -17,9 +17,11 @@ import { useMutation, useQueryClient } from "react-query";
 import "slick-carousel/slick/slick-theme.css";
 import "slick-carousel/slick/slick.css";
 import { generateErrorMessage } from "utils/toastHandler";
-import { Status } from "types/User";
+import { Status, UserApi } from "types/User";
+import { useLoaderData } from "react-router-dom";
 import { ReloadIcon } from "./Filters";
 import { NodeModalStatusBadge } from "./NodeModalStatusBadge";
+import { HaproxyPilotRoute } from "./HaproxyPilotRoute";
 import { NodeAccordionForm } from "./NodeAccordionForm";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
 
@@ -37,6 +39,7 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
   ({ onToggle, node, isOpen, nodeSettings }) => {
     const { reconnectNode, setDeletingNode } = useNodes();
     const { t } = useTranslation();
+    const admin = useLoaderData() as UserApi;
     const queryClient = useQueryClient();
     const toast = useToast();
     const handleDeleteNode = () => setDeletingNode(node);
@@ -158,6 +161,9 @@ export const NodeAccordion: FC<AccordionInboundType> = memo(
                 </Alert>
               )}
             </VStack>
+            {isOpen && admin.is_sudo && node.id != null && (
+              <HaproxyPilotRoute nodeId={node.id} operator={admin.username} />
+            )}
             {isOpen && (
               <NodeAccordionForm
                 node={node}

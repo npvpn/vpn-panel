@@ -37,6 +37,7 @@ from app.db.models import (
     NodeWeightSnapshot,
     NotificationReminder,
     PanelDeliveryReceipt,
+    PilotOperation,
     Proxy,
     ProxyHost,
     ProxyInbound,
@@ -2264,6 +2265,14 @@ def remove_node(db: Session, dbnode: Node) -> Node:
     Returns:
         Node: The removed Node object.
     """
+    db.refresh(dbnode, with_for_update=True)
+    # SQLite may assign this id to the next registration. Archive the original
+    # observations and release its pending slot in the same delete transaction.
+    db.execute(
+        update(PilotOperation)
+        .where(PilotOperation.node_id == dbnode.id, PilotOperation.archived_at.is_(None))
+        .values(archived_at=datetime.utcnow(), pending_node_id=None)
+    )
     db.delete(dbnode)
     db.commit()
     return dbnode
