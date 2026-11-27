@@ -1,6 +1,12 @@
 {# NPVPN-2315: одна страница на все состояния подписки. expired/limited/revoked.html задают
    page_state и включают этот шаблон; без него — обычная страница. #}
 {% set page_state = page_state | default("") %}
+{% macro copy_key_button(label='Копировать ключ') %}
+  <button type="button" class="text-btn copy-key-btn" @click="copyToClipboard(user.subscription_url)">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 3H4V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>{{ label }}</span>
+  </button>
+{% endmacro %}
 <!DOCTYPE html>
 <html lang="ru">
   <head>
@@ -96,6 +102,7 @@
           toastKind: 'success',
           toastVisible: false,
           toastTimer: null,
+          toastReturnFocus: null,
 
           selectedClient: null,
 
@@ -169,17 +176,22 @@
           },
 
           // текст остаётся, пока уведомление плавно уходит; прячет только toastVisible
-          showToast(text, kind = 'success') {
+          showToast(text, kind, returnFocus) {
             clearTimeout(this.toastTimer);
             this.toast = text;
             this.toastKind = kind;
+            this.toastReturnFocus = returnFocus;
             this.toastVisible = true;
             this.toastTimer = setTimeout(() => this.hideToast(), 3000);
           },
 
           hideToast() {
             clearTimeout(this.toastTimer);
+            if (document.activeElement === this.$refs.toastClose) {
+              this.toastReturnFocus?.focus({ preventScroll: true });
+            }
             this.toastVisible = false;
+            this.toastReturnFocus = null;
           },
 
           async revokeDevice(deviceId) {
@@ -409,6 +421,7 @@ get alternativeApps() {
           // (мессенджеры, VPN-клиенты) иногда его запрещают. Тогда — старый способ через выделение текста,
           // не вышло и так — уведомление об ошибке, а не тишина.
           async copyToClipboard(text, message = 'Ключ скопирован') {
+            const returnFocus = document.activeElement;
             let copied = false;
             try {
               await navigator.clipboard.writeText(text);
@@ -417,9 +430,9 @@ get alternativeApps() {
               copied = this.copyWithSelection(text);
             }
             if (copied) {
-              this.showToast(message);
+              this.showToast(message, 'success', returnFocus);
             } else {
-              this.showToast('Не удалось скопировать', 'error');
+              this.showToast('Не удалось скопировать', 'error', returnFocus);
             }
           },
 
@@ -447,7 +460,7 @@ get alternativeApps() {
   <body>
     <div x-data="subscriptionManager" x-init="init()" x-cloak class="wrapper">
       {# Уведомление «скопировано» (NPVPN-2315): вверху экрана поверх всего, само скрывается через 3 с #}
-      <div class="toast" role="status" :class="{ 'toast--visible': toastVisible }" :aria-hidden="!toastVisible">
+      <div class="toast" role="status" :class="{ 'toast--visible': toastVisible }" :inert="toastVisible ? null : ''">
         <svg x-show="toastKind === 'success'" class="toast__icon" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="11.9999" r="9" fill="#2FC26E" />
           <path d="M15 10L11 14L9 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="white" />
@@ -458,7 +471,7 @@ get alternativeApps() {
           <path d="M14 10L10 14M10 10L14 14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         <span class="toast__text" x-text="toast"></span>
-        <button type="button" class="toast__close" aria-label="Закрыть" @click="hideToast()">
+        <button type="button" class="toast__close" x-ref="toastClose" aria-label="Закрыть" @click="hideToast()">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 7L12 12M12 12L17 17M12 12L7 17M12 12L17 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
@@ -671,12 +684,13 @@ get alternativeApps() {
             </div>
     
             <div x-show="selectedOs === 'QR'" class="qr-wrapper">
-                <p class="qr-title">Отсканируйте для подключения другого устройства</p>
+                <p class="qr-title">Отсканируйте для подключения другого&nbsp;устройства</p>
                 {# QR с логотипом «VPN» по центру — одна картинка, рисует scripts/qr-code.js (как
                    реферальный QR бота, src/utils/ref_qr.py) #}
                 <div class="qr-code">
                   <div id="qrcode-main" data-logo-src="{{ sub_statics }}assets/qr-logo.png?v={{ static_v }}"></div>
                 </div>
+                {{ copy_key_button('Скопировать ключ') }}
             </div>
     
             {# Вкладки платформ (макет NPVPN-2315): серые карточки «Скачайте приложение» и «Добавьте ключ»,
@@ -775,10 +789,7 @@ get alternativeApps() {
                         x-text="`Добавить ключ в ${selectedApp.name}`"
                       ></a>
                     </template>
-                    <button type="button" class="text-btn copy-key-btn" @click="copyToClipboard(user.subscription_url)">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 3H4V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 7H20V19C20 20.1046 19.1046 21 18 21H10C8.89543 21 8 20.1046 8 19V7Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                      <span>Копировать ключ</span>
-                    </button>
+                    {{ copy_key_button() }}
                   </div>
                 </section>
               </template>
