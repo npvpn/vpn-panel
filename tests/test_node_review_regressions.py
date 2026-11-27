@@ -227,15 +227,23 @@ def test_unreachable_old_endpoint_connects_to_new_address(monkeypatch, node_data
         return node
 
     monkeypatch.setattr(ops, "add_node", add)
-    connect = Mock(return_value=True)
-    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+
+    def connect(*_args, **_kwargs):
+        assert 7 not in ops.xray.nodes
+        with Session(engine) as db:
+            current = db.get(Node, 7)
+            assert current.config_apply_endpoint["address"] == "192.0.2.2"
+        return True
+
+    connect_mock = Mock(side_effect=connect)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect_mock)
     scheduler.execute = ops._execute_node_operation
     future = ops.apply_node(7, recover=True)
     executor.run()
 
     assert future.result() is True
     assert seen == ["192.0.2.1"]
-    connect.assert_called_once()
+    connect_mock.assert_called_once()
     with Session(engine) as db:
         row = db.get(Node, 7)
         assert row.address == "192.0.2.2"
@@ -257,13 +265,25 @@ def test_connection_error_on_old_endpoint_connects_to_new_address(monkeypatch, n
         return node
 
     monkeypatch.setattr(ops, "add_node", add)
-    connect = Mock(return_value=True)
-    monkeypatch.setattr(ops, "_connect_node_impl", connect)
+
+    def connect(*_args, **_kwargs):
+        assert 7 not in ops.xray.nodes
+        with Session(engine) as db:
+            current = db.get(Node, 7)
+            assert current.config_apply_endpoint["address"] == "192.0.2.2"
+        return True
+
+    connect_mock = Mock(side_effect=connect)
+    monkeypatch.setattr(ops, "_connect_node_impl", connect_mock)
     scheduler.execute = ops._execute_node_operation
     future = ops.apply_node(7, recover=True)
     executor.run()
     assert future.result() is True
-    connect.assert_called_once()
+    connect_mock.assert_called_once()
+    with Session(engine) as db:
+        row = db.get(Node, 7)
+        assert row.config_apply_pending is False
+        assert row.config_apply_endpoint is None
 
 
 def test_http_error_from_old_endpoint_stays_pending(monkeypatch, node_database):
