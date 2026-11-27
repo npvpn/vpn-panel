@@ -6,7 +6,8 @@ export type HappPreviewScenario =
   | "revoked"
   | "unsupported"
   | "device"
-  | "bs";
+  | "bs"
+  | "torrent";
 
 export type HappPreviewHost = {
   remark: string;
@@ -22,7 +23,7 @@ export type HappPreviewServer = {
 };
 
 const SCENARIO_SERVER_FIELD: Record<
-  Exclude<HappPreviewScenario, "normal" | "bs">,
+  Exclude<HappPreviewScenario, "normal" | "bs" | "torrent">,
   SubscriptionMessageServerField
 > = {
   expired: "sub_expired_server_text",
@@ -40,6 +41,7 @@ const SCENARIO_ANNOUNCE_FIELD: Record<
   unsupported: "sub_unsupported_client_announce_text",
   device: "sub_device_limit_announce_text",
   bs: "sub_bs_limit_announce_text",
+  torrent: "sub_torrent_block_announce_text",
 };
 
 export const FIELD_SCENARIO: Record<string, HappPreviewScenario> = {
@@ -54,6 +56,8 @@ export const FIELD_SCENARIO: Record<string, HappPreviewScenario> = {
   sub_device_limit_server_text: "device",
   sub_bs_limit_announce_text: "bs",
   sub_bs_limit_server_text: "bs",
+  sub_torrent_block_announce_text: "torrent",
+  sub_torrent_block_server_text: "torrent",
 };
 
 export function flattenHosts(
@@ -98,6 +102,15 @@ export function previewServers(
     const stub = bsStubRemark(settings.sub_bs_limit_server_text) || "—";
     return hosts.map((host) =>
       host.isBs
+        ? { name: stub, isStub: true }
+        : { name: host.remark || "—", isStub: false }
+    );
+  }
+  if (scenario === "torrent") {
+    const stub = bsStubRemark(settings.sub_torrent_block_server_text) || "—";
+    if (hosts.length === 0) return [{ name: stub, isStub: true }];
+    return hosts.map((host, index) =>
+      index === 0
         ? { name: stub, isStub: true }
         : { name: host.remark || "—", isStub: false }
     );

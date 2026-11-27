@@ -14,6 +14,7 @@ from . import (
     settings,
     subscription,
     system,
+    torrent_block,
     user,
     user_activity,
     user_template,
@@ -31,6 +32,7 @@ routers: list[APIRouter] = [
     node.router,
     settings.router,  # type: ignore[has-type]
     subscription.router,
+    torrent_block.router,  # type: ignore[has-type]
     system.router,
     user_template.router,
     user.router,

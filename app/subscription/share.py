@@ -12,6 +12,7 @@ from app import xray
 from app.subscription.address_context import AddressContext
 from app.subscription.bs_context import ZERO_STUB, BsContext, StubEndpoint
 from app.subscription.host_candidates import compose_endpoints, prepare_candidates
+from app.subscription.torrent_context import TorrentContext
 from app.utils.system import get_public_ip, get_public_ipv6, readable_size
 from app.xray.host_injection import InjectionError
 
@@ -82,6 +83,7 @@ def _render(
     subset: AddressContext | None = None,
     bs_usage_suffix: Callable[[], str] | None = None,
     template_for: Callable[[dict], dict] | None = None,
+    torrent: TorrentContext | None = None,
 ) -> list | str:
     """Единая точка рендера: формат → класс конфига → process_inbounds_and_tags.
 
@@ -104,6 +106,7 @@ def _render(
         subset=subset,
         bs_usage_suffix=bs_usage_suffix,
         template_for=template_for,
+        torrent=torrent,
     )
 
 
@@ -115,6 +118,7 @@ def generate_v2ray_links(
     bs: BsContext | None = None,
     stub: StubEndpoint | None = None,
     subset: AddressContext | None = None,
+    torrent: TorrentContext | None = None,
 ) -> list:
     from app.services.xray_templates import build_template_lookup, get_cached_active_bodies
 
@@ -131,6 +135,7 @@ def generate_v2ray_links(
             stub=stub,
             subset=subset,
             template_for=lambda host: lookup(host.get("client_config_id")),
+            torrent=torrent,
         ),
     )
 
@@ -150,8 +155,10 @@ def generate_subscription(
     db: "Session | None" = None,
     subset: AddressContext | None = None,
     bs_usage_suffix: Callable[[], str] | None = None,
+    torrent: TorrentContext | None = None,
 ) -> str:
     bs = bs or BsContext.empty()
+    torrent = torrent or TorrentContext.empty()
     from app.models.settings import overlay_subscription_messages
     from config import USE_CUSTOM_JSON_DEFAULT
 
@@ -282,6 +289,7 @@ def generate_subscription(
                 subset=subset,
                 bs_usage_suffix=bs_usage_suffix,
                 template_for=lambda host: template_lookup(host.get("client_config_id")),
+                torrent=torrent,
             ),
         )
         if device_limit_links:
@@ -301,6 +309,7 @@ def generate_subscription(
                 subset=subset,
                 bs_usage_suffix=bs_usage_suffix,
                 template_for=lambda host: template_lookup(host.get("client_config_id")),
+                torrent=torrent,
             ),
         )
     elif render_format == "v2ray-json":
@@ -342,6 +351,7 @@ def generate_subscription(
                 subset=subset,
                 bs_usage_suffix=bs_usage_suffix,
                 template_for=lambda host: template_lookup(host.get("client_config_id")),
+                torrent=torrent,
             ),
         )
     else:
@@ -468,8 +478,10 @@ def process_inbounds_and_tags(
     subset: AddressContext | None = None,
     bs_usage_suffix: Callable[[], str] | None = None,
     template_for: Callable[[dict], dict] | None = None,
+    torrent: TorrentContext | None = None,
 ) -> list | str:
     bs = bs or BsContext.empty()
+    torrent = torrent or TorrentContext.empty()
     stub = stub or ZERO_STUB
     if template_for is None:
         template_for = (
@@ -492,6 +504,7 @@ def process_inbounds_and_tags(
         stub=stub,
         subset=subset,
         panel_bot_count=getattr(xray, "panel_bot_count", None),
+        torrent=torrent,
     )
     bs_usage_label = None
 
@@ -517,11 +530,26 @@ def process_inbounds_and_tags(
 
             add_information_placeholder(conf, item["remark"])
             continue
+        if item.get("torrent_blocked") and item.get("injection") is None:
+            item["host_inbound"]["port"] = stub.port
+            conf.add(
+                remark=torrent.stub_text,
+                address=stub.address,
+                inbound=item["host_inbound"],
+                settings=item["settings"],
+            )
+            continue
         if item["injection"] is not None:
             if not isinstance(conf, V2rayJsonConfig):
                 continue
             try:
-                endpoints, is_bs, all_blocked = compose_endpoints(item, candidates)
+                if item.get("torrent_blocked"):
+                    conf.add_blocked(torrent.stub_text, stub)
+                    continue
+                endpoints, is_bs, all_blocked, source_torrent = compose_endpoints(item, candidates)
+                if source_torrent:
+                    conf.add_blocked(torrent.stub_text, stub)
+                    continue
                 if not endpoints:
                     if all_blocked:
                         conf.add_blocked(bs.stub_text, stub)

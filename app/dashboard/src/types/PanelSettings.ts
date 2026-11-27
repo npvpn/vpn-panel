@@ -16,11 +16,13 @@ export type PanelSettings = {
   sub_device_limit_announce_text: string;
   sub_unsupported_client_announce_text: string;
   sub_bs_limit_announce_text: string;
+  sub_torrent_block_announce_text: string;
   sub_revoked_server_text: string[];
   sub_expired_server_text: string[];
   sub_device_limit_server_text: string[];
   sub_unsupported_client_server_text: string[];
   sub_bs_limit_server_text: string[];
+  sub_torrent_block_server_text: string[];
   sub_device_limit_hard_mode: boolean;
   sub_update_interval: string;
 };
@@ -30,4 +32,5 @@ export type SubscriptionMessageServerField =
   | "sub_expired_server_text"
   | "sub_device_limit_server_text"
   | "sub_unsupported_client_server_text"
-  | "sub_bs_limit_server_text";
+  | "sub_bs_limit_server_text"
+  | "sub_torrent_block_server_text";

@@ -208,6 +208,28 @@ def test_announce_uses_bs_limit_text_when_nodes_blocked():
     assert text == "БС-лимит исчерпан"
 
 
+def test_announce_prefers_torrent_text_over_bs():
+    from app.subscription.bs_context import BsContext
+    from app.subscription.subscription_service import resolve_announce_text
+    from app.subscription.torrent_context import TorrentContext
+
+    text = resolve_announce_text(
+        object(),
+        is_revoked=False,
+        is_expired=False,
+        device_limited=False,
+        unsupported_blocks=False,
+        bs=BsContext(blocked_node_ids=frozenset({7}), stub_text="лимит"),
+        torrent=TorrentContext(frozenset({1}), "торрент"),
+        bot_settings=_announce_settings(
+            sub_bs_limit_announce_text="БС-лимит исчерпан",
+            sub_torrent_block_announce_text="Торрент заблокирован",
+        ),
+        get_user_note=lambda _user, template: template,
+    )
+    assert text == "Торрент заблокирован"
+
+
 def test_announce_ignores_bs_text_without_blocks():
     from app.subscription.bs_context import BsContext
     from app.subscription.subscription_service import resolve_announce_text

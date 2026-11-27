@@ -33,6 +33,7 @@ from app.subscription.subscription_service import (
     resolve_subscription_plan_by_client_type,
     resolve_subscription_plan_by_user_agent,
 )
+from app.subscription.torrent_context_builder import build_torrent_context
 from app.subscription.user_info import (
     get_subscription_user_info,
     get_user_note,
@@ -183,6 +184,13 @@ def build_render_context(
     # Хосты заблокированной БС-ноды (матч по связям host→nodes) остаются в подписке на
     # своих местах, но рендерятся как мёртвые заглушки (см. generate_subscription).
     bs = build_bs_context(db, dbuser, is_revoked=is_revoked, is_expired=is_expired, bot_settings=bot_settings)
+    torrent = build_torrent_context(
+        db,
+        cast(int, dbuser.id),
+        is_revoked=is_revoked,
+        is_expired=is_expired,
+        bot_settings=bot_settings,
+    )
     # NPVPN-2072: периоды ротации берём из кэша хостов — настройка живёт на хосте, и у
     # разных хостов эпохи стартуют в разные сутки, то есть снимков весов нужно несколько.
     subset = build_address_context(
@@ -199,6 +207,7 @@ def build_render_context(
         device_limited=device_limited,
         unsupported_blocks=unsupported_blocks,
         bs=bs,
+        torrent=torrent,
         bot_settings=bot_settings,
         get_user_note=get_user_note,
     )
@@ -227,6 +236,7 @@ def build_render_context(
         bot_settings=bot_settings,
         panel_settings=panel_settings,
         bs=bs,
+        torrent=torrent,
         subset=subset,
         response_headers=response_headers,
         user_id=cast(int, dbuser.id),
@@ -256,6 +266,7 @@ def render_subscription(db: Session, ctx: SubscriptionRenderContext, plan: Subsc
         unsupported_client=ctx.unsupported_blocks,
         settings=ctx.bot_settings,
         bs=ctx.bs,
+        torrent=ctx.torrent,
         db=db,
         subset=ctx.subset,
         bs_usage_suffix=bs_usage_suffix,

@@ -77,11 +77,13 @@ const emptySettings: PanelSettings = {
   sub_device_limit_announce_text: "",
   sub_unsupported_client_announce_text: "",
   sub_bs_limit_announce_text: "",
+  sub_torrent_block_announce_text: "",
   sub_revoked_server_text: [],
   sub_expired_server_text: [],
   sub_device_limit_server_text: [],
   sub_unsupported_client_server_text: [],
   sub_bs_limit_server_text: [],
+  sub_torrent_block_server_text: [],
   sub_device_limit_hard_mode: false,
   sub_update_interval: "",
 };
@@ -92,6 +94,7 @@ const SERVER_TEXT_FIELDS: SubscriptionMessageServerField[] = [
   "sub_device_limit_server_text",
   "sub_unsupported_client_server_text",
   "sub_bs_limit_server_text",
+  "sub_torrent_block_server_text",
 ];
 
 type ListFieldTexts = Record<SubscriptionMessageServerField, string>;
@@ -102,6 +105,16 @@ const toList = (value: string) =>
     .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
+// Имя заглушки торрента — одно. Запятая остаётся в строке, режет только перевод строки.
+const toSingleServerName = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+const serverTextList = (field: SubscriptionMessageServerField, value: string) =>
+  field === "sub_torrent_block_server_text"
+    ? toSingleServerName(value)
+    : toList(value);
 const toListFieldTexts = (settings: PanelSettings): ListFieldTexts => ({
   sub_revoked_server_text: toText(settings.sub_revoked_server_text),
   sub_expired_server_text: toText(settings.sub_expired_server_text),
@@ -110,6 +123,7 @@ const toListFieldTexts = (settings: PanelSettings): ListFieldTexts => ({
     settings.sub_unsupported_client_server_text
   ),
   sub_bs_limit_server_text: toText(settings.sub_bs_limit_server_text),
+  sub_torrent_block_server_text: toText(settings.sub_torrent_block_server_text),
 });
 
 const copyList = (value: string[] | undefined) =>
@@ -148,6 +162,7 @@ const mergeSettings = (
     data.sub_unsupported_client_server_text
   ),
   sub_bs_limit_server_text: copyList(data.sub_bs_limit_server_text),
+  sub_torrent_block_server_text: copyList(data.sub_torrent_block_server_text),
   primary_jwt_secret:
     keepPrimary !== undefined ? keepPrimary : data.primary_jwt_secret || "",
 });
@@ -172,6 +187,7 @@ const MESSAGE_TEXT_FIELDS = [
   "sub_device_limit_announce_text",
   "sub_unsupported_client_announce_text",
   "sub_bs_limit_announce_text",
+  "sub_torrent_block_announce_text",
 ] as const;
 
 const sameList = (left: string[], right: string[]) =>
@@ -427,7 +443,7 @@ export const PanelSettingsDialog: FC = () => {
     value: string
   ) => {
     setListFieldTexts((current) => ({ ...current, [field]: value }));
-    updateSettings({ [field]: toList(value) });
+    updateSettings({ [field]: serverTextList(field, value) });
   };
 
   // видны только тексты выбранного сценария; скрытые поля остаются в форме,
@@ -491,6 +507,10 @@ export const PanelSettingsDialog: FC = () => {
       "sub_bs_limit_announce_text",
       "botSettings.subBsLimitAnnounceText"
     );
+    addMessageText(
+      "sub_torrent_block_announce_text",
+      "botSettings.subTorrentBlockAnnounceText"
+    );
     const addMessageList = (
       field: SubscriptionMessageServerField,
       labelKey: string
@@ -522,6 +542,10 @@ export const PanelSettingsDialog: FC = () => {
     addMessageList(
       "sub_bs_limit_server_text",
       "botSettings.subBsLimitServerText"
+    );
+    addMessageList(
+      "sub_torrent_block_server_text",
+      "botSettings.subTorrentBlockServerText"
     );
     if (settings.bs_monthly_limit !== target.bs_monthly_limit) {
       rows.push({
@@ -606,6 +630,9 @@ export const PanelSettingsDialog: FC = () => {
         listFieldTexts.sub_unsupported_client_server_text
       ),
       sub_bs_limit_server_text: toList(listFieldTexts.sub_bs_limit_server_text),
+      sub_torrent_block_server_text: toSingleServerName(
+        listFieldTexts.sub_torrent_block_server_text
+      ),
     };
     fetch("/settings/panel", { method: "PUT", body })
       .then((data: PanelSettings) => {
@@ -950,6 +977,24 @@ export const PanelSettingsDialog: FC = () => {
                               }
                             />
                           </FormControl>
+                          <FormControl
+                            display={fieldDisplay(
+                              "sub_torrent_block_announce_text"
+                            )}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subTorrentBlockAnnounceText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={settings.sub_torrent_block_announce_text}
+                              onChange={(e) =>
+                                updateSettings({
+                                  sub_torrent_block_announce_text:
+                                    e.target.value,
+                                })
+                              }
+                            />
+                          </FormControl>
                         </VStack>
                       </Box>
                       <Box
@@ -1072,6 +1117,29 @@ export const PanelSettingsDialog: FC = () => {
                             />
                             <FormHelperText>
                               {t("botSettings.serverTextHint")}
+                            </FormHelperText>
+                          </FormControl>
+                          <FormControl
+                            display={fieldDisplay(
+                              "sub_torrent_block_server_text"
+                            )}
+                          >
+                            <FormLabel>
+                              {t("botSettings.subTorrentBlockServerText")}
+                            </FormLabel>
+                            <AutoResizeTextarea
+                              value={
+                                listFieldTexts.sub_torrent_block_server_text
+                              }
+                              onChange={(e) =>
+                                updateListField(
+                                  "sub_torrent_block_server_text",
+                                  e.target.value
+                                )
+                              }
+                            />
+                            <FormHelperText>
+                              {t("botSettings.torrentServerTextHint")}
                             </FormHelperText>
                           </FormControl>
                         </VStack>
