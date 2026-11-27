@@ -151,7 +151,7 @@ export const Header: FC<HeaderProps> = ({ actions }) => {
                     maxW="200px"
                     fontSize="sm"
                     icon={<BotSettingsIcon />}
-                    onClick={onEditingBotSettings.bind(null, true)}
+                    onClick={() => onEditingBotSettings(true)}
                   >
                     {t("header.botSettings")}
                   </MenuItem>

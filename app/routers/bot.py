@@ -1,14 +1,8 @@
-from typing import Annotated
-from urllib.parse import quote
-
-import requests
-from decouple import config
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, StrictBool, ValidationError
 
-from app import logger, xray
-from app.db import GetDB, Session, crud, get_db
-from app.models.admin import Admin, oauth2_scheme
+from app import xray
+from app.db import Session, crud, get_db
+from app.models.admin import Admin
 from app.models.bot import (
     DEFAULT_BOT_SETTINGS,
     BotAdminSyncUpdate,
@@ -23,80 +17,6 @@ from app.services import managed_settings as managed_svc
 from app.utils import responses
 
 router = APIRouter(tags=["Bot"], prefix="/api", responses={401: responses._401})
-
-
-class BotLifecycleUpdate(BaseModel):
-    is_active: StrictBool
-
-
-class BotLifecycle(BotLifecycleUpdate):
-    active_subscriptions: int
-
-
-def _require_lifecycle_admin(token: Annotated[str, Depends(oauth2_scheme)]) -> Admin:
-    with GetDB() as db:
-        return Admin.check_sudo_admin(db=db, token=token)
-
-
-def _bot_lifecycle(username: str, update: BotLifecycleUpdate | None = None):
-    url = config("PANEL_BOT_LIFECYCLE_URL", default="").strip().rstrip("/")
-    token = config("PANEL_BOT_LIFECYCLE_TOKEN", default="").strip()
-    if not url or not token:
-        raise HTTPException(status_code=404, detail="bot_lifecycle_unavailable")
-    with GetDB() as db:
-        bot = crud.get_bot(db, username)
-        if bot is None or bot.source_bot_id is None:
-            raise HTTPException(status_code=404, detail="bot_lifecycle_unavailable")
-        username = str(bot.username)
-        source_id = str(bot.source_bot_id)
-    params = {"source_bot_id": source_id}
-    method = "GET" if update is None else "PATCH"
-    if update is not None:
-        params["active"] = str(update.is_active).lower()
-    try:
-        response = requests.request(
-            method,
-            f"{url}/{quote(username, safe='')}/lifecycle",
-            params=params,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=(3, 15),
-            allow_redirects=False,
-        )
-        if response.status_code == 404 and response.json() == {"detail": "bot_lifecycle_unavailable"}:
-            raise HTTPException(status_code=404, detail="bot_lifecycle_unavailable")
-        if response.status_code == 409:
-            raise HTTPException(status_code=409, detail="bot_lifecycle_busy")
-        if response.status_code != 200:
-            logger.warning(
-                "Bot lifecycle upstream error: source_id=%s method=%s status=%s",
-                source_id,
-                method,
-                response.status_code,
-            )
-            raise HTTPException(status_code=502, detail="bot_lifecycle_failed")
-        model = BotLifecycle if update is None else BotLifecycleUpdate
-        return model.model_validate(response.json())
-    except (requests.RequestException, ValidationError) as exc:
-        logger.warning(
-            "Bot lifecycle request failed: source_id=%s method=%s error=%s", source_id, method, type(exc).__name__
-        )
-        raise HTTPException(status_code=502, detail="bot_lifecycle_failed") from exc
-
-
-@router.get("/bots/{bot_username}/lifecycle", response_model=BotLifecycle)
-def get_bot_lifecycle(bot_username: str, admin: Annotated[Admin, Depends(_require_lifecycle_admin)]):
-    del admin
-    return _bot_lifecycle(bot_username)
-
-
-@router.patch("/bots/{bot_username}/lifecycle", response_model=BotLifecycleUpdate)
-def update_bot_lifecycle(
-    bot_username: str,
-    payload: BotLifecycleUpdate,
-    admin: Annotated[Admin, Depends(_require_lifecycle_admin)],
-):
-    del admin
-    return _bot_lifecycle(bot_username, payload)
 
 
 def _bot_response(db: Session, bot) -> dict:

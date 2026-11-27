@@ -15,6 +15,10 @@ import {
   FormLabel,
   IconButton,
   Input,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuList,
   Text,
   Modal,
   ModalBody,
@@ -23,13 +27,14 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
+  Spinner,
   Switch,
   Tab,
   TabList,
   TabPanel,
   TabPanels,
-  Tooltip,
   Tabs,
+  Tooltip,
   useToast,
   VStack,
   HStack,
@@ -37,8 +42,6 @@ import {
   PopoverTrigger,
   PopoverContent,
   PopoverBody,
-  Text as ChakraText,
-  useOutsideClick,
   InputGroup,
   InputLeftElement,
   SimpleGrid,
@@ -51,132 +54,11 @@ import { fetch } from "service/http";
 import { Bot, BotSettings } from "types/Bot";
 import {
   ChevronDownIcon,
-  InformationCircleIcon,
+  EllipsisHorizontalIcon,
   MagnifyingGlassIcon,
+  PlusIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
-
-type BotLifecycle = {
-  is_active: boolean;
-  active_subscriptions: number;
-};
-
-const BotLifecycleButton: FC<{ username: string }> = ({ username }) => {
-  const { t } = useTranslation();
-  const toast = useToast();
-  const [state, setState] = useState<BotLifecycle | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  const endpoint = `/bots/${encodeURIComponent(username)}/lifecycle`;
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch<BotLifecycle>(endpoint, { signal: controller.signal, retry: 0 })
-      .then((result) => {
-        if (!controller.signal.aborted) setState(result);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        if (error?.data?.detail === "bot_lifecycle_unavailable") {
-          setUnavailable(true);
-        } else {
-          toast({ title: t("botSettings.lifecycleError"), status: "error" });
-        }
-      });
-    return () => controller.abort();
-  }, [endpoint, t, toast]);
-
-  if (!state) {
-    return unavailable ? (
-      <HStack flex={1} spacing={1}>
-        <Button flex={1} variant="outline" isDisabled>
-          {t("botSettings.disableBot")}
-        </Button>
-        <Tooltip label={t("botSettings.lifecycleUnavailable")} hasArrow placement="top">
-          <IconButton
-            aria-label={t("botSettings.lifecycleUnavailable")}
-            icon={<InformationCircleIcon width={18} height={18} />}
-            variant="ghost"
-            size="sm"
-            flexShrink={0}
-          />
-        </Tooltip>
-      </HStack>
-    ) : null;
-  }
-
-  const action = t(state.is_active ? "botSettings.disableBot" : "botSettings.enableBot");
-  const openConfirmation = async () => {
-    setSaving(true);
-    try {
-      setState(await fetch<BotLifecycle>(endpoint, { retry: 0 }));
-      setConfirmOpen(true);
-    } catch {
-      toast({ title: t("botSettings.lifecycleError"), status: "error" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const update = async () => {
-    setSaving(true);
-    try {
-      const updated = await fetch<Pick<BotLifecycle, "is_active">>(endpoint, {
-        method: "PATCH",
-        body: { is_active: !state.is_active },
-      });
-      setState({ ...state, ...updated });
-      setConfirmOpen(false);
-    } catch {
-      toast({ title: t("botSettings.lifecycleError"), status: "error" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <>
-      <Button flex={1} variant="outline" onClick={openConfirmation} isLoading={saving && !confirmOpen}>
-        {action}
-      </Button>
-      <AlertDialog
-        isOpen={confirmOpen}
-        leastDestructiveRef={cancelRef}
-        onClose={() => setConfirmOpen(false)}
-        closeOnEsc={!saving}
-        closeOnOverlayClick={!saving}
-      >
-        <AlertDialogOverlay>
-          <AlertDialogContent>
-            <AlertDialogHeader>{action} @{username}?</AlertDialogHeader>
-            <AlertDialogBody>
-              {state.is_active && (
-                <Text fontWeight="semibold" mb={3}>
-                  {t("botSettings.activeSubscriptions", { count: state.active_subscriptions })}
-                </Text>
-              )}
-              <Text>{t(state.is_active ? "botSettings.disableImpact" : "botSettings.enableImpact")}</Text>
-            </AlertDialogBody>
-            <AlertDialogFooter>
-              <Button ref={cancelRef} onClick={() => setConfirmOpen(false)} isDisabled={saving}>
-                {t("cancel")}
-              </Button>
-              <Button
-                ml={3}
-                colorScheme={state.is_active ? "red" : "green"}
-                onClick={update}
-                isLoading={saving}
-              >
-                {action}
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialogOverlay>
-      </AlertDialog>
-    </>
-  );
-};
 
 const emptySettings: BotSettings = {
   sub_support_url: "",
@@ -189,17 +71,63 @@ const emptySettings: BotSettings = {
   show_ads: true,
 };
 
+type ServiceView =
+  | { mode: "create"; returnTo: string }
+  | { mode: "edit"; username: string };
+
+const serviceView = (username?: string | null): ServiceView =>
+  username ? { mode: "edit", username } : { mode: "create", returnTo: "" };
+
+const NEW_BOT_DRAFT_KEY = "botSettings_draft_new";
+const getDraftKey = (username: string) =>
+  username ? `botSettings_draft_${username}` : NEW_BOT_DRAFT_KEY;
+
+const ServiceSettingSwitch: FC<{
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}> = ({ label, description, checked, disabled, onChange }) => (
+  <FormControl
+    display="flex"
+    alignItems="center"
+    gap={4}
+    borderWidth="1px"
+    borderRadius="md"
+    px={4}
+    py={3}
+    isDisabled={disabled}
+  >
+    <Box flex="1" minW={0}>
+      <FormLabel mb={0}>{label}</FormLabel>
+      <FormHelperText mt={1}>{description}</FormHelperText>
+    </Box>
+    <Switch
+      flexShrink={0}
+      colorScheme="primary"
+      isChecked={checked}
+      onChange={(event) => onChange(event.target.checked)}
+    />
+  </FormControl>
+);
+
 export const BotSettingsDialog: FC = () => {
-  const { isEditingBotSettings, onEditingBotSettings } = useDashboard();
+  const { isEditingBotSettings, botSettingsUsername, onEditingBotSettings } =
+    useDashboard();
   const { t } = useTranslation();
   const toast = useToast();
   const [bots, setBots] = useState<Bot[]>([]);
-  const [selectedBot, setSelectedBot] = useState("");
-  const [isInitialLoading, setIsInitialLoading] = useState(false);
+  const [view, setView] = useState<ServiceView>(() => serviceView());
+  const selectedBot = view.mode === "edit" ? view.username : "";
+  const isCreatingBot = view.mode === "create";
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isBotSettingsLoading, setIsBotSettingsLoading] = useState(false);
   const [botSettingsLoaded, setBotSettingsLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [botToDelete, setBotToDelete] = useState<Bot | null>(null);
   const [syncingAdmin, setSyncingAdmin] = useState(false);
   const [defaultSettings, setDefaultSettings] =
     useState<BotSettings>(emptySettings);
@@ -214,35 +142,39 @@ export const BotSettingsDialog: FC = () => {
   const [isBotListOpen, setIsBotListOpen] = useState(false);
   const [isFirstServiceConfirmOpen, setIsFirstServiceConfirmOpen] =
     useState(false);
-  // const [didAutoSelect, setDidAutoSelect] = useState(false);
-  const NEW_BOT_DRAFT_KEY = "botSettings_draft_new";
-
-  const getDraftKey = (username: string) =>
-    username ? `botSettings_draft_${username}` : NEW_BOT_DRAFT_KEY;
-
-  const saveDraftTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const botSearchRef = useRef<HTMLInputElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const cancelFirstServiceRef = useRef<HTMLButtonElement>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
   const botsRequestId = useRef(0);
-  const loading = isInitialLoading || isBotSettingsLoading;
+  const isMutating = saving || creating || deleting || syncingAdmin;
+  const selectedBotModel = useMemo(
+    () => bots.find((bot) => bot.username === selectedBot),
+    [bots, selectedBot]
+  );
+  const selectedBotTitle = selectedBotModel?.title || "";
+  const searchQuery = botSearch.trim().toLowerCase().replace(/^@/, "");
+  const matchingBots = bots.filter(
+    (bot) =>
+      bot.username.toLowerCase().includes(searchQuery) ||
+      (bot.title || "").toLowerCase().includes(searchQuery)
+  );
 
   const saveDraft = (
     newSettings: BotSettings,
     newUsername: string,
     newTitle: string
   ) => {
-    const key = getDraftKey(selectedBot);
-    if (saveDraftTimeout.current) clearTimeout(saveDraftTimeout.current);
-    saveDraftTimeout.current = setTimeout(() => {
-      localStorage.setItem(
-        key,
-        JSON.stringify({
-          settings: newSettings,
-          botUsername: newUsername,
-          botTitle: newTitle,
-          savedAt: Date.now(),
-        })
-      );
-    }, 400);
+    localStorage.setItem(
+      getDraftKey(selectedBot),
+      JSON.stringify({
+        settings: newSettings,
+        botUsername: newUsername,
+        botTitle: newTitle,
+        savedAt: Date.now(),
+      })
+    );
+    setHasDraft(false);
   };
 
   const updateSettings = (patch: Partial<BotSettings>) => {
@@ -271,20 +203,15 @@ export const BotSettingsDialog: FC = () => {
   };
 
   useEffect(() => {
-    return () => {
-      if (saveDraftTimeout.current) clearTimeout(saveDraftTimeout.current);
-    };
-  }, []);
-
-  useEffect(() => {
     const requestId = ++botsRequestId.current;
     if (!isEditingBotSettings) {
+      setIsInitialLoading(true);
       return () => {
         ++botsRequestId.current;
       };
     }
     setIsInitialLoading(true);
-    setSelectedBot("");
+    setView(serviceView(botSettingsUsername));
     setBotUsername("");
     setBotTitle("");
     setBotSearch("");
@@ -303,9 +230,6 @@ export const BotSettingsDialog: FC = () => {
           });
           return;
         }
-        if (loadedBots.length === 1) {
-          setSelectedBot(loadedBots[0].username);
-        }
       }),
       fetch<BotSettings>("/bots/default-settings")
         .then((items) => {
@@ -318,12 +242,10 @@ export const BotSettingsDialog: FC = () => {
     return () => {
       ++botsRequestId.current;
     };
-  }, [isEditingBotSettings]);
+  }, [isEditingBotSettings, botSettingsUsername]);
 
   useEffect(() => {
-    if (!isEditingBotSettings) return;
-
-    if (saveDraftTimeout.current) clearTimeout(saveDraftTimeout.current);
+    if (!isEditingBotSettings || isInitialLoading) return;
 
     if (!selectedBot) {
       setBotUsername("");
@@ -331,15 +253,15 @@ export const BotSettingsDialog: FC = () => {
       replaceSettings(emptySettings);
       setServerSettings(emptySettings);
       setBotSettingsLoaded(false);
-      const newDraft = localStorage.getItem(NEW_BOT_DRAFT_KEY);
-      setHasDraft(!!newDraft);
+      setIsBotSettingsLoading(false);
+      setHasDraft(!!localStorage.getItem(NEW_BOT_DRAFT_KEY));
       return;
     }
-    const selected = bots.find((bot) => bot.username === selectedBot);
-    setBotUsername(selected?.username || "");
-    setBotTitle(selected?.title || "");
+    setBotUsername(selectedBot);
+    setBotTitle(selectedBotTitle);
     setIsBotSettingsLoading(true);
     setBotSettingsLoaded(false);
+    setHasDraft(false);
 
     let cancelled = false;
 
@@ -369,7 +291,7 @@ export const BotSettingsDialog: FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [isEditingBotSettings, selectedBot, bots]);
+  }, [isEditingBotSettings, isInitialLoading, selectedBot, selectedBotTitle]);
 
   const restoreDraft = () => {
     const key = getDraftKey(selectedBot);
@@ -393,7 +315,6 @@ export const BotSettingsDialog: FC = () => {
       managed ? selectedBotModel?.username || "" : parsed.botUsername
     );
     setBotTitle(managed ? selectedBotModel?.title || "" : parsed.botTitle);
-    localStorage.removeItem(key);
     setHasDraft(false);
   };
 
@@ -404,15 +325,35 @@ export const BotSettingsDialog: FC = () => {
 
   const close = () => {
     setIsFirstServiceConfirmOpen(false);
+    setBotToDelete(null);
+    setIsBotListOpen(false);
     onEditingBotSettings(false);
   };
 
-  const selectedBotModel = useMemo(
-    () => bots.find((bot) => bot.username === selectedBot),
-    [bots, selectedBot]
-  );
+  const changeView = (nextView: ServiceView) => {
+    setBotSettingsLoaded(false);
+    setIsBotSettingsLoading(nextView.mode === "edit");
+    setHasDraft(false);
+    setActiveTabIndex(0);
+    setIsBotListOpen(false);
+    setView(nextView);
+  };
 
-  const managedState = settings.managed || selectedBotModel?.managed || null;
+  const startCreating = () => {
+    changeView({ mode: "create", returnTo: selectedBot });
+  };
+
+  const cancelEditing = () => {
+    if (view.mode === "create" && view.returnTo) {
+      changeView(serviceView(view.returnTo));
+    } else {
+      close();
+    }
+  };
+
+  const managedState = selectedBot
+    ? settings.managed || selectedBotModel?.managed || null
+    : null;
   const isManaged = !!managedState;
   const fieldHint = (hintKey: string) =>
     isManaged ? t("botSettings.managedFieldHint") : t(hintKey);
@@ -541,11 +482,14 @@ export const BotSettingsDialog: FC = () => {
       .then((updated) => {
         replaceSettings(updated);
         return fetchBots().then(() => {
-          setSelectedBot(targetUsername);
+          setView(serviceView(targetUsername));
         });
       })
       .then(() => {
         localStorage.removeItem(getDraftKey(targetUsername));
+        if (targetUsername !== selectedBot) {
+          localStorage.removeItem(getDraftKey(selectedBot));
+        }
         setHasDraft(false);
         toast({
           title: t("botSettings.saved"),
@@ -569,7 +513,8 @@ export const BotSettingsDialog: FC = () => {
   };
 
   const createBot = () => {
-    if (isInitialLoading || !botUsername.trim()) return;
+    if (!isCreatingBot || isInitialLoading || creating || !botUsername.trim())
+      return;
     setCreating(true);
     fetch<Bot>("/bots", {
       method: "POST",
@@ -588,7 +533,7 @@ export const BotSettingsDialog: FC = () => {
         localStorage.removeItem(NEW_BOT_DRAFT_KEY);
         setHasDraft(false);
         return fetchBots().then(() => {
-          setSelectedBot(bot.username);
+          changeView(serviceView(bot.username));
         });
       })
       .then(() => {
@@ -600,11 +545,19 @@ export const BotSettingsDialog: FC = () => {
           position: "top",
         });
       })
+      .catch(() => {
+        toast({
+          title: t("core.generalErrorMessage"),
+          status: "error",
+          isClosable: true,
+        });
+      })
       .finally(() => setCreating(false));
   };
 
   const requestCreateBot = () => {
-    if (isInitialLoading || !botUsername.trim()) return;
+    if (!isCreatingBot || isInitialLoading || creating || !botUsername.trim())
+      return;
     if (bots.length === 0) {
       setIsFirstServiceConfirmOpen(true);
       return;
@@ -612,41 +565,100 @@ export const BotSettingsDialog: FC = () => {
     createBot();
   };
 
+  const deleteBot = () => {
+    if (!botToDelete || deleting) return;
+
+    setDeleting(true);
+    const deletedKey = getDraftKey(botToDelete.username);
+    fetch(`/bots/${encodeURIComponent(botToDelete.username)}`, {
+      method: "DELETE",
+    })
+      .then(() => {
+        setBotToDelete(null);
+        localStorage.removeItem(deletedKey);
+        setHasDraft(false);
+        return fetchBots();
+      })
+      .then((loadedBots) => {
+        changeView(serviceView());
+        if (!loadedBots) return;
+
+        toast({
+          title: t("botSettings.deleted"),
+          status: "success",
+          duration: 2500,
+          isClosable: true,
+          position: "top",
+        });
+      })
+      .catch(() => {
+        toast({
+          title: t("botSettings.deleteError"),
+          status: "error",
+          isClosable: true,
+        });
+      })
+      .finally(() => setDeleting(false));
+  };
+
   return (
     <Modal
-        isOpen={isEditingBotSettings}
-        onClose={close}
-        size={{ base: "full", md: "4xl" }}
-        scrollBehavior="inside"
+      isOpen={isEditingBotSettings}
+      onClose={close}
+      initialFocusRef={closeButtonRef}
+      closeOnEsc={!isMutating}
+      closeOnOverlayClick={!isMutating}
+      size={{ base: "full", md: "4xl" }}
+      scrollBehavior="inside"
+    >
+      <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
+      <ModalContent
+        minH={{ base: "100dvh", md: 0 }}
+        maxH={{ base: "100dvh", md: "90vh" }}
+        display="flex"
+        flexDirection="column"
       >
-        <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
-        <ModalContent maxH="90vh" display="flex" flexDirection="column">
-          <ModalHeader pt={6} pb={4} pr={16}>
-            <HStack justify="space-between" align="center" w="full">
-              <Box>
-                <Text fontSize="lg" fontWeight="semibold">
-                  {t("botSettings.title")}
-                </Text>
-              </Box>
+        <ModalHeader px={6} pr={{ base: 6, md: 16 }} pt={5} pb={4}>
+          <Stack
+            direction={{ base: "column", md: "row" }}
+            align={{ base: "stretch", md: "center" }}
+            justify="space-between"
+            spacing={3}
+          >
+            <Text fontSize="lg" fontWeight="semibold" pr={{ base: 12, md: 0 }}>
+              {t(
+                isCreatingBot ? "botSettings.createTitle" : "botSettings.title"
+              )}
+            </Text>
+            <HStack w={{ base: "full", md: "auto" }} minW={0} spacing={2}>
               <Popover
                 placement="bottom-start"
                 isOpen={isBotListOpen}
+                initialFocusRef={botSearchRef}
                 onClose={() => setIsBotListOpen(false)}
               >
                 <PopoverTrigger>
                   <Button
-                    size="sm"
-                    w={{ base: "full", md: "270px" }}
+                    h="44px"
+                    flex={{ base: 1, md: "0 1 auto" }}
+                    w={{ md: "270px" }}
+                    minW={0}
+                    fontSize="sm"
+                    gap={2}
                     justifyContent="space-between"
+                    isDisabled={isInitialLoading || !bots.length || isMutating}
                     onClick={() => {
                       setBotSearch("");
                       setIsBotListOpen(true);
                     }}
                   >
-                    <Text>
+                    <Text
+                      isTruncated
+                      title={selectedBot ? `@${selectedBot}` : undefined}
+                    >
                       {selectedBot
                         ? `@${selectedBot}`
-                        : t("botSettings.selectBot")}
+                        : t("botSettings.newService")}
                     </Text>
 
                     <ChevronDownIcon
@@ -654,6 +666,7 @@ export const BotSettingsDialog: FC = () => {
                       height={14}
                       color="currentColor"
                       style={{
+                        flexShrink: 0,
                         opacity: 0.6,
                         transform: isBotListOpen
                           ? "rotate(180deg)"
@@ -665,437 +678,517 @@ export const BotSettingsDialog: FC = () => {
                 </PopoverTrigger>
 
                 <PopoverContent
-                  w="280px"
-                  maxH="320px"
+                  w="min(280px, calc(100vw - 32px))"
+                  maxH="280px"
                   overflow="hidden"
                   fontSize="sm"
                 >
-                  <PopoverBody p={2}>
+                  <PopoverBody
+                    p={2}
+                    display="flex"
+                    flexDirection="column"
+                    minH={0}
+                  >
                     <InputGroup size="sm" mb={2}>
                       <InputLeftElement pointerEvents="none">
                         <MagnifyingGlassIcon color="gray.400" width="16px" />
                       </InputLeftElement>
                       <Input
+                        ref={botSearchRef}
                         size="sm"
                         fontSize="sm"
                         height="32px"
                         px={2}
                         placeholder={t("botSettings.botSearchPlaceholder")}
+                        aria-label={t("botSettings.botSearchPlaceholder")}
                         value={botSearch}
-                        autoFocus
                         onChange={(e) => setBotSearch(e.target.value)}
-                        mb={2}
                       />
                     </InputGroup>
 
                     <VStack
                       align="stretch"
-                      maxH="240px"
+                      minH={0}
+                      maxH="224px"
                       overflowY="auto"
                       spacing={1}
                     >
-                      <Box
-                        px={2}
-                        py={1}
-                        cursor="pointer"
-                        _hover={{ bg: "gray.100", _dark: { bg: "gray.700" } }}
-                        onClick={() => {
-                          setSelectedBot("");
-                          setBotSearch("");
-                          setIsBotListOpen(false);
-                        }}
-                      >
-                        {t("botSettings.emptySelection")}
-                      </Box>
-
-                      {bots
-                        .filter((bot) => {
-                          const q = botSearch.toLowerCase().replace(/^@/, "");
-                          if (!q) return true;
-
-                          return (
-                            bot.username.toLowerCase().includes(q) ||
-                            (bot.title || "").toLowerCase().includes(q)
-                          );
-                        })
-                        .map((bot) => (
-                          <Box
-                            key={bot.id}
-                            px={2}
-                            py={1}
-                            cursor="pointer"
-                            bg={
+                      {!matchingBots.length && (
+                        <Text px={2} py={1} fontWeight="normal">
+                          {t("botSettings.noBotsFound")}
+                        </Text>
+                      )}
+                      {matchingBots.map((bot) => (
+                        <Button
+                          key={bot.id}
+                          variant="ghost"
+                          justifyContent="flex-start"
+                          minH="44px"
+                          flexShrink={0}
+                          fontSize="sm"
+                          fontWeight="normal"
+                          aria-pressed={selectedBot === bot.username}
+                          px={2}
+                          bg={
+                            selectedBot === bot.username
+                              ? "primary.50"
+                              : undefined
+                          }
+                          _dark={{
+                            bg:
                               selectedBot === bot.username
-                                ? "primary.50"
-                                : undefined
-                            }
-                            _dark={{
-                              bg:
-                                selectedBot === bot.username
-                                  ? "primary.900"
-                                  : undefined,
-                            }}
-                            _hover={{
-                              bg: "gray.100",
-                              _dark: { bg: "gray.700" },
-                            }}
-                            onClick={() => {
-                              setSelectedBot(bot.username);
-                              setBotSearch("");
+                                ? "primary.900"
+                                : undefined,
+                          }}
+                          _hover={{
+                            bg: "gray.100",
+                            _dark: { bg: "gray.700" },
+                          }}
+                          onClick={() => {
+                            if (selectedBot === bot.username) {
                               setIsBotListOpen(false);
-                            }}
+                            } else {
+                              changeView(serviceView(bot.username));
+                            }
+                          }}
+                        >
+                          <Text
+                            minW={0}
+                            isTruncated
+                            title={bot.title || bot.username}
                           >
-                            <Text>@{bot.username}</Text>
-                            {bot.title && (
-                              <Text as="span" ml={2} opacity={0.6}>
-                                — {bot.title}
-                              </Text>
-                            )}
-                          </Box>
-                        ))}
+                            @{bot.username}
+                            {bot.title && ` — ${bot.title}`}
+                          </Text>
+                        </Button>
+                      ))}
                     </VStack>
                   </PopoverBody>
                 </PopoverContent>
               </Popover>
-            </HStack>
-          </ModalHeader>
-          <ModalCloseButton />
-          <ModalBody
-            flex="1"
-            minH={0}
-            style={{
-              scrollbarGutter: "stable",
-            }}
-          >
-            <Tabs
-              variant="enclosed"
-              colorScheme="primary"
-              index={activeTabIndex}
-              onChange={setActiveTabIndex}
-              isLazy
-              lazyBehavior="keepMounted"
-            >
-              <TabList overflowX="auto" overflowY="hidden" whiteSpace="nowrap">
-                <Tab>{t("botSettings.tabBotInfo")}</Tab>
-                <Tab>{t("botSettings.tabSubscription")}</Tab>
-              </TabList>
-              {hasDraft && activeTabIndex !== 2 && (
-                <HStack
-                  mt={2}
-                  p={3}
+              <Tooltip
+                label={t("botSettings.createBot")}
+                hasArrow
+                shouldWrapChildren
+              >
+                <IconButton
+                  aria-label={t("botSettings.createBot")}
+                  icon={<PlusIcon width={20} height={20} />}
+                  boxSize="44px"
                   borderRadius="md"
-                  bg="yellow.50"
-                  _dark={{ bg: "yellow.900" }}
-                  border="1px solid"
-                  borderColor="yellow.200"
-                  _dark-border={{ borderColor: "yellow.700" }}
-                  justify="space-between"
-                >
-                  <ChakraText
-                    fontSize="sm"
-                    color="yellow.800"
-                    _dark={{ color: "yellow.200" }}
-                  >
-                    {t("botSettings.draftFound")}
-                  </ChakraText>
-                  <HStack>
-                    <Button
-                      size="xs"
-                      colorScheme="yellow"
-                      onClick={restoreDraft}
-                    >
-                      {t("botSettings.draftRestore")}
-                    </Button>
-                    <Button size="xs" variant="ghost" onClick={discardDraft}>
-                      {t("botSettings.draftDiscard")}
-                    </Button>
-                  </HStack>
-                </HStack>
-              )}
-              <VStack mt={3} spacing={3} align="stretch">
-                <FormControl
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="space-between"
-                  borderWidth="1px"
-                  borderRadius="md"
-                  px={4}
-                  py={3}
-                >
-                  <Box pr={4}>
-                    <FormLabel mb={0}>{t("botSettings.adminSync")}</FormLabel>
-                    <FormHelperText mt={1}>
-                      {selectedBot
-                        ? t("botSettings.adminSyncHint")
-                        : t("botSettings.adminSyncNewBotHint")}
-                    </FormHelperText>
-                  </Box>
-                  <Switch
-                    colorScheme="primary"
-                    isChecked={selectedBot ? adminSyncEnabled : true}
-                    isDisabled={!selectedBot || syncingAdmin}
-                    onChange={(event) => setAdminSync(event.target.checked)}
-                  />
-                </FormControl>
-                {isManaged && (
-                  <Alert
-                    status="info"
-                    variant="left-accent"
+                  variant="ghost"
+                  colorScheme="green"
+                  color="green.700"
+                  bg="green.50"
+                  _hover={{ bg: "green.100" }}
+                  _active={{ bg: "green.200" }}
+                  _disabled={{ opacity: 0.55, cursor: "not-allowed" }}
+                  _dark={{
+                    color: "green.300",
+                    bg: "green.900",
+                    _hover: { bg: "green.800" },
+                    _active: { bg: "green.700" },
+                  }}
+                  isDisabled={isCreatingBot || isInitialLoading || isMutating}
+                  onClick={startCreating}
+                />
+              </Tooltip>
+              {selectedBotModel && (
+                <Menu placement="bottom-end" autoSelect={false}>
+                  <MenuButton
+                    as={IconButton}
+                    aria-label={t("botSettings.serviceActions")}
+                    icon={<EllipsisHorizontalIcon width={20} height={20} />}
+                    boxSize="44px"
                     borderRadius="md"
-                    alignItems="flex-start"
+                    flexShrink={0}
+                    isDisabled={isMutating}
+                  />
+                  <MenuList minW="max-content" py={1}>
+                    <MenuItem
+                      px={3}
+                      py={1.5}
+                      fontSize="sm"
+                      fontWeight="normal"
+                      color="red.600"
+                      bg="transparent"
+                      border="0"
+                      boxShadow="none"
+                      _hover={{ bg: "gray.100" }}
+                      _focus={{ bg: "transparent", boxShadow: "none" }}
+                      _focusVisible={{ bg: "gray.100" }}
+                      _dark={{
+                        color: "red.300",
+                        _hover: { bg: "whiteAlpha.100" },
+                        _focusVisible: { bg: "whiteAlpha.100" },
+                      }}
+                      icon={<TrashIcon width={16} height={16} />}
+                      onClick={() => setBotToDelete(selectedBotModel)}
+                    >
+                      {t("botSettings.deleteBot")}
+                    </MenuItem>
+                  </MenuList>
+                </Menu>
+              )}
+            </HStack>
+          </Stack>
+        </ModalHeader>
+        <ModalCloseButton
+          ref={closeButtonRef}
+          boxSize="44px"
+          isDisabled={isMutating}
+        />
+        <ModalBody
+          flex="1"
+          minH={0}
+          overflowX="hidden"
+          style={{
+            scrollbarGutter: "stable",
+          }}
+          sx={{
+            ".chakra-form__helper-text": {
+              color: "gray.600",
+              _dark: { color: "gray.300" },
+            },
+          }}
+        >
+          {isInitialLoading || isBotSettingsLoading ? (
+            <VStack justify="center" minH="240px" role="status">
+              <Spinner />
+            </VStack>
+          ) : selectedBot && !botSettingsLoaded ? (
+            <Alert status="error" borderRadius="md">
+              <AlertIcon />
+              <AlertDescription>
+                {t("core.generalErrorMessage")}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Box as="fieldset" disabled={isMutating} minW={0}>
+              <Tabs
+                variant="enclosed"
+                colorScheme="primary"
+                index={activeTabIndex}
+                onChange={setActiveTabIndex}
+                isLazy
+                lazyBehavior="keepMounted"
+              >
+                <TabList
+                  overflowX="auto"
+                  overflowY="hidden"
+                  whiteSpace="nowrap"
+                >
+                  <Tab>{t("botSettings.tabBotInfo")}</Tab>
+                  <Tab>{t("botSettings.tabSubscription")}</Tab>
+                </TabList>
+                {hasDraft && (
+                  <HStack
+                    mt={2}
+                    p={3}
+                    borderRadius="md"
+                    bg="yellow.50"
+                    _dark={{ bg: "yellow.900" }}
+                    border="1px solid"
+                    borderColor="yellow.200"
+                    _dark-border={{ borderColor: "yellow.700" }}
+                    justify="space-between"
+                    flexWrap="wrap"
                   >
-                    <AlertIcon mt={0.5} />
-                    <AlertDescription fontSize="sm">
-                      {t("botSettings.managedBanner", {
-                        source: managedState?.source,
-                        version: managedState?.version,
-                      })}
-                    </AlertDescription>
-                  </Alert>
+                    <Text
+                      fontSize="sm"
+                      color="yellow.800"
+                      _dark={{ color: "yellow.200" }}
+                    >
+                      {t("botSettings.draftFound")}
+                    </Text>
+                    <HStack>
+                      <Button
+                        size="xs"
+                        colorScheme="yellow"
+                        onClick={restoreDraft}
+                      >
+                        {t("botSettings.draftRestore")}
+                      </Button>
+                      <Button size="xs" variant="ghost" onClick={discardDraft}>
+                        {t("botSettings.draftDiscard")}
+                      </Button>
+                    </HStack>
+                  </HStack>
                 )}
-              </VStack>
-              <TabPanels minH="400px" pt={2}>
-                {/* Вкладка 1: Bot Info */}
-                <TabPanel px={0}>
-                  <VStack spacing={4} align="stretch">
-                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>{t("botSettings.newBotUsername")}</FormLabel>
-                        <Input
-                          value={botUsername}
-                          onChange={(e) => {
-                            setBotUsername(e.target.value);
-                            saveDraft(settings, e.target.value, botTitle);
-                          }}
-                          placeholder="@my_vpn_bot"
-                        />
-                        <FormHelperText>
-                          {isManaged
-                            ? t("botSettings.managedFieldHint")
-                            : t("botSettings.newBotUsernameHint")}
-                        </FormHelperText>
-                      </FormControl>
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>{t("botSettings.newBotTitle")}</FormLabel>
-                        <Input
-                          value={botTitle}
-                          onChange={(e) => {
-                            setBotTitle(e.target.value);
-                            saveDraft(settings, botUsername, e.target.value);
-                          }}
-                          placeholder="My VPN Bot"
-                        />
-                        <FormHelperText>
-                          {isManaged
-                            ? t("botSettings.managedFieldHint")
-                            : t("botSettings.newBotTitleHint")}
-                        </FormHelperText>
-                      </FormControl>
-                    </SimpleGrid>
+                <VStack mt={3} spacing={3} align="stretch">
+                  <ServiceSettingSwitch
+                    label={t("botSettings.adminSync")}
+                    description={t(
+                      selectedBot
+                        ? "botSettings.adminSyncHint"
+                        : "botSettings.adminSyncNewBotHint"
+                    )}
+                    checked={selectedBot ? adminSyncEnabled : true}
+                    disabled={!selectedBot || syncingAdmin}
+                    onChange={setAdminSync}
+                  />
+                  {isManaged && (
+                    <Alert
+                      status="info"
+                      variant="left-accent"
+                      borderRadius="md"
+                      alignItems="flex-start"
+                    >
+                      <AlertIcon mt={0.5} />
+                      <AlertDescription fontSize="sm">
+                        {t("botSettings.managedBanner", {
+                          source: managedState?.source,
+                          version: managedState?.version,
+                        })}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </VStack>
+                <TabPanels pt={2}>
+                  {/* Вкладка 1: Bot Info */}
+                  <TabPanel px={0}>
+                    <VStack spacing={4} align="stretch">
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                        <FormControl isDisabled={isManaged}>
+                          <FormLabel>
+                            {t("botSettings.newBotUsername")}
+                          </FormLabel>
+                          <Input
+                            value={botUsername}
+                            onChange={(e) => {
+                              setBotUsername(e.target.value);
+                              saveDraft(settings, e.target.value, botTitle);
+                            }}
+                            placeholder="@my_vpn_bot"
+                          />
+                          <FormHelperText>
+                            {isManaged
+                              ? t("botSettings.managedFieldHint")
+                              : t("botSettings.newBotUsernameHint")}
+                          </FormHelperText>
+                        </FormControl>
+                        <FormControl isDisabled={isManaged}>
+                          <FormLabel>{t("botSettings.newBotTitle")}</FormLabel>
+                          <Input
+                            value={botTitle}
+                            onChange={(e) => {
+                              setBotTitle(e.target.value);
+                              saveDraft(settings, botUsername, e.target.value);
+                            }}
+                            placeholder="My VPN Bot"
+                          />
+                          <FormHelperText>
+                            {isManaged
+                              ? t("botSettings.managedFieldHint")
+                              : t("botSettings.newBotTitleHint")}
+                          </FormHelperText>
+                        </FormControl>
+                      </SimpleGrid>
 
-                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>{t("botSettings.botUrl")}</FormLabel>
-                        <Input
-                          value={settings.bot_url}
-                          placeholder="https://t.me/my_vpn_bot"
-                          onChange={(e) =>
-                            updateSettings({ bot_url: e.target.value })
-                          }
-                        />
-                        <FormHelperText>
-                          {isManaged
-                            ? t("botSettings.managedFieldHint")
-                            : t("botSettings.botUrlHint")}
-                        </FormHelperText>
-                      </FormControl>
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>{t("botSettings.webUrl")}</FormLabel>
-                        <Input
-                          value={settings.web_url}
-                          placeholder="https://cabinet.example.com"
-                          onChange={(e) =>
-                            updateSettings({ web_url: e.target.value })
-                          }
-                        />
-                        <FormHelperText>
-                          {isManaged
-                            ? t("botSettings.managedFieldHint")
-                            : t("botSettings.webUrlHint")}
-                        </FormHelperText>
-                      </FormControl>
-                    </SimpleGrid>
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                        <FormControl isDisabled={isManaged}>
+                          <FormLabel>{t("botSettings.botUrl")}</FormLabel>
+                          <Input
+                            value={settings.bot_url}
+                            placeholder="https://t.me/my_vpn_bot"
+                            onChange={(e) =>
+                              updateSettings({ bot_url: e.target.value })
+                            }
+                          />
+                          <FormHelperText>
+                            {isManaged
+                              ? t("botSettings.managedFieldHint")
+                              : t("botSettings.botUrlHint")}
+                          </FormHelperText>
+                        </FormControl>
+                        <FormControl isDisabled={isManaged}>
+                          <FormLabel>{t("botSettings.webUrl")}</FormLabel>
+                          <Input
+                            value={settings.web_url}
+                            placeholder="https://cabinet.example.com"
+                            onChange={(e) =>
+                              updateSettings({ web_url: e.target.value })
+                            }
+                          />
+                          <FormHelperText>
+                            {isManaged
+                              ? t("botSettings.managedFieldHint")
+                              : t("botSettings.webUrlHint")}
+                          </FormHelperText>
+                        </FormControl>
+                      </SimpleGrid>
 
-                    <FormControl isDisabled={isManaged}>
-                      <FormLabel>{t("botSettings.showAds")}</FormLabel>
-                      <Switch
-                        colorScheme="primary"
-                        isChecked={settings.show_ads}
-                        onChange={(e) =>
-                          updateSettings({ show_ads: e.target.checked })
+                      <ServiceSettingSwitch
+                        label={t("botSettings.showAds")}
+                        description={fieldHint("botSettings.showAdsHint")}
+                        checked={settings.show_ads}
+                        disabled={isManaged}
+                        onChange={(showAds) =>
+                          updateSettings({ show_ads: showAds })
                         }
                       />
-                      <FormHelperText>
-                        {fieldHint("botSettings.showAdsHint")}
-                      </FormHelperText>
-                    </FormControl>
-                  </VStack>
-                </TabPanel>
+                    </VStack>
+                  </TabPanel>
 
-                {/* Вкладка 2: Subscription Settings */}
-                <TabPanel px={0}>
-                  <VStack spacing={4} align="stretch">
-                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>{t("botSettings.subSupportUrl")}</FormLabel>
-                        <Input
-                          value={settings.sub_support_url}
-                          placeholder="https://t.me/support"
-                          onChange={(e) =>
-                            updateSettings({ sub_support_url: e.target.value })
-                          }
-                        />
-                        <FormHelperText>
-                          {isManaged
-                            ? t("botSettings.managedFieldHint")
-                            : t("botSettings.subSupportUrlHint")}
-                        </FormHelperText>
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>
-                          {t("botSettings.subProfileTitle")}
-                        </FormLabel>
-                        <Input
-                          value={settings.sub_profile_title}
-                          placeholder="My VPN"
-                          onChange={(e) =>
-                            updateSettings({
-                              sub_profile_title: e.target.value,
-                            })
-                          }
-                        />
-                        <FormHelperText>
-                          {t("botSettings.subProfileTitleHint")}
-                        </FormHelperText>
-                      </FormControl>
-                    </SimpleGrid>
+                  {/* Вкладка 2: Subscription Settings */}
+                  <TabPanel px={0}>
+                    <VStack spacing={4} align="stretch">
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                        <FormControl isDisabled={isManaged}>
+                          <FormLabel>
+                            {t("botSettings.subSupportUrl")}
+                          </FormLabel>
+                          <Input
+                            value={settings.sub_support_url}
+                            placeholder="https://t.me/support"
+                            onChange={(e) =>
+                              updateSettings({
+                                sub_support_url: e.target.value,
+                              })
+                            }
+                          />
+                          <FormHelperText>
+                            {isManaged
+                              ? t("botSettings.managedFieldHint")
+                              : t("botSettings.subSupportUrlHint")}
+                          </FormHelperText>
+                        </FormControl>
+                        <FormControl>
+                          <FormLabel>
+                            {t("botSettings.subProfileTitle")}
+                          </FormLabel>
+                          <Input
+                            value={settings.sub_profile_title}
+                            placeholder="My VPN"
+                            onChange={(e) =>
+                              updateSettings({
+                                sub_profile_title: e.target.value,
+                              })
+                            }
+                          />
+                          <FormHelperText>
+                            {t("botSettings.subProfileTitleHint")}
+                          </FormHelperText>
+                        </FormControl>
+                      </SimpleGrid>
 
-                    <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>{t("botSettings.subProfileUrl")}</FormLabel>
-                        <Input
-                          value={settings.sub_profile_url}
-                          placeholder="https://example.com/profile"
-                          onChange={(e) =>
-                            updateSettings({ sub_profile_url: e.target.value })
-                          }
-                        />
-                        <FormHelperText>
-                          {fieldHint("botSettings.subProfileUrlHint")}
-                        </FormHelperText>
-                      </FormControl>
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>
-                          {t("botSettings.subSubscriptionDomain")}
-                        </FormLabel>
-                        <Input
-                          value={settings.sub_subscription_domain || ""}
-                          placeholder="example.net"
-                          onChange={(e) =>
-                            updateSettings({
-                              sub_subscription_domain: e.target.value,
-                            })
-                          }
-                        />
-                        <FormHelperText>
-                          {isManaged
-                            ? t("botSettings.managedFieldHint")
-                            : t("botSettings.subSubscriptionDomainHint")}
-                        </FormHelperText>
-                      </FormControl>
-                    </SimpleGrid>
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                        <FormControl isDisabled={isManaged}>
+                          <FormLabel>
+                            {t("botSettings.subProfileUrl")}
+                          </FormLabel>
+                          <Input
+                            value={settings.sub_profile_url}
+                            placeholder="https://example.com/profile"
+                            onChange={(e) =>
+                              updateSettings({
+                                sub_profile_url: e.target.value,
+                              })
+                            }
+                          />
+                          <FormHelperText>
+                            {fieldHint("botSettings.subProfileUrlHint")}
+                          </FormHelperText>
+                        </FormControl>
+                        <FormControl isDisabled={isManaged}>
+                          <FormLabel>
+                            {t("botSettings.subSubscriptionDomain")}
+                          </FormLabel>
+                          <Input
+                            value={settings.sub_subscription_domain || ""}
+                            placeholder="example.net"
+                            onChange={(e) =>
+                              updateSettings({
+                                sub_subscription_domain: e.target.value,
+                              })
+                            }
+                          />
+                          <FormHelperText>
+                            {isManaged
+                              ? t("botSettings.managedFieldHint")
+                              : t("botSettings.subSubscriptionDomainHint")}
+                          </FormHelperText>
+                        </FormControl>
+                      </SimpleGrid>
 
-                    <Box
-                      border="1px solid"
-                      borderColor="inherit"
-                      borderRadius="md"
-                      p={4}
-                    >
-                      <FormControl isDisabled={isManaged}>
-                        <FormLabel>
-                          {t("botSettings.bsExtraResetPoolOnProlong")}
-                        </FormLabel>
-                        <Switch
-                          colorScheme="primary"
-                          isChecked={settings.bs_extra_reset_pool_on_prolong}
-                          onChange={(e) =>
-                            updateSettings({
-                              bs_extra_reset_pool_on_prolong: e.target.checked,
-                            })
-                          }
-                        />
-                        <FormHelperText>
-                          {fieldHint(
-                            "botSettings.bsExtraResetPoolOnProlongHint"
-                          )}
-                        </FormHelperText>
-                      </FormControl>
-                    </Box>
-                  </VStack>
-                </TabPanel>
-              </TabPanels>
-            </Tabs>
-          </ModalBody>
+                      <Box
+                        border="1px solid"
+                        borderColor="inherit"
+                        borderRadius="md"
+                        p={4}
+                      >
+                        <FormControl isDisabled={isManaged}>
+                          <FormLabel>
+                            {t("botSettings.bsExtraResetPoolOnProlong")}
+                          </FormLabel>
+                          <Switch
+                            colorScheme="primary"
+                            isChecked={settings.bs_extra_reset_pool_on_prolong}
+                            onChange={(e) =>
+                              updateSettings({
+                                bs_extra_reset_pool_on_prolong:
+                                  e.target.checked,
+                              })
+                            }
+                          />
+                          <FormHelperText>
+                            {fieldHint(
+                              "botSettings.bsExtraResetPoolOnProlongHint"
+                            )}
+                          </FormHelperText>
+                        </FormControl>
+                      </Box>
+                    </VStack>
+                  </TabPanel>
+                </TabPanels>
+              </Tabs>
+            </Box>
+          )}
+        </ModalBody>
 
-          <ModalFooter>
-            <Stack
-              direction={{ base: "column", md: "row" }}
-              justify="space-between"
-              align={{ base: "stretch", md: "center" }}
-              w="full"
-              spacing={4}
+        <ModalFooter flexShrink={0} borderTopWidth="1px" bg="inherit">
+          <HStack spacing={2} w={{ base: "full", md: "auto" }}>
+            <Button
+              flexGrow={{ base: 1, md: 0 }}
+              w="auto"
+              px={5}
+              whiteSpace="nowrap"
+              minH="44px"
+              variant="ghost"
+              onClick={cancelEditing}
+              isDisabled={isMutating}
             >
-              <HStack spacing={2} w={{ base: "full", md: "auto" }}>
-                <Button
-                  flex={1}
-                  variant="outline"
-                  colorScheme="green"
-                  onClick={requestCreateBot}
-                  isLoading={creating}
-                  isDisabled={
-                    isInitialLoading || !!selectedBot || !botUsername.trim()
-                  }
-                >
-                  {t("botSettings.createBot")}
-                </Button>
-                {isEditingBotSettings && selectedBot && (
-                  <BotLifecycleButton key={selectedBot} username={selectedBot} />
-                )}
-              </HStack>
+              {t("cancel")}
+            </Button>
 
-              <HStack spacing={2} w={{ base: "full", md: "auto" }}>
-                <Button flex={1} variant="ghost" onClick={close}>
-                  {t("cancel")}
-                </Button>
-
-                <Button
-                  flex={1}
-                  colorScheme="primary"
-                  onClick={save}
-                  isLoading={saving}
-                  isDisabled={
-                    loading ||
-                    !botSettingsLoaded ||
-                    !selectedBot ||
-                    !botUsername.trim()
-                  }
-                >
-                  {t("core.save")}
-                </Button>
-              </HStack>
-            </Stack>
-          </ModalFooter>
-        </ModalContent>
+            <Button
+              flexGrow={{ base: 1, md: 0 }}
+              w="auto"
+              px={5}
+              whiteSpace="nowrap"
+              minH="44px"
+              colorScheme="primary"
+              _disabled={{
+                opacity: 1,
+                cursor: "not-allowed",
+                color: "gray.600",
+                bg: "gray.100",
+                _dark: { color: "gray.300", bg: "gray.700" },
+              }}
+              onClick={isCreatingBot ? requestCreateBot : save}
+              isLoading={isCreatingBot ? creating : saving}
+              isDisabled={
+                isMutating ||
+                isInitialLoading ||
+                (!isCreatingBot && !botSettingsLoaded) ||
+                !botUsername.trim()
+              }
+            >
+              {t(isCreatingBot ? "botSettings.submitCreate" : "core.save")}
+            </Button>
+          </HStack>
+        </ModalFooter>
+      </ModalContent>
       <AlertDialog
         isOpen={isFirstServiceConfirmOpen}
         leastDestructiveRef={cancelFirstServiceRef}
@@ -1124,7 +1217,46 @@ export const BotSettingsDialog: FC = () => {
                   createBot();
                 }}
               >
-                {t("botSettings.createBot")}
+                {t("botSettings.submitCreate")}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+      <AlertDialog
+        isOpen={!!botToDelete}
+        leastDestructiveRef={cancelDeleteRef}
+        onClose={() => setBotToDelete(null)}
+        closeOnEsc={!deleting}
+        closeOnOverlayClick={!deleting}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader>{t("botSettings.deleteBot")}</AlertDialogHeader>
+            <AlertDialogBody>
+              {botToDelete &&
+                t("botSettings.deleteConfirm", {
+                  username: botToDelete.title
+                    ? `${botToDelete.title} (@${botToDelete.username})`
+                    : `@${botToDelete.username}`,
+                })}
+            </AlertDialogBody>
+            <AlertDialogFooter>
+              <Button
+                ref={cancelDeleteRef}
+                onClick={() => setBotToDelete(null)}
+                isDisabled={deleting}
+              >
+                {t("cancel")}
+              </Button>
+              <Button
+                colorScheme="red"
+                ml={3}
+                onClick={deleteBot}
+                isLoading={deleting}
+              >
+                {t("delete")}
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>
