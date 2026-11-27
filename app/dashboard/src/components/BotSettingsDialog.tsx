@@ -59,6 +59,16 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
+import {
+  cancelServiceCreation,
+  deleteConfirmedService,
+  readServiceDraft,
+  removeServiceDraft,
+  restoreServiceDraft,
+  saveServiceDraft,
+  serviceView,
+  type ServiceView,
+} from "./botSettings/serviceSettings";
 
 const emptySettings: BotSettings = {
   sub_support_url: "",
@@ -70,17 +80,6 @@ const emptySettings: BotSettings = {
   bs_extra_reset_pool_on_prolong: false,
   show_ads: true,
 };
-
-type ServiceView =
-  | { mode: "create"; returnTo: string }
-  | { mode: "edit"; username: string };
-
-const serviceView = (username?: string | null): ServiceView =>
-  username ? { mode: "edit", username } : { mode: "create", returnTo: "" };
-
-const NEW_BOT_DRAFT_KEY = "botSettings_draft_new";
-const getDraftKey = (username: string) =>
-  username ? `botSettings_draft_${username}` : NEW_BOT_DRAFT_KEY;
 
 const ServiceSettingSwitch: FC<{
   label: string;
@@ -165,15 +164,11 @@ export const BotSettingsDialog: FC = () => {
     newUsername: string,
     newTitle: string
   ) => {
-    localStorage.setItem(
-      getDraftKey(selectedBot),
-      JSON.stringify({
-        settings: newSettings,
-        botUsername: newUsername,
-        botTitle: newTitle,
-        savedAt: Date.now(),
-      })
-    );
+    saveServiceDraft(localStorage, selectedBot, {
+      settings: newSettings,
+      botUsername: newUsername,
+      botTitle: newTitle,
+    });
     setHasDraft(false);
   };
 
@@ -254,7 +249,7 @@ export const BotSettingsDialog: FC = () => {
       setServerSettings(emptySettings);
       setBotSettingsLoaded(false);
       setIsBotSettingsLoading(false);
-      setHasDraft(!!localStorage.getItem(NEW_BOT_DRAFT_KEY));
+      setHasDraft(!!readServiceDraft(localStorage, ""));
       return;
     }
     setBotUsername(selectedBot);
@@ -271,14 +266,7 @@ export const BotSettingsDialog: FC = () => {
         replaceSettings(serverSettings);
         setServerSettings(serverSettings);
 
-        const draftKey = getDraftKey(selectedBot);
-        const draft = localStorage.getItem(draftKey);
-
-        if (draft) {
-          setHasDraft(true);
-        } else {
-          setHasDraft(false);
-        }
+        setHasDraft(!!readServiceDraft(localStorage, selectedBot));
         setBotSettingsLoaded(true);
       })
       .catch(() => {
@@ -294,32 +282,21 @@ export const BotSettingsDialog: FC = () => {
   }, [isEditingBotSettings, isInitialLoading, selectedBot, selectedBotTitle]);
 
   const restoreDraft = () => {
-    const key = getDraftKey(selectedBot);
-    const draft = localStorage.getItem(key);
+    const draft = restoreServiceDraft(
+      localStorage,
+      selectedBot,
+      serverSettings,
+      selectedBotModel
+    );
     if (!draft) return;
-    const parsed = JSON.parse(draft);
-    const managed = !!(serverSettings.managed || selectedBotModel?.managed);
-    replaceSettings(
-      managed
-        ? {
-            ...parsed.settings,
-            bot_url: serverSettings.bot_url,
-            web_url: serverSettings.web_url,
-            sub_support_url: serverSettings.sub_support_url,
-            sub_subscription_domain: serverSettings.sub_subscription_domain,
-            managed: serverSettings.managed,
-          }
-        : parsed.settings
-    );
-    setBotUsername(
-      managed ? selectedBotModel?.username || "" : parsed.botUsername
-    );
-    setBotTitle(managed ? selectedBotModel?.title || "" : parsed.botTitle);
+    replaceSettings(draft.settings);
+    setBotUsername(draft.botUsername);
+    setBotTitle(draft.botTitle);
     setHasDraft(false);
   };
 
   const discardDraft = () => {
-    localStorage.removeItem(getDraftKey(selectedBot));
+    removeServiceDraft(localStorage, selectedBot);
     setHasDraft(false);
   };
 
@@ -340,12 +317,13 @@ export const BotSettingsDialog: FC = () => {
   };
 
   const startCreating = () => {
-    changeView({ mode: "create", returnTo: selectedBot });
+    changeView(serviceView(undefined, selectedBot));
   };
 
   const cancelEditing = () => {
-    if (view.mode === "create" && view.returnTo) {
-      changeView(serviceView(view.returnTo));
+    const previousView = cancelServiceCreation(view);
+    if (previousView) {
+      changeView(previousView);
     } else {
       close();
     }
@@ -486,9 +464,9 @@ export const BotSettingsDialog: FC = () => {
         });
       })
       .then(() => {
-        localStorage.removeItem(getDraftKey(targetUsername));
+        removeServiceDraft(localStorage, targetUsername);
         if (targetUsername !== selectedBot) {
-          localStorage.removeItem(getDraftKey(selectedBot));
+          removeServiceDraft(localStorage, selectedBot);
         }
         setHasDraft(false);
         toast({
@@ -530,7 +508,7 @@ export const BotSettingsDialog: FC = () => {
         }).then(() => bot);
       })
       .then((bot) => {
-        localStorage.removeItem(NEW_BOT_DRAFT_KEY);
+        removeServiceDraft(localStorage, "");
         setHasDraft(false);
         return fetchBots().then(() => {
           changeView(serviceView(bot.username));
@@ -569,13 +547,9 @@ export const BotSettingsDialog: FC = () => {
     if (!botToDelete || deleting) return;
 
     setDeleting(true);
-    const deletedKey = getDraftKey(botToDelete.username);
-    fetch(`/bots/${encodeURIComponent(botToDelete.username)}`, {
-      method: "DELETE",
-    })
+    deleteConfirmedService(botToDelete, fetch, localStorage)
       .then(() => {
         setBotToDelete(null);
-        localStorage.removeItem(deletedKey);
         setHasDraft(false);
         return fetchBots();
       })
@@ -778,14 +752,17 @@ export const BotSettingsDialog: FC = () => {
                   borderRadius="md"
                   variant="ghost"
                   colorScheme="green"
-                  color="green.700"
-                  bg="green.50"
-                  _hover={{ bg: "green.100" }}
-                  _active={{ bg: "green.200" }}
+                  color="green.800"
+                  bg="green.100"
+                  borderWidth="1px"
+                  borderColor="green.600"
+                  _hover={{ bg: "green.200" }}
+                  _active={{ bg: "green.300" }}
                   _disabled={{ opacity: 0.55, cursor: "not-allowed" }}
                   _dark={{
                     color: "green.300",
                     bg: "green.900",
+                    borderColor: "green.700",
                     _hover: { bg: "green.800" },
                     _active: { bg: "green.700" },
                   }}
